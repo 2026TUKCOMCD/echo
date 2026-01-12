@@ -5,7 +5,8 @@
 사용자의 건강 데이터, 위치 정보, 개인 선호도를 활용하여 맞춤형 질문을 생성하고, 하루의 대화를 일기 형식으로 요약하여 기록합니다.
 
 ## 📁시스템 구성도
-<img width="8835" height="4642" alt="image" src="https://github.com/user-attachments/assets/63b4db3b-8903-4c93-98e1-72aa42d3daa4" />
+<img width="8835" height="4642" alt="image" src="https://github.com/user-attachments/assets/39dc2ccc-d89a-4142-aca1-3970bcc493a8" />
+
 
 
 ## 🛠️ 개발 환경
