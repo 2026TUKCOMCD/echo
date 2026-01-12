@@ -14,8 +14,14 @@
 | **프레임워크** | Spring Framework, Android Jetpack |
 | **DB** | Postgre |
 | **개발도구** | Android Studio, Intellij |
-| **클라우드** | AWS(EC2, RDS)|
 
 ## 🏗️ 운영 환경
+| 구분 | 상세 사양 |
+| :--- | :--- |
+| **클라우드** | AWS (EC2, RDS) |
+| **서버 OS** | Amazon Linux 2023 |
+| **배포 방식** | GitHub Actions, Docker(재생성 배포) |
+| **DB 사양** | RDS PostgreSQL |
+
 
 ## 🔍 데모 환경
