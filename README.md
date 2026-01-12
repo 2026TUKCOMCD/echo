@@ -11,7 +11,7 @@
 ## 🛠️ 개발 환경
 | 구분 | 기술 스택 (Tech Stack) |
 | :--- | :--- |
-| **OS** | Amazone Linux 2023, Android 14 |
+| **OS** | Windows, Android 14 |
 | **개발 언어** | Kotlin |
 | **프레임워크** | Spring Framework, Android Jetpack |
 | **DB** | Postgre |
