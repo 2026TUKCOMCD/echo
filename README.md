@@ -68,7 +68,7 @@
 
 | Epic | 이름 | 우선순위 | 담당 | SP | 스프린트 |
 |:---:|:---|:---:|:---:|---:|:---:|
-| E1 | 사용자 인증 및 온보딩 | 🔴 P0 | Fullstack | 13 | Sprint 5 (선택) |
+| E1 | 사용자 인증 및 온보딩 | 🔵 P2 | Fullstack | 13 | Sprint 5 |
 | E2 | 음성 대화 시스템 (앱) | 🔴 P0 | Android | 21 | Sprint 2 |
 | E3 | 서버 AI 대화 생성 | 🔴 P0 | Server | 34 | Sprint 1 |
 | E4 | 건강 데이터 연동 | 🟡 P1 | App+Server | 13 | Sprint 3 |
