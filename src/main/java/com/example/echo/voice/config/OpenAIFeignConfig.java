@@ -1,3 +1,7 @@
+/*
+"출입증 자동으로 달아주는 기계"
+OpenAi 요청을 보낼 때, APIkey를 자동으로 부착해주는 기능
+*/
 package com.example.echo.voice.config;
 
 import feign.RequestInterceptor;
