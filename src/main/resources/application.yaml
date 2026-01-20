@@ -9,7 +9,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update  # 개발 중에는 update, 운영에서는 validate
+      ddl-auto: update  # 개발 중에는 update, 운영에서는 validate/ update 설정이면 처음에 테이블 생성, 이후에는 변경이 없으면 테이블 건드리지 않음
     show-sql: true
     properties:
       hibernate:
