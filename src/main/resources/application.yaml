@@ -1,3 +1,18 @@
 spring:
   application:
     name: echo
+  datasource:
+    url: jdbc:mysql://localhost:3306/echo_db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    username: echouser
+    # password는 application-local.yaml에서 설정
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update  # 개발 중에는 update, 운영에서는 validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQL8Dialect
+

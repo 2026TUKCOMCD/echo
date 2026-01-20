@@ -35,3 +35,9 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# 비밀정보 파일 (추가!)
+application-local.yaml
+application-dev.yaml
+application-prod.yaml
+.env
