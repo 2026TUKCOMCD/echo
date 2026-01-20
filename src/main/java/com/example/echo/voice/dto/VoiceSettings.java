@@ -1,4 +1,4 @@
-﻿package com.example.echo.voice.dto;
+package com.example.echo.voice.dto;
 
 import lombok.Builder;
 import lombok.Getter;
