@@ -1,3 +1,7 @@
+/*
+ 인터페이스 (주문서 양식 코드)
+ 실제 실행할 때, 즉 VoiceService에서는 값을 넣어준다.
+*/
 package com.example.echo.voice.client;
 
 import com.example.echo.voice.config.OpenAIFeignConfig;

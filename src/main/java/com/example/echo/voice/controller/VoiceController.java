@@ -1,3 +1,7 @@
+/*
+"음성 파일 받는 접수창구"
+접수만 받고(controller), 실제 작업은 Service에게
+*/
 package com.example.echo.voice.controller;
 
 import com.example.echo.voice.dto.SttResponse;
