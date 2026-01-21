@@ -1,5 +1,6 @@
 package com.example.echo.prompt.service;
 
+import com.example.echo.prompt.dto.ConversationTurn;
 import com.example.echo.prompt.dto.PromptContext;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
@@ -8,7 +9,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 프롬프트 서비스
@@ -139,11 +142,42 @@ public class PromptService {
     /**
      * 대화 히스토리 빌드
      *
+     * 오늘의 대화 히스토리를 턴별로 포맷팅
+     * AI가 이전 대화 맥락을 유지할 수 있도록 정보 제공
+     *
+     * 출력 형식:
+     * [턴 1]
+     * 사용자: (사용자 발화)
+     * AI: (AI 응답)
+     *
+     * [턴 2]
+     * ...
+     *
      * @param context 프롬프트 컨텍스트
-     * @return 포맷팅된 대화 히스토리 문자열
+     * @return 포맷팅된 대화 히스토리 문자열 (히스토리가 없으면 빈 문자열)
      */
     private String buildHistory(PromptContext context) {
-        // TODO: T3.3-6에서 구현 예정
-        return "";
+        List<ConversationTurn> history = context.getConversationHistory();
+
+        // 히스토리가 없거나 비어있으면 빈 문자열 반환
+        if (history == null || history.isEmpty()) {
+            return "";
+        }
+
+        // 각 턴을 포맷팅하여 문자열로 조합
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < history.size(); i++) {
+            ConversationTurn turn = history.get(i);
+
+            sb.append(String.format("[턴 %d]\n", i + 1));
+            sb.append(turn.toString());
+
+            // 마지막 턴이 아니면 구분선 추가
+            if (i < history.size() - 1) {
+                sb.append("\n\n");
+            }
+        }
+
+        return sb.toString();
     }
 }
