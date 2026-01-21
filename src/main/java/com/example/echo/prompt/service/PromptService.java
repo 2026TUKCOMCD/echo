@@ -93,12 +93,47 @@ public class PromptService {
     /**
      * 오늘의 컨텍스트 빌드 (건강 데이터 + 날씨)
      *
+     * 사용자의 오늘 건강 데이터와 날씨 정보를 자연어 문장으로 포맷팅
+     * AI가 맥락을 이해하고 관련 대화를 할 수 있도록 정보 제공
+     *
      * @param context 프롬프트 컨텍스트
      * @return 포맷팅된 오늘의 컨텍스트 문자열
      */
     private String buildTodayContext(PromptContext context) {
-        // TODO: T3.3-5에서 구현 예정
-        return "";
+        StringBuilder sb = new StringBuilder();
+
+        // 1. 건강 데이터 포맷팅
+        String userName = context.getUserName();
+        Integer steps = context.getSteps();
+        Double sleepHours = context.getSleepHours();
+
+        if (steps != null || sleepHours != null) {
+            sb.append(String.format("오늘 %s님은 ", userName));
+
+            if (steps != null) {
+                sb.append(String.format("%,d보 걸으셨고", steps));
+            }
+
+            if (sleepHours != null) {
+                if (steps != null) {
+                    sb.append(", ");
+                }
+                sb.append(String.format("%.1f시간 주무셨습니다.", sleepHours));
+            } else if (steps != null) {
+                sb.append(".");
+            }
+        }
+
+        // 2. 날씨 데이터 포맷팅
+        String weather = context.getWeather();
+        if (weather != null && !weather.isEmpty()) {
+            if (sb.length() > 0) {
+                sb.append(" ");
+            }
+            sb.append(String.format("오늘 날씨는 %s입니다.", weather));
+        }
+
+        return sb.toString();
     }
 
     /**
