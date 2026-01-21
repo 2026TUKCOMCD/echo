@@ -41,3 +41,6 @@ application-local.yaml
 application-dev.yaml
 application-prod.yaml
 .env
+
+# 이미지 파일
+echoFigma.jpg

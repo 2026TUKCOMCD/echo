@@ -42,7 +42,7 @@ public class PromptService {
         // 1. DB에서 활성화된 SYSTEM 템플릿 조회
         PromptTemplate template = promptTemplateRepository
                 .findByTypeAndIsActiveTrue(PromptType.SYSTEM)
-                .orElseThrow(() -> new IllegalStateException(
+                .orElseThrow(() -> new IllegalStateException( //.orElseThrow를 사용할 수 있는 이유가 Repository에서 Optional로 감쌌기 때문
                         "활성화된 SYSTEM 프롬프트 템플릿이 없습니다."));
 
         // 2. 컨텍스트에서 변수 추출

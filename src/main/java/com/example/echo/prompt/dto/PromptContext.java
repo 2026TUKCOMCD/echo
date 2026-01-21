@@ -51,10 +51,4 @@ public class PromptContext {
      * 대화 시작 시 빈 리스트, 대화 진행하며 축적
      */
     private List<ConversationTurn> conversationHistory;
-
-    // ========== 현재 사용자 발화 ==========
-    /**
-     * 현재 사용자가 말한 내용 (STT 변환 결과)
-     */
-    private String userMessage;
 }
