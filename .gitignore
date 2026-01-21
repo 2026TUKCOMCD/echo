@@ -39,3 +39,5 @@ out/
 ### Local config (contains secrets) ###
 application-local.yaml
 **/application-local.yaml
+
+nul
