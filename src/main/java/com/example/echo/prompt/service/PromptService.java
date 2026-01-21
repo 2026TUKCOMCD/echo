@@ -53,4 +53,62 @@ public class PromptService {
         // 3. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
     }
+
+    /**
+     * 대화 프롬프트 생성
+     *
+     * 사용자 발화에 대한 AI 응답 생성을 위한 프롬프트
+     * 시스템 프롬프트 + 오늘의 컨텍스트 + 대화 히스토리 + 사용자 메시지 조합
+     *
+     * 템플릿 변수: {{systemPrompt}}, {{todayContext}}, {{conversationHistory}}, {{userMessage}}
+     *
+     * @param context 프롬프트 생성에 필요한 컨텍스트
+     * @param userMessage 현재 사용자 발화 (STT 변환 결과)
+     * @return 컴파일된 대화 프롬프트 문자열
+     * @throws IllegalStateException 활성화된 CONVERSATION 템플릿이 없을 경우
+     */
+    public String buildConversationPrompt(PromptContext context, String userMessage) {
+        // 1. DB에서 활성화된 CONVERSATION 템플릿 조회
+        PromptTemplate template = promptTemplateRepository
+                .findByTypeAndIsActiveTrue(PromptType.CONVERSATION)
+                .orElseThrow(() -> new IllegalStateException(
+                        "활성화된 CONVERSATION 프롬프트 템플릿이 없습니다."));
+
+        // 2. 각 구성 요소 빌드
+        String systemPrompt = buildSystemPrompt(context);
+        String todayContext = buildTodayContext(context);
+        String conversationHistory = buildHistory(context);
+
+        // 3. 템플릿 변수 매핑
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("systemPrompt", systemPrompt);
+        variables.put("todayContext", todayContext);
+        variables.put("conversationHistory", conversationHistory);
+        variables.put("userMessage", userMessage);
+
+        // 4. 템플릿 컴파일 (변수 치환) 후 반환
+        return template.compile(variables);
+    }
+
+    /**
+     * 오늘의 컨텍스트 빌드 (건강 데이터 + 날씨)
+     *
+     * @param context 프롬프트 컨텍스트
+     * @return 포맷팅된 오늘의 컨텍스트 문자열
+     */
+    private String buildTodayContext(PromptContext context) {
+        // TODO: T3.3-5에서 구현 예정
+        return "";
+    }
+
+    /**
+     * 대화 히스토리 빌드
+     *
+     * @param context 프롬프트 컨텍스트
+     * @return 포맷팅된 대화 히스토리 문자열
+     */
+    private String buildHistory(PromptContext context) {
+        // TODO: T3.3-6에서 구현 예정
+        return "";
+    }
 }
