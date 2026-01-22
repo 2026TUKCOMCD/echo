@@ -2,9 +2,9 @@ spring:
   application:
     name: echo
   datasource:
-    url: jdbc:mysql://localhost:3307/echo_db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/echo_db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
     username: echouser
-    password: ${DB_PASSWORD} #echouser에 대한 비밀번호
+    # password는 application-local.yaml에서 설정
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
