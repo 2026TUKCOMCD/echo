@@ -21,3 +21,10 @@ spring:
   sql:
     init:
       mode: always  # 매 시작마다 data.sql 실행 (개발용)
+
+openai:
+  api:
+    url: https://api.openai.com/v1
+  whisper:
+    model: whisper-1
+    language: ko

@@ -1,25 +1,27 @@
 package com.example.echo.prompt.service;
 
-import com.example.echo.prompt.dto.ConversationTurn;
-import com.example.echo.prompt.dto.PromptContext;
+import com.example.echo.common.dto.WeatherData;
+import com.example.echo.context.domain.ConversationTurn;
+import com.example.echo.context.domain.UserContext;
+import com.example.echo.health.dto.HealthData;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
+import com.example.echo.user.dto.UserPreferences;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 프롬프트 서비스
  *
  * 역할: 대화용 프롬프트 생성
  * - DB에서 프롬프트 템플릿 조회
- * - 컨텍스트 데이터로 변수 치환
- * - 최종 프롬프트 문자열 반환
+ * - UserContext에서 필요한 데이터 추출
+ * - 템플릿 변수 치환 후 최종 프롬프트 반환
  *
  * 일기 프롬프트는 DiaryService에서 담당 (단일 책임 원칙)
  */
@@ -37,21 +39,23 @@ public class PromptService {
      *
      * 템플릿 변수: {{userName}}, {{userAge}}
      *
-     * @param context 프롬프트 생성에 필요한 컨텍스트
+     * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
      * @throws IllegalStateException 활성화된 SYSTEM 템플릿이 없을 경우
      */
-    public String buildSystemPrompt(PromptContext context) {
+    public String buildSystemPrompt(UserContext context) {
         // 1. DB에서 활성화된 SYSTEM 템플릿 조회
         PromptTemplate template = promptTemplateRepository
                 .findByTypeAndIsActiveTrue(PromptType.SYSTEM)
-                .orElseThrow(() -> new IllegalStateException( //.orElseThrow를 사용할 수 있는 이유가 Repository에서 Optional로 감쌌기 때문
+                .orElseThrow(() -> new IllegalStateException(
                         "활성화된 SYSTEM 프롬프트 템플릿이 없습니다."));
 
-        // 2. 컨텍스트에서 변수 추출
+        // 2. UserContext에서 사용자 정보 추출
+        UserPreferences preferences = context.getPreferences();
+
         Map<String, Object> variables = new HashMap<>();
-        variables.put("userName", context.getUserName());
-        variables.put("userAge", context.getUserAge());
+        variables.put("userName", preferences != null ? preferences.getName() : "사용자");
+        variables.put("userAge", preferences != null ? preferences.getAge() : "");
 
         // 3. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
@@ -65,12 +69,12 @@ public class PromptService {
      *
      * 템플릿 변수: {{systemPrompt}}, {{todayContext}}, {{conversationHistory}}, {{userMessage}}
      *
-     * @param context 프롬프트 생성에 필요한 컨텍스트
+     * @param context ContextService에서 전달받은 UserContext
      * @param userMessage 현재 사용자 발화 (STT 변환 결과)
      * @return 컴파일된 대화 프롬프트 문자열
      * @throws IllegalStateException 활성화된 CONVERSATION 템플릿이 없을 경우
      */
-    public String buildConversationPrompt(PromptContext context, String userMessage) {
+    public String buildConversationPrompt(UserContext context, String userMessage) {
         // 1. DB에서 활성화된 CONVERSATION 템플릿 조회
         PromptTemplate template = promptTemplateRepository
                 .findByTypeAndIsActiveTrue(PromptType.CONVERSATION)
@@ -99,41 +103,58 @@ public class PromptService {
      * 사용자의 오늘 건강 데이터와 날씨 정보를 자연어 문장으로 포맷팅
      * AI가 맥락을 이해하고 관련 대화를 할 수 있도록 정보 제공
      *
-     * @param context 프롬프트 컨텍스트
+     * @param context UserContext
      * @return 포맷팅된 오늘의 컨텍스트 문자열
      */
-    private String buildTodayContext(PromptContext context) {
+    String buildTodayContext(UserContext context) {
         StringBuilder sb = new StringBuilder();
 
+        // 사용자 이름 추출
+        UserPreferences preferences = context.getPreferences();
+        String userName = (preferences != null && preferences.getName() != null)
+                ? preferences.getName() : "사용자";
+
         // 1. 건강 데이터 포맷팅
-        String userName = context.getUserName();
-        Integer steps = context.getSteps();
-        Double sleepHours = context.getSleepHours();
+        HealthData healthData = context.getTodayHealthData();
+        if (healthData != null) {
+            Integer steps = healthData.getSteps();
+            // sleepDurationMinutes를 시간으로 변환
+            Integer sleepMinutes = healthData.getSleepDurationMinutes();
+            Double sleepHours = (sleepMinutes != null) ? sleepMinutes / 60.0 : null;
 
-        if (steps != null || sleepHours != null) {
-            sb.append(String.format("오늘 %s님은 ", userName));
+            if (steps != null || sleepHours != null) {
+                sb.append(String.format("오늘 %s님은 ", userName));
 
-            if (steps != null) {
-                sb.append(String.format("%,d보 걸으셨고", steps));
-            }
-
-            if (sleepHours != null) {
                 if (steps != null) {
-                    sb.append(", ");
+                    sb.append(String.format("%,d보 걸으셨고", steps));
                 }
-                sb.append(String.format("%.1f시간 주무셨습니다.", sleepHours));
-            } else if (steps != null) {
-                sb.append(".");
+
+                if (sleepHours != null) {
+                    if (steps != null) {
+                        sb.append(", ");
+                    }
+                    sb.append(String.format("%.1f시간 주무셨습니다.", sleepHours));
+                } else if (steps != null) {
+                    sb.append(".");
+                }
             }
         }
 
         // 2. 날씨 데이터 포맷팅
-        String weather = context.getWeather();
-        if (weather != null && !weather.isEmpty()) {
+        WeatherData weatherData = context.getTodayWeather();
+        if (weatherData != null && weatherData.getDescription() != null) {
             if (sb.length() > 0) {
                 sb.append(" ");
             }
-            sb.append(String.format("오늘 날씨는 %s입니다.", weather));
+
+            String weatherDesc = weatherData.getDescription();
+            Integer temperature = weatherData.getTemperature();
+
+            if (temperature != null) {
+                sb.append(String.format("오늘 날씨는 %s이고 기온은 %d도입니다.", weatherDesc, temperature));
+            } else {
+                sb.append(String.format("오늘 날씨는 %s입니다.", weatherDesc));
+            }
         }
 
         return sb.toString();
@@ -153,10 +174,10 @@ public class PromptService {
      * [턴 2]
      * ...
      *
-     * @param context 프롬프트 컨텍스트
+     * @param context UserContext
      * @return 포맷팅된 대화 히스토리 문자열 (히스토리가 없으면 빈 문자열)
      */
-    private String buildHistory(PromptContext context) {
+    String buildHistory(UserContext context) {
         List<ConversationTurn> history = context.getConversationHistory();
 
         // 히스토리가 없거나 비어있으면 빈 문자열 반환
@@ -170,7 +191,8 @@ public class PromptService {
             ConversationTurn turn = history.get(i);
 
             sb.append(String.format("[턴 %d]\n", i + 1));
-            sb.append(turn.toString());
+            sb.append(String.format("사용자: %s\n", turn.getUserMessage()));
+            sb.append(String.format("AI: %s", turn.getAiResponse()));
 
             // 마지막 턴이 아니면 구분선 추가
             if (i < history.size() - 1) {
