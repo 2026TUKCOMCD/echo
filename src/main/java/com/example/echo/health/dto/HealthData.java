@@ -15,3 +15,4 @@ public class HealthData {
     private Double exerciseDistanceKm;
     private String exerciseActivity;
 }
+
