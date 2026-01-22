@@ -19,7 +19,6 @@ spring:
 openai:
   api:
     url: https://api.openai.com/v1
-    key: ${OPENAI_API_KEY}
   whisper:
     model: whisper-1
     language: ko
