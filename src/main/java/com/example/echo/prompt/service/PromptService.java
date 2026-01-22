@@ -1,5 +1,22 @@
 package com.example.echo.prompt.service;
 
+/*
+ * [2024-01 merge] develop 브랜치 병합으로 인한 변경사항:
+ *
+ * 1. import 경로 변경 (develop의 DTO 구조에 맞춤)
+ *    - prompt.dto.PromptContext → context.domain.UserContext
+ *    - prompt.dto.ConversationTurn → context.domain.ConversationTurn
+ *    - 새로 추가: health.dto.HealthData, user.dto.UserPreferences, common.dto.WeatherData
+ *
+ * 2. 필드 접근 방식 변경 (UserContext 구조에 맞춤)
+ *    - context.getUserName() → context.getPreferences().getName()
+ *    - context.getSteps() → context.getTodayHealthData().getSteps()
+ *    - context.getSleepHours() → sleepDurationMinutes / 60.0 (분→시간 변환)
+ *    - context.getWeather() → context.getTodayWeather().getDescription()
+ *
+ * 3. buildHistory() 직접 포맷팅
+ *    - develop의 ConversationTurn에 toString() 없어서 직접 포맷팅
+ */
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;

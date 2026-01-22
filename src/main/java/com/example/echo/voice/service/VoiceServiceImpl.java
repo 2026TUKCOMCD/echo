@@ -9,7 +9,9 @@ STTclient, TTS client 실행하는 곳
 package com.example.echo.voice.service;
 
 import com.example.echo.voice.client.STTClient;
-import com.example.echo.voice.dto.VoiceSettings;
+// [2024-01 merge] voice.dto.VoiceSettings → user.dto.VoiceSettings로 통일
+// 이유: user/dto에 더 완성도 높은 VoiceSettings가 있어 중복 제거
+import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import lombok.RequiredArgsConstructor;

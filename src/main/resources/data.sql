@@ -37,6 +37,12 @@ INSERT INTO prompt_templates (template_type, template_content, version, is_activ
 -- =====================================================
 -- CONVERSATION 프롬프트: 맥락 기반 대화 생성
 -- 변수: {{systemPrompt}}, {{todayContext}}, {{conversationHistory}}, {{userMessage}}
+--
+-- [2024-01 merge] 변수 구조 변경:
+--   변경 전: {{userName}}, {{userAge}}, {{steps}}, {{sleepHours}}, {{weather}} (개별 변수)
+--   변경 후: {{systemPrompt}}, {{todayContext}} (조합된 변수)
+--   이유: PromptService에서 buildSystemPrompt(), buildTodayContext() 메서드로
+--         각 구성요소를 조립하여 전달하는 구조로 변경 (관심사 분리)
 -- =====================================================
 INSERT INTO prompt_templates (template_type, template_content, version, is_active) VALUES (
     'CONVERSATION',
