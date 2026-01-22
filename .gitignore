@@ -39,5 +39,7 @@ out/
 ### Local config (contains secrets) ###
 application-local.yaml
 **/application-local.yaml
-
+application-dev.yaml
+application-prod.yaml
+.env
 nul
