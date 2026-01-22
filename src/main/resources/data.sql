@@ -36,17 +36,14 @@ INSERT INTO prompt_templates (template_type, template_content, version, is_activ
 
 -- =====================================================
 -- CONVERSATION 프롬프트: 맥락 기반 대화 생성
--- 변수: {{userName}}, {{userAge}}, {{steps}}, {{sleepHours}},
---       {{weather}}, {{conversationHistory}}, {{userMessage}}
+-- 변수: {{systemPrompt}}, {{todayContext}}, {{conversationHistory}}, {{userMessage}}
 -- =====================================================
 INSERT INTO prompt_templates (template_type, template_content, version, is_active) VALUES (
     'CONVERSATION',
-    '당신은 {{userName}}님({{userAge}}세)과 대화하는 친근한 AI입니다.
+    '{{systemPrompt}}
 
 ## 오늘의 정보
-- 오늘 {{userName}}님은 {{steps}}보 걸으셨습니다.
-- {{sleepHours}}시간 주무셨습니다.
-- 오늘 날씨는 {{weather}}입니다.
+{{todayContext}}
 
 ## 이전 대화
 {{conversationHistory}}
@@ -54,7 +51,7 @@ INSERT INTO prompt_templates (template_type, template_content, version, is_activ
 ## 사용자 발화
 {{userMessage}}
 
-위 정보를 바탕으로 {{userName}}님에게 따뜻하고 공감 어린 응답을 해주세요.
+위 정보를 바탕으로 따뜻하고 공감 어린 응답을 해주세요.
 응답은 1-2문장으로 짧게 해주세요.',
     1,
     true
