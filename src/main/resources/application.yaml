@@ -9,12 +9,18 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update  # 개발 중에는 update, 운영에서는 validate
+      ddl-auto: update  # 개발 중에는 update, 운영에서는 validate/ update 설정이면 처음에 테이블 생성, 이후에는 변경이 없으면 테이블 건드리지 않음
     show-sql: true
     properties:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.MySQL8Dialect
+    defer-datasource-initialization: true  # JPA 테이블 생성 후 data.sql 실행
+
+  # SQL 초기화 설정 (data.sql 실행)
+  sql:
+    init:
+      mode: always  # 매 시작마다 data.sql 실행 (개발용)
 
 openai:
   api:
