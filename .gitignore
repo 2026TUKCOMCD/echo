@@ -36,6 +36,9 @@ out/
 ### VS Code ###
 .vscode/
 
+### Claude Code ###
+.claude/
+
 ### Local config (contains secrets) ###
 application-local.yaml
 **/application-local.yaml
