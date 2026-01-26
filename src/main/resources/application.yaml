@@ -30,3 +30,11 @@ openai:
   whisper:
     model: whisper-1
     language: ko
+
+# Naver Clova Voice API 설정
+clova:
+  api:
+    url: https://naveropenapi.apigw.ntruss.com
+    # client-id, client-secret은 application-local.yaml에서 설정
+  tts:
+    speaker: nara  # 기본 음성 (따뜻한 여성)
