@@ -50,13 +50,24 @@ public class VoiceServiceImpl implements VoiceService {
         "gentle", "nminyoung" // 부드러운 여성 음성
     );
 
+    /*
+     * ========== STT (음성 → 텍스트) ==========
+     *
+     * [메인 흐름]
+     * 1. 입력: MultipartFile audioFile (음성 파일)
+     * 2. 검증: validateAudioFile() - 파일 존재/형식/크기 확인
+     * 3. 전처리: 없음 (파일 그대로 전송)
+     * 4. API 호출: sttClient.transcribe() → OpenAI Whisper API
+     * 5. 응답: WhisperTranscriptionResponse (JSON)
+     * 6. 출력: String (변환된 텍스트)
+     */
     @Override
-    public String speechToText(MultipartFile audioFile) { // 3. 메인 기능
+    public String speechToText(MultipartFile audioFile) {
+        // 1. 검증
         validateAudioFile(audioFile);
-        //-1 validateAudioFile() 파일 검사/1.파일이 있는지 2.음성 파일인지 3.크기맞는지
 
-        //-2 open Ai한테 물어보기
         try {
+            // 2. API 호출
             WhisperTranscriptionResponse response = sttClient.transcribe(
                     audioFile,
                     whisperModel,
@@ -64,19 +75,18 @@ public class VoiceServiceImpl implements VoiceService {
                     "json"
             );
 
-            //-3 답이 제대로 왔는지 확인
+            // 3. 응답 확인
             if (response == null || response.getText() == null) {
                 throw new VoiceProcessingException("Whisper API 응답이 비어있습니다.");
             }
 
-            //-4 (디버깅 용)기록하고 결과 돌려주기
             log.info("STT 변환 완료: {} bytes -> {} chars",
                     audioFile.getSize(),
                     response.getText().length());
 
             return response.getText();
 
-        } catch (VoiceProcessingException e) { //에러 처리
+        } catch (VoiceProcessingException e) {
             throw e;
         } catch (Exception e) {
             log.error("STT 처리 중 오류 발생: {}", e.getMessage(), e);
@@ -84,21 +94,38 @@ public class VoiceServiceImpl implements VoiceService {
         }
     }
 
+    /*
+     * ========== TTS (텍스트 → 음성) ==========
+     *
+     * [메인 흐름]
+     * 1. 입력: String text, VoiceSettings voiceSettings
+     * 2. 검증: validateText() - 빈값/글자수 확인
+     * 3. 전처리:
+     *    - resolveSpeaker(): voiceTone → Clova speaker 변환
+     *    - convertSpeed(): voiceSpeed → Clova speed 변환
+     *    - buildFormData(): API 요청 형식으로 조합
+     * 4. API 호출: ttsClient.synthesize() → Clova TTS API
+     * 5. 응답: byte[] (MP3 바이너리)
+     * 6. 출력: byte[] (음성 파일)
+     */
     @Override
     public byte[] textToSpeech(String text, VoiceSettings voiceSettings) {
+        // 1. 검증
         validateText(text);
 
         try {
+            // 2. 전처리 - 사용자 설정을 Clova API 형식으로 변환
             String speaker = resolveSpeaker(voiceSettings);
             int speed = convertSpeed(voiceSettings);
-
             String formData = buildFormData(text, speaker, speed);
 
             log.info("TTS 변환 시작: speaker={}, speed={}, text_length={}",
                     speaker, speed, text.length());
 
+            // 3. API 호출
             byte[] audioData = ttsClient.synthesize(formData);
 
+            // 4. 응답 확인
             if (audioData == null || audioData.length == 0) {
                 throw new VoiceProcessingException("Clova TTS API 응답이 비어있습니다.");
             }
