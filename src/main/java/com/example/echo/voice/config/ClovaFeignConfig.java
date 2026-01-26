@@ -9,6 +9,8 @@
  * 추가한 시기:2026.01.26
  *
  * 관여 Task: T3.5-1: TTSClient 구현 (8시간) #56
+ *
+ * Clova는 Naver Cloud Platform 방식으로 Client ID와 Secret 두 개를 사용해서 인증하는 차이만 있다
  */
 package com.example.echo.voice.config;
 

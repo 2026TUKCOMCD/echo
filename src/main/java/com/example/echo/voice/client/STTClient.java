@@ -2,6 +2,19 @@
  인터페이스 (주문서 양식 코드)
  실제 실행할 때, 즉 VoiceService에서는 값을 넣어준다.
 */
+
+/*
+ * OpenAI Whisper STT 클라이언트
+ *
+ * @FeignClient: 기본 URL 설정 (https://api.openai.com/v1)
+ * @PostMapping:
+ *   - value: API 경로 → 기본 URL + "/audio/transcriptions"
+ *   - consumes: 요청 형식 (MULTIPART_FORM_DATA - 파일 업로드용)
+ *
+ * @RequestPart: 각 필드를 개별 파트로 분리 전송 (파일 첨부 필요)
+ *   - file: 음성 파일
+ *   - model: 사용할 모델명
+ */
 package com.example.echo.voice.client;
 
 import com.example.echo.voice.config.OpenAIFeignConfig;
