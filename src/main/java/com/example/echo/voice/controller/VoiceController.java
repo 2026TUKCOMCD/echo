@@ -1,7 +1,22 @@
 /*
-"음성 파일 받는 접수창구"
-접수만 받고(controller), 실제 작업은 Service에게
-*/
+ * "음성 파일 받는 접수창구"
+ * 접수만 받고(controller), 실제 작업은 Service에게
+ *
+ * ========== DTO 사용 이유 ==========
+ *
+ * | 구분 | 요청                | 응답              |
+ * |------|---------------------|-------------------|
+ * | STT  | MultipartFile       | SttResponse (DTO) |
+ * | TTS  | TtsRequest (DTO)    | byte[]            |
+ *
+ * - 필드가 여러 개면 → DTO로 묶음
+ * - 단일 값이면 → 직접 사용
+ *
+ * STT 요청: 파일 1개만 받으면 됨 → DTO 불필요
+ * STT 응답: JSON 형태로 감싸서 반환 → DTO 필요
+ * TTS 요청: 여러 필드(text, voiceSettings)를 묶어야 함 → DTO 필요
+ * TTS 응답: MP3 바이너리 그대로 반환 → DTO 불필요
+ */
 package com.example.echo.voice.controller;
 
 import com.example.echo.voice.dto.SttResponse;
