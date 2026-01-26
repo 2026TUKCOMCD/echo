@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **대화 방식**: 음성 (STT/TTS)
 - **대화 시간**: 사용자가 직접 설정하는 하루 한번 고정 시간
 - **데이터 흐름**: 갤럭시 워치8 → Health Connect → 클라이언트 앱 → 서버
-- **데이터 종류**: 건강 데이터 > (수면, 걸음 수, 운동 거리, 운동 활동 명) / 사용자가 거주하는 지역의 오늘 날씨 / 사용자 선호도 ( 취미, 직업, 가족 관계, 선호 주제) / 사용자 정보 ( 이름, 나이, 생일
+- **데이터 종류**: 건강 데이터 > (수면, 걸음 수, 운동 거리, 운동 활동 명) / 사용자가 거주하는 지역의 오늘 날씨 / 사용자 선호도 (취미, 직업, 가족 관계, 선호 주제) / 사용자 정보 (이름, 나이, 생일)
 - **저장**: 사용자 정보/선호도/일기(DB), 대화 컨텍스트(메모리) , 프롬프트 템플릿( 대화, 시스템, 일기 3종류 ) (DB)
 
 ## 빌드 및 실행 명령어
@@ -82,6 +82,7 @@ ConversationController
 | 건강 데이터 | `health/dto/HealthData.java` |
 | 사용자 정보 | `user/dto/UserPreferences.java` |
 | 일기 | `diary/service/DiaryService.java` |
+| 프롬프트 | `prompt/service/PromptService.java` |
 
 ## 설정
 
@@ -103,3 +104,5 @@ ConversationController
 - **세션 저장**: `ConcurrentHashMap` 사용, 서버 재시작 시 세션 손실
 - **클라이언트**: 미정
 - **심박수**: 수집하지 않음 (걸음수, 수면, 운동 거리, 운동 활동명만 사용)
+- **프롬프트 템플릿**: DB 저장 예정, 현재 Entity/Repository 미구현
+- **사용자 생일**: UserPreferences에 birthday 필드 추가 예정
