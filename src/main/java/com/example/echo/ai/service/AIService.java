@@ -66,7 +66,7 @@ public class AIService {
                 .content(systemPrompt)
                 .build());
 
-        // 인사 생성을 위한 사용자 메시지 추가
+        // 인사 생성을 위한 사용자 메시지 추가 -> 날씨 정보로 바꿔야 하는 부분
         messages.add(ChatCompletionRequest.Message.builder()
                 .role("user")
                 .content("대화를 시작해주세요.")
