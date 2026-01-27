@@ -1,4 +1,6 @@
 spring:
+  profiles:
+    active: local
   application:
     name: echo
   datasource:
@@ -6,7 +8,6 @@ spring:
     username: echouser
     # password는 application-local.yaml에서 설정
     driver-class-name: com.mysql.cj.jdbc.Driver
-
   jpa:
     hibernate:
       ddl-auto: update  # 개발 중에는 update, 운영에서는 validate/ update 설정이면 처음에 테이블 생성, 이후에는 변경이 없으면 테이블 건드리지 않음
@@ -28,3 +29,7 @@ openai:
   whisper:
     model: whisper-1
     language: ko
+  chat:
+    model: gpt-4o-mini
+    temperature: 0.7
+    max-tokens: 1024
