@@ -9,12 +9,13 @@ import com.example.echo.diary.service.DiaryService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.concurrent.CompletableFuture;
-
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ConversationService {
@@ -79,14 +80,25 @@ public class ConversationService {
 
     @Transactional
     public void endConversation(Long userId) {
+        log.info("대화 종료 시작 - userId: {}", userId);
+
+        //1. 컨텍스트 조회
         UserContext context = contextService.getContext(userId);
+        log.info("컨텍스트 조회 완료 - 대화 턴 수: {}", context.getConversationHistory().size());
 
-        // 일기 생성 (비동기)
-        CompletableFuture.runAsync(() ->
-                diaryService.generateAndSaveDiary(context)
-        );
+        // 일기 생성 (비동기) -> MVP는 동기로 가도 됨. 비동기 트랜잭션 문제 발생 -> 해결 추진 예정
+        CompletableFuture.runAsync(() ->{ //중괄호 표시 ( 여러 줄 )
+                log.info("일기 생성 시작 (비동기) - userId: {}", userId);
+                try {
+                         diaryService.generateAndSaveDiary(context);
+                         log.info("일기 생성 완료 (비동기) - userId: {}", userId);
+                } catch (Exception e) {
+                         log.error("일기 생성 실패 - userId: {}", userId, e);
+                }
+             });
 
-        // 컨텍스트 정리
+        // 3. 컨텍스트 정리
         contextService.finalizeContext(userId);
+        log.info("=== 대화 종료 완료 - userId: {} ===", userId);
     }
 }
