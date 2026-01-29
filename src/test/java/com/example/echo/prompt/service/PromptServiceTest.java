@@ -75,7 +75,7 @@ class PromptServiceTest {
                 .content("{{userName}}님은 {{userAge}}세입니다.")
                 .build();
 
-        when(promptTemplateRepository.findByTypeAndIsActiveTrue(PromptType.SYSTEM))
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
                 .thenReturn(Optional.of(template));
 
         // When
@@ -89,7 +89,7 @@ class PromptServiceTest {
     @DisplayName("buildSystemPrompt - 템플릿 없음: IllegalStateException 발생")
     void buildSystemPrompt_templateNotFound() {
         // Given
-        when(promptTemplateRepository.findByTypeAndIsActiveTrue(PromptType.SYSTEM))
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
                 .thenReturn(Optional.empty());
 
         // When & Then
@@ -112,7 +112,7 @@ class PromptServiceTest {
                 .content("안녕하세요 {{userName}}님")
                 .build();
 
-        when(promptTemplateRepository.findByTypeAndIsActiveTrue(PromptType.SYSTEM))
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
                 .thenReturn(Optional.of(template));
 
         // When
@@ -138,9 +138,9 @@ class PromptServiceTest {
                 .content("[시스템]{{systemPrompt}}\n[컨텍스트]{{todayContext}}\n[히스토리]{{conversationHistory}}\n[메시지]{{userMessage}}")
                 .build();
 
-        when(promptTemplateRepository.findByTypeAndIsActiveTrue(PromptType.SYSTEM))
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
                 .thenReturn(Optional.of(systemTemplate));
-        when(promptTemplateRepository.findByTypeAndIsActiveTrue(PromptType.CONVERSATION))
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.CONVERSATION))
                 .thenReturn(Optional.of(conversationTemplate));
 
         // When

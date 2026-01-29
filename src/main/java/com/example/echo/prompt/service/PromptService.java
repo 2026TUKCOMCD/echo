@@ -63,7 +63,7 @@ public class PromptService {
     public String buildSystemPrompt(UserContext context) {
         // 1. DB에서 활성화된 SYSTEM 템플릿 조회
         PromptTemplate template = promptTemplateRepository
-                .findByTypeAndIsActiveTrue(PromptType.SYSTEM)
+                .findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM)
                 .orElseThrow(() -> new IllegalStateException(
                         "활성화된 SYSTEM 프롬프트 템플릿이 없습니다."));
 
@@ -94,7 +94,7 @@ public class PromptService {
     public String buildConversationPrompt(UserContext context, String userMessage) {
         // 1. DB에서 활성화된 CONVERSATION 템플릿 조회
         PromptTemplate template = promptTemplateRepository
-                .findByTypeAndIsActiveTrue(PromptType.CONVERSATION)
+                .findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.CONVERSATION)
                 .orElseThrow(() -> new IllegalStateException(
                         "활성화된 CONVERSATION 프롬프트 템플릿이 없습니다."));
 

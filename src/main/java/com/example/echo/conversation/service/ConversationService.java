@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
 import java.util.concurrent.CompletableFuture;
 @Slf4j
 @Service
@@ -46,6 +47,7 @@ public class ConversationService {
         return ConversationStartResponse.builder()
                 .message(firstMessage)
                 .audioData(audioData)
+                .timestamp(LocalDateTime.now())
                 .build();
     }
 

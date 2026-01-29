@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public interface TTSClient {
 
     @PostMapping(
-        value = "/voice/v1/tts",
+        value = "/tts-premium/v1/tts",
         consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
         produces = "audio/mpeg"
     )

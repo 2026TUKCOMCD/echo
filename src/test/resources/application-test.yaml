@@ -30,11 +30,14 @@ openai:
     temperature: 0.7
     max-tokens: 512
 
-# Clova TTS API 설정
+# Clova TTS API 설정 - 실제 키는 application-local.yaml에서 로드
 clova:
   api:
     url: https://naveropenapi.apigw.ntruss.com
-    client-id: ${CLOVA_CLIENT_ID}
-    client-secret: ${CLOVA_CLIENT_SECRET}
   tts:
     speaker: nara
+
+logging:
+  level:
+    feign: DEBUG
+    com.example.echo: DEBUG

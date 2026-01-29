@@ -86,7 +86,6 @@ class VoiceIntegrationTest {
     }
 
     @Nested
-    @Disabled("Clova API 설정 완료 후 활성화 필요")
     @DisplayName("TTS 통합 테스트 - /api/voice/tts")
     class TtsIntegrationTest {
 

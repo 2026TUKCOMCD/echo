@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
@@ -33,10 +34,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "local"})
 @Sql(scripts = "/data.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-@Disabled("Clova TTS API 설정 완료 후 활성화 필요")
 @DisplayName("대화 흐름 E2E 통합 테스트")
 class ConversationIntegrationTest {
 
@@ -162,7 +162,7 @@ class ConversationIntegrationTest {
             System.out.println("\n[2단계] 첫 번째 사용자 메시지 처리...");
             ClassPathResource audio1 = new ClassPathResource("test-audio/정왕동.m4a");
             MockMultipartFile file1 = new MockMultipartFile(
-                    "audio", "turn1.mp3", "audio/mpeg",
+                    "audio", "turn1.m4a", "audio/m4a",
                     Files.readAllBytes(audio1.getFile().toPath())
             );
 
@@ -179,7 +179,7 @@ class ConversationIntegrationTest {
             // === 3단계: 두 번째 사용자 메시지 ===
             System.out.println("\n[3단계] 두 번째 사용자 메시지 처리...");
             MockMultipartFile file2 = new MockMultipartFile(
-                    "audio", "turn2.mp3", "audio/mpeg",
+                    "audio", "turn2.m4a", "audio/m4a",
                     Files.readAllBytes(audio1.getFile().toPath())
             );
 
@@ -241,17 +241,16 @@ class ConversationIntegrationTest {
 
             MockMultipartFile audioFile = new MockMultipartFile(
                     "audio",
-                    "test.mp3",
-                    "audio/mpeg",
+                    "test.m4a",
+                    "audio/m4a",
                     audioBytes
             );
 
-            // When & Then - 컨텍스트가 없으므로 에러 예상
-            // 실제 동작에 따라 예상 결과 조정 필요
-            mockMvc.perform(multipart("/api/conversations/message")
+            // When & Then - 컨텍스트가 없으므로 IllegalStateException 발생 예상
+            assertThatThrownBy(() ->
+                    mockMvc.perform(multipart("/api/conversations/message")
                             .file(audioFile))
-                    .andDo(print());
-            // 에러 응답 또는 예외 처리 방식에 따라 검증 추가
+            ).hasCauseInstanceOf(IllegalStateException.class);
         }
     }
 }
