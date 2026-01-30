@@ -36,6 +36,9 @@ out/
 ### VS Code ###
 .vscode/
 
+### OS generated files ###
+*.stackdump
+
 ### Claude Code ###
 .claude/
 
