@@ -294,8 +294,8 @@
 
         // VAD 설정
         const VAD_CONFIG = {
-            VOICE_THRESHOLD: 15,        // 음성 감지 임계값
-            SILENCE_TIMEOUT: 1500,      // 침묵 후 전송까지 대기 (ms)
+            VOICE_THRESHOLD: 10,        // 음성 감지 임계값 (낮을수록 민감)
+            SILENCE_TIMEOUT: 3000,      // 침묵 후 전송까지 대기 (ms)
             MIN_RECORDING_TIME: 500,    // 최소 녹음 시간 (ms)
             CHECK_INTERVAL: 50          // 음성 레벨 체크 간격 (ms)
         };

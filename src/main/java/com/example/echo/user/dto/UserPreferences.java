@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Data
@@ -15,6 +16,7 @@ public class UserPreferences {
     private Long userId;
     private String name;
     private Integer age;
+    private LocalDate birthday;
     private String location;
     private String familyInfo;
     private String occupation;

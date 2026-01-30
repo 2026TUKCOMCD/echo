@@ -4,6 +4,7 @@ import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Service
@@ -15,6 +16,7 @@ public class UserService {
                 .userId(userId)
                 .name("김영호")
                 .age(68)
+                .birthday(LocalDate.of(1957, 3, 15))
                 .location("서울시 서초구")
                 .familyInfo("아내, 아들 1명, 손녀 2명")
                 .occupation("은퇴 (전 공무원)")

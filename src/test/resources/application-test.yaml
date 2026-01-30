@@ -34,6 +34,8 @@ openai:
 clova:
   api:
     url: https://naveropenapi.apigw.ntruss.com
+    client-id: kaahdyn0dh
+    client-secret: biwN8UUr7HyYMNHFDSPKcewRyhBVdWPuTZpiYTBt
   tts:
     speaker: nara
 
