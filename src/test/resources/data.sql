@@ -1,5 +1,8 @@
 -- 테스트용 프롬프트 템플릿 초기 데이터
 
+-- 기존 데이터 삭제 (테스트 환경용)
+DELETE FROM prompt_templates WHERE template_type IN ('SYSTEM', 'CONVERSATION', 'DIARY');
+
 -- SYSTEM 프롬프트
 INSERT INTO prompt_templates (template_type, template_content, version, is_active) VALUES (
     'SYSTEM',

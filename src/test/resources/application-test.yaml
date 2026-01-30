@@ -4,6 +4,7 @@ spring:
     username: echouser
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -12,10 +13,10 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.MySQL8Dialect
-    defer-datasource-initialization: false
+    defer-datasource-initialization: true  # JPA 테이블 생성 후 data.sql 실행
   sql:
     init:
-      mode: never
+      mode: always  # 테스트 시작 시 data.sql 자동 실행
 
 # OpenAI API 설정
 openai:
