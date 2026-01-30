@@ -19,18 +19,18 @@ import java.util.Optional;
 public interface PromptTemplateRepository extends JpaRepository<PromptTemplate, Long> {
 
     /**
-     * 타입과 활성화 상태로 템플릿 조회
+     * 타입과 활성화 상태로 템플릿 조회 (최신 1개)
      *
      * 실제 서비스에서 사용하는 메서드
-     * 활성화된(is_active=true) 템플릿만 조회
+     * 활성화된(is_active=true) 템플릿 중 가장 최근 것 조회
      *
      * 사용 예시:
-     * Optional<PromptTemplate> template = repository.findByTypeAndIsActiveTrue(PromptType.SYSTEM);
+     * Optional<PromptTemplate> template = repository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM);
      *
      * @param type 프롬프트 타입 (SYSTEM, CONVERSATION, DIARY)
-     * @return 해당 타입의 활성화된 템플릿 (없으면 Optional.empty())
+     * @return 해당 타입의 활성화된 최신 템플릿 (없으면 Optional.empty())
      */
-    Optional<PromptTemplate> findByTypeAndIsActiveTrue(PromptType type);
+    Optional<PromptTemplate> findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType type);
 
     /**
      * 타입으로 템플릿 조회 (활성화 여부 무관)

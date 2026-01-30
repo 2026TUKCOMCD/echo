@@ -54,7 +54,11 @@ public class PromptService {
      * AI의 페르소나와 대화 규칙을 정의하는 프롬프트
      * 모든 대화의 기본이 되며, 대화 시작 시 1회 생성
      *
-     * 템플릿 변수: {{userName}}, {{userAge}}
+     * 템플릿 변수 (v2):
+     * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
+     * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}
+     * - 날씨: {{weather}}, {{temperature}}
+     * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{sleepInfo}}
      *
      * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
@@ -63,19 +67,61 @@ public class PromptService {
     public String buildSystemPrompt(UserContext context) {
         // 1. DB에서 활성화된 SYSTEM 템플릿 조회
         PromptTemplate template = promptTemplateRepository
-                .findByTypeAndIsActiveTrue(PromptType.SYSTEM)
+                .findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM)
                 .orElseThrow(() -> new IllegalStateException(
                         "활성화된 SYSTEM 프롬프트 템플릿이 없습니다."));
 
-        // 2. UserContext에서 사용자 정보 추출
+        // 2. UserContext에서 데이터 추출
         UserPreferences preferences = context.getPreferences();
+        HealthData healthData = context.getTodayHealthData();
+        WeatherData weatherData = context.getTodayWeather();
 
         Map<String, Object> variables = new HashMap<>();
+
+        // 2-1. 사용자 기본 정보
         variables.put("userName", preferences != null ? preferences.getName() : "사용자");
         variables.put("userAge", preferences != null ? preferences.getAge() : "");
+        variables.put("userBirthday", preferences != null && preferences.getBirthday() != null
+                ? preferences.getBirthday().toString() : "");
+
+        // 2-2. 사용자 선호도
+        variables.put("hobby", preferences != null ? preferences.getHobbies() : "");
+        variables.put("job", preferences != null ? preferences.getOccupation() : "");
+        variables.put("family", preferences != null ? preferences.getFamilyInfo() : "");
+        variables.put("preferredTopics", preferences != null ? preferences.getPreferredTopics() : "");
+
+        // 2-3. 날씨 정보
+        variables.put("weather", weatherData != null ? weatherData.getDescription() : "");
+        variables.put("temperature", weatherData != null && weatherData.getTemperature() != null
+                ? weatherData.getTemperature() + "°C" : "");
+
+        // 2-4. 건강 데이터
+        variables.put("steps", healthData != null && healthData.getSteps() != null
+                ? String.format("%,d보", healthData.getSteps()) : "");
+        variables.put("exerciseDistance", healthData != null && healthData.getExerciseDistanceKm() != null
+                ? String.format("%.1fkm", healthData.getExerciseDistanceKm()) : "");
+        variables.put("exerciseActivity", healthData != null ? healthData.getExerciseActivity() : "");
+        variables.put("sleepInfo", healthData != null && healthData.getSleepDurationMinutes() != null
+                ? formatSleepInfo(healthData.getSleepDurationMinutes()) : "");
 
         // 3. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
+    }
+
+    /**
+     * 수면 시간을 읽기 쉬운 형식으로 변환
+     *
+     * @param minutes 수면 시간 (분)
+     * @return "X시간 Y분" 형식의 문자열
+     */
+    private String formatSleepInfo(Integer minutes) {
+        if (minutes == null) return "";
+        int hours = minutes / 60;
+        int mins = minutes % 60;
+        if (mins == 0) {
+            return hours + "시간";
+        }
+        return hours + "시간 " + mins + "분";
     }
 
     /**
@@ -94,7 +140,7 @@ public class PromptService {
     public String buildConversationPrompt(UserContext context, String userMessage) {
         // 1. DB에서 활성화된 CONVERSATION 템플릿 조회
         PromptTemplate template = promptTemplateRepository
-                .findByTypeAndIsActiveTrue(PromptType.CONVERSATION)
+                .findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.CONVERSATION)
                 .orElseThrow(() -> new IllegalStateException(
                         "활성화된 CONVERSATION 프롬프트 템플릿이 없습니다."));
 
