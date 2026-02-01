@@ -77,6 +77,7 @@ public class ConversationService {
                 .userMessage(userMessage)
                 .aiResponse(aiResponse)
                 .audioData(audioData)
+                .timestamp(LocalDateTime.now())
                 .build();
     }
 
