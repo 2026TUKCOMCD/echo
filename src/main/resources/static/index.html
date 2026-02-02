@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echo - AI 음성 대화</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 80vh;
+            max-height: 700px;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+        }
+
+        #status {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            padding: 5px 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+
+        /* 마이크 레벨 표시 */
+        .mic-level-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .mic-icon {
+            font-size: 1.2rem;
+        }
+
+        .mic-level-bar {
+            width: 150px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .mic-level-fill {
+            height: 100%;
+            width: 0%;
+            background: #4ade80;
+            border-radius: 4px;
+            transition: width 0.1s ease;
+        }
+
+        .mic-level-fill.recording {
+            background: #f87171;
+        }
+
+        #conversation {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin: 12px 0;
+            padding: 12px 16px;
+            border-radius: 18px;
+            max-width: 85%;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.ai {
+            background: white;
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .message.ai::before {
+            content: '🤖 AI';
+            display: block;
+            font-size: 0.75rem;
+            color: #667eea;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+
+        .message.user {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.user::before {
+            content: '👤 나';
+            display: block;
+            font-size: 0.75rem;
+            opacity: 0.8;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+
+        .message.system {
+            background: #e9ecef;
+            color: #6c757d;
+            text-align: center;
+            margin: 20px auto;
+            font-size: 0.85rem;
+            max-width: 70%;
+        }
+
+        footer {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #eee;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 30px;
+        }
+
+        button {
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            padding: 15px 40px;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #startBtn {
+            background: #28a745;
+            color: white;
+        }
+
+        #startBtn:hover:not(:disabled) {
+            background: #218838;
+            transform: scale(1.05);
+        }
+
+        #endBtn {
+            background: #dc3545;
+            color: white;
+        }
+
+        #endBtn:hover:not(:disabled) {
+            background: #c82333;
+            transform: scale(1.05);
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin: 10px 20px;
+            text-align: center;
+        }
+
+        /* 듣기 상태 애니메이션 */
+        .listening-indicator {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            margin-top: 5px;
+        }
+
+        .listening-indicator.active {
+            display: flex;
+        }
+
+        .listening-dot {
+            width: 8px;
+            height: 8px;
+            background: #4ade80;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .listening-dot:nth-child(1) { animation-delay: -0.32s; }
+        .listening-dot:nth-child(2) { animation-delay: -0.16s; }
+        .listening-dot:nth-child(3) { animation-delay: 0s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        .recording-indicator {
+            display: none;
+            color: #f87171;
+            font-weight: bold;
+            animation: blink 1s infinite;
+        }
+
+        .recording-indicator.active {
+            display: block;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Echo AI 대화</h1>
+            <div id="status">대화를 시작해주세요</div>
+            <div class="mic-level-container" id="micLevelContainer" style="display: none;">
+                <span class="mic-icon">🎤</span>
+                <div class="mic-level-bar">
+                    <div class="mic-level-fill" id="micLevelFill"></div>
+                </div>
+            </div>
+            <div class="listening-indicator" id="listeningIndicator">
+                <div class="listening-dot"></div>
+                <div class="listening-dot"></div>
+                <div class="listening-dot"></div>
+            </div>
+            <div class="recording-indicator" id="recordingIndicator">● 녹음 중...</div>
+        </header>
+
+        <main id="conversation">
+            <!-- 대화 내용이 여기에 추가됨 -->
+        </main>
+
+        <footer>
+            <button id="startBtn">대화 시작</button>
+            <button id="endBtn" disabled>대화 종료</button>
+        </footer>
+    </div>
+
+    <script>
+        // DOM 요소
+        const startBtn = document.getElementById('startBtn');
+        const endBtn = document.getElementById('endBtn');
+        const conversation = document.getElementById('conversation');
+        const status = document.getElementById('status');
+        const micLevelContainer = document.getElementById('micLevelContainer');
+        const micLevelFill = document.getElementById('micLevelFill');
+        const listeningIndicator = document.getElementById('listeningIndicator');
+        const recordingIndicator = document.getElementById('recordingIndicator');
+
+        // VAD 설정
+        const VAD_CONFIG = {
+            VOICE_THRESHOLD: 10,        // 음성 감지 임계값 (낮을수록 민감)
+            SILENCE_TIMEOUT: 3000,      // 침묵 후 전송까지 대기 (ms)
+            MIN_RECORDING_TIME: 500,    // 최소 녹음 시간 (ms)
+            CHECK_INTERVAL: 50          // 음성 레벨 체크 간격 (ms)
+        };
+
+        // 상태 관리
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let audioContext = null;
+        let analyser = null;
+        let dataArray = null;
+        let stream = null;
+
+        let isConversationActive = false;
+        let isListening = false;
+        let isRecording = false;
+        let recordingStartTime = null;
+        let lastVoiceTime = null;
+        let vadInterval = null;
+
+        // 상태 메시지 업데이트
+        function setStatus(message) {
+            status.textContent = message;
+        }
+
+        // 대화 메시지 추가
+        function addMessage(type, text) {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = text;
+            conversation.appendChild(div);
+            conversation.scrollTop = conversation.scrollHeight;
+        }
+
+        // 시스템 메시지 추가
+        function addSystemMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'message system';
+            div.textContent = text;
+            conversation.appendChild(div);
+            conversation.scrollTop = conversation.scrollHeight;
+        }
+
+        // 에러 메시지 표시
+        function showError(message) {
+            const div = document.createElement('div');
+            div.className = 'error-message';
+            div.textContent = message;
+            conversation.appendChild(div);
+            conversation.scrollTop = conversation.scrollHeight;
+        }
+
+        // Base64 오디오 재생
+        async function playAudio(base64Audio) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const binary = atob(base64Audio);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i);
+                    }
+                    const blob = new Blob([bytes], { type: 'audio/mpeg' });
+                    const url = URL.createObjectURL(blob);
+
+                    const audio = new Audio(url);
+                    audio.onended = () => {
+                        URL.revokeObjectURL(url);
+                        resolve();
+                    };
+                    audio.onerror = (e) => {
+                        URL.revokeObjectURL(url);
+                        reject(e);
+                    };
+                    audio.play().catch(reject);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+
+        // 마이크 초기화
+        async function initMicrophone() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log('[마이크] 권한 획득 성공');
+
+                // Web Audio API 설정
+                audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                // MediaRecorder 설정
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    console.log(`[VAD] 녹음 완료 - ${audioChunks.length}개 청크`);
+                    if (audioChunks.length > 0 && isConversationActive) {
+                        await sendAudioToServer();
+                    }
+                };
+
+                return true;
+            } catch (error) {
+                console.error('[마이크] 초기화 실패:', error);
+                showError('마이크 권한을 허용해주세요.');
+                return false;
+            }
+        }
+
+        // 음성 레벨 가져오기
+        function getAudioLevel() {
+            if (!analyser || !dataArray) return 0;
+            analyser.getByteFrequencyData(dataArray);
+            return dataArray.reduce((a, b) => a + b) / dataArray.length;
+        }
+
+        // 마이크 레벨 UI 업데이트
+        function updateMicLevel(level) {
+            const percentage = Math.min(level * 2, 100);
+            micLevelFill.style.width = `${percentage}%`;
+
+            if (isRecording) {
+                micLevelFill.classList.add('recording');
+            } else {
+                micLevelFill.classList.remove('recording');
+            }
+        }
+
+        // VAD 시작 (음성 감지 대기)
+        function startListening() {
+            if (!isConversationActive) return;
+
+            isListening = true;
+            isRecording = false;
+            audioChunks = [];
+
+            micLevelContainer.style.display = 'flex';
+            listeningIndicator.classList.add('active');
+            recordingIndicator.classList.remove('active');
+            setStatus('말씀해주세요...');
+
+            console.log('[VAD] 음성 감지 대기 시작');
+
+            vadInterval = setInterval(() => {
+                if (!isConversationActive) {
+                    stopListening();
+                    return;
+                }
+
+                const level = getAudioLevel();
+                updateMicLevel(level);
+
+                if (!isRecording && level > VAD_CONFIG.VOICE_THRESHOLD) {
+                    // 음성 감지됨 → 녹음 시작
+                    startRecording();
+                } else if (isRecording) {
+                    if (level > VAD_CONFIG.VOICE_THRESHOLD) {
+                        // 계속 말하는 중
+                        lastVoiceTime = Date.now();
+                    } else {
+                        // 침묵 감지
+                        const silenceDuration = Date.now() - lastVoiceTime;
+                        if (silenceDuration > VAD_CONFIG.SILENCE_TIMEOUT) {
+                            // 충분한 침묵 → 녹음 종료
+                            stopRecording();
+                        }
+                    }
+                }
+            }, VAD_CONFIG.CHECK_INTERVAL);
+        }
+
+        // VAD 중지
+        function stopListening() {
+            isListening = false;
+            if (vadInterval) {
+                clearInterval(vadInterval);
+                vadInterval = null;
+            }
+            listeningIndicator.classList.remove('active');
+            recordingIndicator.classList.remove('active');
+            micLevelContainer.style.display = 'none';
+        }
+
+        // 녹음 시작 (VAD에 의해 자동 호출)
+        function startRecording() {
+            if (isRecording) return;
+
+            console.log('[VAD] 음성 감지 → 녹음 시작');
+            isRecording = true;
+            recordingStartTime = Date.now();
+            lastVoiceTime = Date.now();
+            audioChunks = [];
+
+            listeningIndicator.classList.remove('active');
+            recordingIndicator.classList.add('active');
+            setStatus('듣고 있습니다...');
+
+            mediaRecorder.start(100);
+        }
+
+        // 녹음 종료 (VAD에 의해 자동 호출)
+        function stopRecording() {
+            if (!isRecording) return;
+
+            const recordingDuration = Date.now() - recordingStartTime;
+            console.log(`[VAD] 침묵 감지 → 녹음 종료 (${recordingDuration}ms)`);
+
+            isRecording = false;
+            stopListening();
+
+            if (recordingDuration < VAD_CONFIG.MIN_RECORDING_TIME) {
+                console.log('[VAD] 녹음이 너무 짧음 - 무시');
+                mediaRecorder.stop();
+                audioChunks = [];
+                if (isConversationActive) {
+                    startListening();
+                }
+                return;
+            }
+
+            mediaRecorder.stop();
+        }
+
+        // 서버로 오디오 전송
+        async function sendAudioToServer() {
+            try {
+                setStatus('AI가 응답을 생성 중...');
+
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                console.log(`[전송] 오디오 크기: ${audioBlob.size} bytes`);
+
+                if (audioBlob.size < 1000) {
+                    console.log('[전송] 오디오가 너무 작음 - 다시 듣기');
+                    if (isConversationActive) {
+                        startListening();
+                    }
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+
+                const response = await fetch('/api/conversations/message', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`서버 오류: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('[전송] 응답:', data.userMessage);
+
+                // 사용자 발화 표시
+                addMessage('user', data.userMessage);
+
+                // AI 응답 표시
+                addMessage('ai', data.aiResponse);
+
+                // 음성 재생
+                setStatus('AI가 말하고 있습니다...');
+                if (data.audioData) {
+                    await playAudio(data.audioData);
+                }
+
+                // 다시 듣기 시작
+                if (isConversationActive) {
+                    startListening();
+                }
+
+            } catch (error) {
+                console.error('메시지 전송 실패:', error);
+                showError('응답을 받을 수 없습니다. 다시 시도해주세요.');
+                setStatus('오류 발생');
+
+                // 에러 후에도 다시 듣기
+                if (isConversationActive) {
+                    setTimeout(() => startListening(), 2000);
+                }
+            }
+        }
+
+        // 대화 시작
+        async function startConversation() {
+            try {
+                setStatus('대화 시작 중...');
+                startBtn.disabled = true;
+
+                // 마이크 초기화
+                const micReady = await initMicrophone();
+                if (!micReady) {
+                    startBtn.disabled = false;
+                    setStatus('마이크 권한이 필요합니다');
+                    return;
+                }
+
+                // API 호출
+                const response = await fetch('/api/conversations/start', {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`서버 오류: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // 대화 시작 성공
+                isConversationActive = true;
+                conversation.innerHTML = '';
+                addSystemMessage('대화가 시작되었습니다');
+
+                // AI 인사 표시
+                addMessage('ai', data.message);
+
+                // 음성 재생
+                setStatus('AI가 말하고 있습니다...');
+                endBtn.disabled = false;
+
+                if (data.audioData) {
+                    await playAudio(data.audioData);
+                }
+
+                // AI 말 끝나면 자동으로 듣기 시작
+                startListening();
+
+            } catch (error) {
+                console.error('대화 시작 실패:', error);
+                showError('대화를 시작할 수 없습니다. 다시 시도해주세요.');
+                setStatus('오류 발생');
+                startBtn.disabled = false;
+            }
+        }
+
+        // 대화 종료
+        async function endConversation() {
+            try {
+                setStatus('대화 종료 중...');
+                isConversationActive = false;
+                stopListening();
+                endBtn.disabled = true;
+
+                const response = await fetch('/api/conversations/end', {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`서버 오류: ${response.status}`);
+                }
+
+                // 대화 종료 성공
+                addSystemMessage('대화가 종료되었습니다');
+                setStatus('대화를 시작해주세요');
+                startBtn.disabled = false;
+
+                // 리소스 정리
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                if (audioContext) {
+                    audioContext.close();
+                }
+                mediaRecorder = null;
+                audioContext = null;
+                analyser = null;
+
+            } catch (error) {
+                console.error('대화 종료 실패:', error);
+                showError('대화 종료에 실패했습니다.');
+                setStatus('오류 발생');
+                endBtn.disabled = false;
+            }
+        }
+
+        // 이벤트 리스너
+        startBtn.addEventListener('click', startConversation);
+        endBtn.addEventListener('click', endConversation);
+
+        // 페이지 언로드 시 대화 종료
+        window.addEventListener('beforeunload', () => {
+            if (isConversationActive) {
+                navigator.sendBeacon('/api/conversations/end');
+            }
+        });
+    </script>
+</body>
+</html>

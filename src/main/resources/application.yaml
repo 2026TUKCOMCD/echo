@@ -1,18 +1,43 @@
 spring:
+  profiles:
+    active: local
   application:
     name: echo
   datasource:
     url: jdbc:mysql://localhost:3306/echo_db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
     username: echouser
-    password: "너희 비밀번호"
+    # password는 application-local.yaml에서 설정
     driver-class-name: com.mysql.cj.jdbc.Driver
-
   jpa:
     hibernate:
-      ddl-auto: update  # 개발 중에는 update, 운영에서는 validate
+      ddl-auto: update  # 개발 중에는 update, 운영에서는 validate/ update 설정이면 처음에 테이블 생성, 이후에는 변경이 없으면 테이블 건드리지 않음
     show-sql: true
     properties:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.MySQL8Dialect
+    defer-datasource-initialization: true  # JPA 테이블 생성 후 data.sql 실행
 
+  # SQL 초기화 설정 (data.sql 실행)
+  sql:
+    init:
+      mode: always  # 매 시작마다 data.sql 실행 (개발용)
+
+openai:
+  api:
+    url: https://api.openai.com/v1
+  whisper:
+    model: whisper-1
+    language: ko
+  chat:
+    model: gpt-4o-mini
+    temperature: 0.7
+    max-tokens: 1024
+
+# Naver Clova Voice API 설정
+clova:
+  api:
+    url: https://naveropenapi.apigw.ntruss.com
+    # client-id, client-secret은 application-local.yaml에서 설정
+  tts:
+    speaker: nara  # 기본 음성 (따뜻한 여성)
