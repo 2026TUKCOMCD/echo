@@ -1,0 +1,243 @@
+{
+	"info": {
+		"_postman_id": "echo-api-collection",
+		"name": "Echo API Collection",
+		"description": "경도인지장애 분들의 치매 예방을 위한 AI 음성 대화 시스템 API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Conversation",
+			"description": "대화 세션 관리 API",
+			"item": [
+				{
+					"name": "대화 시작",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/conversations/start",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "conversations", "start"]
+						},
+						"description": "사용자 음성 대화 세션을 시작합니다.\n\n**응답 필드:**\n- message: 대화 시작 메시지\n- audioData: AI 응답 음성 바이너리 (Base64)\n- timestamp: 응답 생성 시간"
+					},
+					"response": [
+						{
+							"name": "성공 응답 예시",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{baseUrl}}/api/conversations/start",
+									"host": ["{{baseUrl}}"],
+									"path": ["api", "conversations", "start"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n  \"message\": \"안녕하세요! 오늘 하루는 어떠셨나요?\",\n  \"audioData\": \"base64EncodedAudioData...\",\n  \"timestamp\": \"2024-01-15T10:30:00\"\n}"
+						}
+					]
+				},
+				{
+					"name": "메시지 전송 (음성)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "audio",
+									"type": "file",
+									"src": "",
+									"description": "사용자 음성 파일 (mp3, wav, webm 등)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/conversations/message",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "conversations", "message"]
+						},
+						"description": "사용자 음성 메시지를 처리합니다.\n\n**처리 흐름:** STT → AI 응답 생성 → TTS\n\n**요청:**\n- audio: 음성 파일 (multipart/form-data)\n\n**응답 필드:**\n- userMessage: 사용자 음성을 텍스트로 변환한 메시지\n- aiResponse: AI 응답 텍스트\n- audioData: AI 응답 음성 바이너리 (Base64)\n- timestamp: 응답 생성 시간"
+					},
+					"response": [
+						{
+							"name": "성공 응답 예시",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{baseUrl}}/api/conversations/message",
+									"host": ["{{baseUrl}}"],
+									"path": ["api", "conversations", "message"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n  \"userMessage\": \"오늘 산책을 다녀왔어요\",\n  \"aiResponse\": \"산책을 다녀오셨군요! 날씨가 좋았나요? 어디로 산책을 가셨어요?\",\n  \"audioData\": \"base64EncodedAudioData...\",\n  \"timestamp\": \"2024-01-15T10:32:00\"\n}"
+						}
+					]
+				},
+				{
+					"name": "대화 종료",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/conversations/end",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "conversations", "end"]
+						},
+						"description": "대화 세션을 종료하고 일기를 생성합니다.\n\n**처리:** DiaryService가 비동기로 대화 내용을 일기 형식으로 변환하여 저장\n\n**응답 필드:**\n- endedAt: 대화 종료 시간"
+					},
+					"response": [
+						{
+							"name": "성공 응답 예시",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{baseUrl}}/api/conversations/end",
+									"host": ["{{baseUrl}}"],
+									"path": ["api", "conversations", "end"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n  \"endedAt\": \"2024-01-15T10:45:00\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Voice",
+			"description": "음성 처리 API (STT/TTS)",
+			"item": [
+				{
+					"name": "STT (음성 → 텍스트)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "변환할 음성 파일 (mp3, wav, webm 등)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/voice/stt",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "voice", "stt"]
+						},
+						"description": "음성 파일을 텍스트로 변환합니다.\n\n**사용 API:** OpenAI Whisper API\n\n**요청:**\n- file: 음성 파일 (multipart/form-data)\n\n**응답 필드:**\n- text: 변환된 텍스트"
+					},
+					"response": [
+						{
+							"name": "성공 응답 예시",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{baseUrl}}/api/voice/stt",
+									"host": ["{{baseUrl}}"],
+									"path": ["api", "voice", "stt"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"body": "{\n  \"text\": \"오늘 날씨가 참 좋네요\"\n}"
+						}
+					]
+				},
+				{
+					"name": "TTS (텍스트 → 음성)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"안녕하세요, 오늘 하루는 어떠셨나요?\",\n  \"voiceSettings\": {\n    \"voiceSpeed\": 1.0,\n    \"voiceTone\": \"warm\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/voice/tts",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "voice", "tts"]
+						},
+						"description": "텍스트를 음성으로 변환합니다.\n\n**사용 API:** Clova TTS API\n\n**요청 필드:**\n- text: 변환할 텍스트 (필수)\n- voiceSettings.voiceSpeed: 음성 속도 (기본값: 1.0)\n- voiceSettings.voiceTone: 음성 톤 (기본값: \"warm\")\n\n**응답:**\n- Content-Type: audio/mpeg\n- Body: MP3 바이너리 오디오 데이터"
+					},
+					"response": [
+						{
+							"name": "성공 응답 설명",
+							"originalRequest": {
+								"method": "POST",
+								"url": {
+									"raw": "{{baseUrl}}/api/voice/tts",
+									"host": ["{{baseUrl}}"],
+									"path": ["api", "voice", "tts"]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "text",
+							"body": "[MP3 바이너리 오디오 데이터]\n\nContent-Type: audio/mpeg\nContent-Disposition: inline; filename=\"speech.mp3\""
+						}
+					]
+				},
+				{
+					"name": "TTS (기본 설정)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"안녕하세요, 오늘 하루는 어떠셨나요?\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/voice/tts",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "voice", "tts"]
+						},
+						"description": "텍스트를 음성으로 변환합니다 (기본 음성 설정 사용).\n\n**요청 필드:**\n- text: 변환할 텍스트 (필수)\n\n**응답:**\n- Content-Type: audio/mpeg\n- Body: MP3 바이너리 오디오 데이터"
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
