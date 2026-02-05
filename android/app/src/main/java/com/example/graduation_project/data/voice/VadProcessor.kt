@@ -3,6 +3,7 @@ package com.example.graduation_project.data.voice
 import android.content.Context
 import com.example.graduation_project.domain.voice.VadConfig
 import com.example.graduation_project.domain.voice.VadException
+import com.example.graduation_project.domain.voice.VadMode
 import com.konovalov.vad.silero.Vad
 import com.konovalov.vad.silero.VadSilero
 import com.konovalov.vad.silero.config.FrameSize
@@ -12,6 +13,11 @@ import com.konovalov.vad.silero.config.SampleRate
 /**
  * Silero VAD 래퍼 클래스
  * 음성/비음성 판정 기능 제공
+ *
+ * [T2.2-3] VAD 파라미터 튜닝 적용
+ * - silenceDurationMs: 2초 (어르신 말 속도 고려)
+ * - speechDurationMs: 100ms (배경 소음 필터링)
+ * - mode: 설정 가능 (NORMAL/AGGRESSIVE/VERY_AGGRESSIVE)
  */
 class VadProcessor(
     private val context: Context,
@@ -30,7 +36,7 @@ class VadProcessor(
                 .setContext(context)
                 .setSampleRate(getSampleRate())
                 .setFrameSize(getFrameSize())
-                .setMode(Mode.NORMAL) // 어르신 대상이므로 NORMAL 모드 사용
+                .setMode(getMode())
                 .setSilenceDurationMs(config.silenceDurationMs)
                 .setSpeechDurationMs(config.speechDurationMs)
                 .build()
@@ -71,5 +77,14 @@ class VadProcessor(
         VadConfig.FRAME_SIZE_1024 -> FrameSize.FRAME_SIZE_1024
         VadConfig.FRAME_SIZE_1536 -> FrameSize.FRAME_SIZE_1536
         else -> FrameSize.FRAME_SIZE_512
+    }
+
+    /**
+     * [T2.2-3] VadMode → Silero Mode 변환
+     */
+    private fun getMode(): Mode = when (config.mode) {
+        VadMode.NORMAL -> Mode.NORMAL
+        VadMode.AGGRESSIVE -> Mode.AGGRESSIVE
+        VadMode.VERY_AGGRESSIVE -> Mode.VERY_AGGRESSIVE
     }
 }
