@@ -2,10 +2,10 @@ package com.example.graduation_project.presentation.conversation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.graduation_project.data.api.ApiClient
+import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
-import com.example.graduation_project.data.api.safeApiCall
 import com.example.graduation_project.data.model.HealthData
+import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.VoiceStatus
@@ -39,8 +39,8 @@ class ConversationViewModel : ViewModel() {
     // 외부에서 관찰만 가능한 상태 (읽기 전용)
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
 
-    // API 클라이언트
-    private val conversationApi = ApiClient.conversationApi
+    // Repository
+    private val repository = ConversationRepository()
 
     /**
      * 대화를 시작합니다.
@@ -51,13 +51,9 @@ class ConversationViewModel : ViewModel() {
      */
     fun startConversation() {
         viewModelScope.launch {
-            // 로딩 시작
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
-            // API 호출 (safeApiCall로 에러 처리)
-            val result = safeApiCall {
-                conversationApi.startConversation(getDummyHealthData())
-            }
+            val result = repository.startConversation(getDummyHealthData())
 
             when (result) {
                 is ApiResult.Success -> {
@@ -79,12 +75,21 @@ class ConversationViewModel : ViewModel() {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = result.exception.message
+                            errorMessage = getErrorMessage(result.exception)
                         )
                     }
                 }
             }
         }
+    }
+
+    /**
+     * 대화 시작을 재시도합니다.
+     * - 에러 발생 후 재시도 버튼 클릭 시 호출
+     */
+    fun retryStartConversation() {
+        dismissError()
+        startConversation()
     }
 
     /**
@@ -97,9 +102,7 @@ class ConversationViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
 
-            val result = safeApiCall {
-                conversationApi.endConversation()
-            }
+            val result = repository.endConversation()
 
             when (result) {
                 is ApiResult.Success -> {
@@ -118,7 +121,7 @@ class ConversationViewModel : ViewModel() {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = result.exception.message
+                            errorMessage = getErrorMessage(result.exception)
                         )
                     }
                 }
@@ -178,6 +181,14 @@ class ConversationViewModel : ViewModel() {
         isFromUser = false,
         timestamp = System.currentTimeMillis()
     )
+
+    // 에러 타입별 사용자 친화적 메시지
+    private fun getErrorMessage(exception: ApiException): String = when (exception) {
+        is ApiException.NetworkError -> "인터넷 연결을 확인해주세요"
+        is ApiException.ServerError -> "서버에 문제가 생겼습니다. 잠시 후 다시 시도해주세요"
+        is ApiException.ClientError -> "요청에 문제가 있습니다"
+        is ApiException.UnknownError -> "알 수 없는 오류가 발생했습니다"
+    }
 
     // 임시 건강 데이터 (추후 Health Connect 연동)
     private fun getDummyHealthData() = HealthData(
