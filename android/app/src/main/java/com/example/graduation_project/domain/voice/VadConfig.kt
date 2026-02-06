@@ -19,10 +19,10 @@ data class VadConfig(
     /**
      * 음성 종료로 판정하기 위한 무음 지속 시간 (ms)
      *
-     * [T2.2-3] 어르신 말 속도 고려하여 2초로 설정
+     * [T2.2-3] 어르신 말 속도 고려하여 3초로 설정
      * - 어르신은 단어 사이 쉼이 길 수 있음
      * - 너무 짧으면 문장 중간에 끊김 발생
-     * - 권장 범위: 1500ms ~ 2000ms
+     * - 권장 범위: 2000ms ~ 3500ms
      */
     val silenceDurationMs: Int = DEFAULT_SILENCE_DURATION_MS,
 
@@ -41,6 +41,14 @@ data class VadConfig(
      * 어르신의 긴 발화를 고려하여 60초로 설정
      */
     val maxRecordingDurationMs: Long = DEFAULT_MAX_RECORDING_DURATION_MS,
+
+    /**
+     * AI 응답 재생 완료 후 녹음 시작까지의 대기 시간 (ms)
+     *
+     * - AI 발화 직후 바로 녹음이 시작되면 어색하므로 텀을 둠
+     * - 어르신이 AI 말을 듣고 생각할 시간 확보
+     */
+    val postResponseDelayMs: Long = DEFAULT_POST_RESPONSE_DELAY_MS,
 
     /**
      * VAD 모드 (배경 소음 필터링 강도)
@@ -69,14 +77,17 @@ data class VadConfig(
         const val BITS_PER_SAMPLE = 16
 
         // [T2.2-3] 기본값 상수
-        /** 기본 무음 지속 시간: 2초 (어르신 말 속도 고려) */
-        const val DEFAULT_SILENCE_DURATION_MS = 2000
+        /** 기본 무음 지속 시간: 3초 (어르신 말 속도 고려, 넉넉한 침묵 허용) */
+        const val DEFAULT_SILENCE_DURATION_MS = 3000
 
         /** 기본 최소 음성 지속 시간: 100ms (노이즈 필터링) */
         const val DEFAULT_SPEECH_DURATION_MS = 100
 
         /** 기본 최대 녹음 시간: 60초 */
         const val DEFAULT_MAX_RECORDING_DURATION_MS = 60_000L
+
+        /** AI 응답 후 녹음 시작까지의 대기 시간: 1.5초 */
+        const val DEFAULT_POST_RESPONSE_DELAY_MS = 1500L
     }
 }
 
