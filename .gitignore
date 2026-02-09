@@ -9,7 +9,9 @@
 nul
 
 ### Claude Code ###
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/sprint.txt
 
 ### Local config (contains secrets) ###
 local.properties

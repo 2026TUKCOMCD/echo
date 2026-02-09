@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '팀원: BooYoung(UI/UX), Dohoon(API/배포), HyeongSeok(음성/VAD)' && echo '---' && cat \"$CLAUDE_PROJECT_DIR/.claude/sprint.txt\" 2>/dev/null || echo '스프린트 파일 없음 (.claude/sprint.txt)' && echo '---' && echo '힘들지만 모두 힘내보자! 아자아자 화이팅~!'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
