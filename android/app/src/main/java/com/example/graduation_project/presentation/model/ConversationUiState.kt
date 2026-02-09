@@ -34,7 +34,10 @@ data class MessageUiModel(
  * @param isLoading API 호출 등 로딩 중인지 여부
  * @param sessionId 현재 대화 세션 ID (서버에서 발급)
  * @param voiceStatus 현재 음성 상태
+ * @param voiceAmplitude 음성 볼륨 (0.0 ~ 1.0, 이퀄라이저 애니메이션용)
  * @param messages 대화 메시지 목록
+ * @param currentUserSpeech 실시간 음성 인식 텍스트 (녹음 중 표시)
+ * @param userName 사용자 이름 (인사말에 표시)
  * @param errorMessage 에러 메시지 (null이면 에러 없음)
  */
 data class ConversationUiState(
@@ -42,6 +45,9 @@ data class ConversationUiState(
     val isLoading: Boolean = false,
     val sessionId: String? = null,
     val voiceStatus: VoiceStatus = VoiceStatus.IDLE,
+    val voiceAmplitude: Float = 0f,
     val messages: List<MessageUiModel> = emptyList(),
+    val currentUserSpeech: String? = null,
+    val userName: String? = null,
     val errorMessage: String? = null
 )

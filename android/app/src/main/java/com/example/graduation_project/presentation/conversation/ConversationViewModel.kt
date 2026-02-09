@@ -138,6 +138,16 @@ class ConversationViewModel : ViewModel() {
     }
 
     /**
+     * 음성 볼륨(amplitude)을 업데이트합니다.
+     * - 마이크 입력의 볼륨을 실시간으로 전달
+     * - 이퀄라이저 애니메이션에 반영됨
+     * @param amplitude 0.0 ~ 1.0 사이의 볼륨 값
+     */
+    fun updateVoiceAmplitude(amplitude: Float) {
+        _uiState.update { it.copy(voiceAmplitude = amplitude.coerceIn(0f, 1f)) }
+    }
+
+    /**
      * 에러 메시지를 닫습니다.
      * - Snackbar 닫기 시 호출
      */
@@ -146,12 +156,22 @@ class ConversationViewModel : ViewModel() {
     }
 
     /**
+     * 실시간 음성 인식 텍스트를 업데이트합니다.
+     * - 음성 인식 중 부분 결과를 화면에 표시할 때 사용
+     */
+    fun updateCurrentUserSpeech(text: String?) {
+        _uiState.update { it.copy(currentUserSpeech = text) }
+    }
+
+    /**
      * 사용자 메시지를 추가합니다.
      * - 음성 인식 결과를 메시지로 추가할 때 사용
+     * - 실시간 텍스트를 초기화하고 최종 메시지로 추가
      */
     fun addUserMessage(text: String) {
         _uiState.update { currentState ->
             currentState.copy(
+                currentUserSpeech = null,
                 messages = currentState.messages + MessageUiModel(
                     id = UUID.randomUUID().toString(),
                     text = text,
