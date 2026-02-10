@@ -46,10 +46,10 @@ fun VoiceEqualizerAnimation(
     amplitude: Float = 0f,
     color: Color = MaterialTheme.colorScheme.primary,
     barCount: Int = 3,
-    barWidth: Dp = 12.dp,
-    maxHeight: Dp = 60.dp,
-    minHeight: Dp = 16.dp,
-    spacing: Dp = 8.dp
+    barWidth: Dp = 20.dp,
+    maxHeight: Dp = 80.dp,
+    minHeight: Dp = 24.dp,
+    spacing: Dp = 12.dp
 ) {
     // 각 막대별 랜덤 가중치 (자연스러운 변화를 위해)
     val barWeights = remember {
