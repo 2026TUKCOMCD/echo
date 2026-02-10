@@ -123,9 +123,10 @@ fun ActiveConversationView(
             Spacer(modifier = Modifier.height(24.dp))
 
             // AI 캐릭터 이미지 (어르신 접근성 - 더 큰 사이즈)
+            // AI가 말할 때만 애니메이션 활성화
             AiCharacterImage(
                 size = 200.dp,
-                enableFloatingAnimation = true
+                enableFloatingAnimation = voiceStatus == VoiceStatus.PLAYING
             )
 
             Spacer(modifier = Modifier.height(Dimens.SpacingLarge))
@@ -182,11 +183,12 @@ fun ActiveConversationView(
             }
         }
 
-        // 하단: 이퀄라이저 막대 애니메이션 (음성 볼륨에 반응)
-        VoiceEqualizerAnimation(
+        // 하단: 동심원 파동 애니메이션 (음성 볼륨에 반응)
+        RippleAnimation(
             isActive = voiceStatus != VoiceStatus.IDLE,
             amplitude = voiceAmplitude,
             color = statusColor,
+            size = 120.dp,
             modifier = Modifier.padding(bottom = Dimens.SpacingLarge)
         )
     }
