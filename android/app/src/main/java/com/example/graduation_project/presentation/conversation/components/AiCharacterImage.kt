@@ -70,16 +70,21 @@ fun AiCharacterImage(
         0f
     }
 
-    // 크기 펄스 애니메이션 (살짝 커졌다 작아짐)
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1500),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "scaleAnimation"
-    )
+    // 크기 펄스 애니메이션 (살짝 커졌다 작아짐) - 애니메이션 활성화 시에만
+    val scale = if (enableFloatingAnimation) {
+        val animatedScale by infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.05f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1500),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "scaleAnimation"
+        )
+        animatedScale
+    } else {
+        1f
+    }
 
     // 4. 배경 블렌딩을 위한 그라데이션 색상
     val backgroundGradient = Brush.radialGradient(
