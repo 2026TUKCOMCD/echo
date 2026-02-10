@@ -172,7 +172,7 @@ fun ActiveConversationView(
                 ) {
                     Text(
                         text = currentUserSpeech,
-                        style = MaterialTheme.typography.titleLarge.copy(
+                        style = MaterialTheme.typography.headlineSmall.copy(
                             fontWeight = FontWeight.Normal
                         ),
                         color = Color(0xFF0D47A1),  // 파란색 (사용자 발화 구분)
