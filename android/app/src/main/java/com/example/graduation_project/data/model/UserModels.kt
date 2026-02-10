@@ -15,5 +15,12 @@ data class UserPreferences(
     val hobby: String? = null,
     val occupation: String? = null,
     val familyRelation: String? = null,
-    val preferredTopics: List<String> = emptyList()
+    val preferredTopics: List<String> = emptyList(),
+    val voiceSettings: VoiceSettings? = null
+)
+
+@Serializable
+data class VoiceSettings(
+    val voiceSpeed: Double = 1.0,
+    val voiceTone: String = "warm"
 )
