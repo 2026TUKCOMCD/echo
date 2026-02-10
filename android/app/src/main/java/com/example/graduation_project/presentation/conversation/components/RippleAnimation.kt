@@ -28,12 +28,14 @@ import kotlinx.coroutines.launch
  * ## 동작
  * - 3개의 원이 중앙에서 순차적으로 퍼져나가는 효과
  * - 각 원은 scale과 alpha 애니메이션 조합
+ * - amplitude 값에 따라 원의 투명도와 크기가 변함
  * - isActive가 false면 애니메이션 정지
  *
  * ## 사용 예시
  * ```kotlin
  * RippleAnimation(
  *     isActive = voiceStatus != VoiceStatus.IDLE,
+ *     amplitude = currentAmplitude,
  *     color = MaterialTheme.colorScheme.primary
  * )
  * ```
@@ -42,6 +44,7 @@ import kotlinx.coroutines.launch
 fun RippleAnimation(
     isActive: Boolean,
     modifier: Modifier = Modifier,
+    amplitude: Float = 0.5f,
     color: Color = MaterialTheme.colorScheme.primary,
     size: Dp = 200.dp,
     rippleCount: Int = 3
@@ -57,12 +60,12 @@ fun RippleAnimation(
             animatables.forEachIndexed { index, animatable ->
                 launch {
                     // 각 원이 순차적으로 시작하도록 딜레이
-                    delay(index * 400L)
+                    delay(index * 600L)
                     animatable.animateTo(
                         targetValue = 1f,
                         animationSpec = infiniteRepeatable(
                             animation = tween(
-                                durationMillis = 1200,
+                                durationMillis = 2000,
                                 easing = LinearEasing
                             ),
                             repeatMode = RepeatMode.Restart
@@ -85,11 +88,16 @@ fun RippleAnimation(
             val centerY = size.toPx() / 2
             val maxRadius = size.toPx() / 2
 
+            // amplitude에 따른 효과 조정 (0.0 ~ 1.0)
+            val amplitudeEffect = amplitude.coerceIn(0.1f, 1f)
+
             animatables.forEach { animatable ->
                 val progress = animatable.value
                 if (progress > 0f) {
-                    val radius = maxRadius * progress
-                    val alpha = (1f - progress) * 0.4f
+                    // amplitude가 높을수록 더 큰 원
+                    val radius = maxRadius * progress * (0.6f + amplitudeEffect * 0.4f)
+                    // amplitude가 높을수록 더 진한 색상
+                    val alpha = (1f - progress) * (0.2f + amplitudeEffect * 0.4f)
 
                     drawCircle(
                         color = color.copy(alpha = alpha),
@@ -102,15 +110,31 @@ fun RippleAnimation(
     }
 }
 
-// 미리보기
+// 미리보기: 낮은 볼륨
 @Preview(showBackground = true)
 @Composable
-private fun RippleAnimationPreview_Active() {
+private fun RippleAnimationPreview_LowVolume() {
     Graduation_projectTheme {
-        RippleAnimation(isActive = true)
+        RippleAnimation(
+            isActive = true,
+            amplitude = 0.2f
+        )
     }
 }
 
+// 미리보기: 높은 볼륨
+@Preview(showBackground = true)
+@Composable
+private fun RippleAnimationPreview_HighVolume() {
+    Graduation_projectTheme {
+        RippleAnimation(
+            isActive = true,
+            amplitude = 0.9f
+        )
+    }
+}
+
+// 미리보기: 비활성화
 @Preview(showBackground = true)
 @Composable
 private fun RippleAnimationPreview_Inactive() {
