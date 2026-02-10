@@ -1,27 +1,25 @@
 package com.example.graduation_project.presentation.conversation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.graduation_project.presentation.conversation.components.ActiveConversationView
 import com.example.graduation_project.presentation.conversation.components.ConversationControls
-import com.example.graduation_project.presentation.conversation.components.MessageList
-import com.example.graduation_project.presentation.conversation.components.VoiceStatusIndicator
+import com.example.graduation_project.presentation.conversation.components.EmptyConversationView
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.VoiceStatus
@@ -32,14 +30,11 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  *
  * ## 화면 구성
  * ┌─────────────────────────┐
- * │      TopAppBar         │  <- 앱 타이틀
- * ├─────────────────────────┤
- * │   VoiceStatusIndicator │  <- 음성 상태 표시
- * ├─────────────────────────┤
- * │                         │
- * │      MessageList        │  <- 대화 메시지 (스크롤 가능)
- * │       (weight=1f)       │
- * │                         │
+ * │   [조건부 표시]          │
+ * │   - 대화 시작 전:        │
+ * │     EmptyConversationView│  <- AI 아이콘 + 인사 메시지
+ * │   - 대화 중:             │
+ * │     ActiveConversationView│ <- 상태 + AI응답 + 동심원 애니메이션
  * ├─────────────────────────┤
  * │  ConversationControls  │  <- 시작/종료 버튼
  * └─────────────────────────┘
@@ -49,7 +44,6 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  * - collectAsState()로 상태 변화 감지
  * - 상태가 바뀌면 자동으로 UI 업데이트
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationScreen(
     viewModel: ConversationViewModel = viewModel()
@@ -81,7 +75,6 @@ fun ConversationScreen(
  * 화면 내용 (상태를 받아서 UI 렌더링)
  * - 테스트와 미리보기를 위해 분리
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationScreenContent(
     uiState: ConversationUiState,
@@ -89,22 +82,11 @@ private fun ConversationScreenContent(
     onStartClick: () -> Unit,
     onEndClick: () -> Unit
 ) {
+    // 따뜻한 느낌 + 고대비 색상 (어르신 접근성 고려)
+    val backgroundColor = Color(0xFFFFFDF9)  // 아주 연한 아이보리
+
     Scaffold(
-        // 상단 앱바
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "AI 대화",
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            )
-        },
+        containerColor = backgroundColor,
         // 스낵바 (에러 메시지 표시)
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
@@ -113,16 +95,29 @@ private fun ConversationScreenContent(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // 음성 상태 표시
-            VoiceStatusIndicator(
-                status = uiState.voiceStatus
-            )
-
-            // 대화 메시지 목록 (남은 공간 모두 사용)
-            MessageList(
-                messages = uiState.messages,
+            // 메인 콘텐츠 영역 (조건부 표시)
+            Box(
                 modifier = Modifier.weight(1f)
-            )
+            ) {
+                if (uiState.isConversationActive) {
+                    // 대화 중: 상태 + AI 응답 + 사용자 음성 + 동심원 애니메이션
+                    val currentAiMessage = uiState.messages
+                        .lastOrNull { !it.isFromUser }
+                        ?.text
+
+                    ActiveConversationView(
+                        voiceStatus = uiState.voiceStatus,
+                        currentAiMessage = currentAiMessage,
+                        currentUserSpeech = uiState.currentUserSpeech,
+                        voiceAmplitude = uiState.voiceAmplitude
+                    )
+                } else {
+                    // 대화 시작 전: AI 아이콘 + 인사 메시지
+                    EmptyConversationView(userName = uiState.userName)
+                }
+            }
+
+
 
             // 대화 제어 버튼
             ConversationControls(
@@ -135,13 +130,13 @@ private fun ConversationScreenContent(
     }
 }
 
-// 미리보기: 초기 상태
+// 미리보기: 초기 상태 (사용자 이름 포함)
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun ConversationScreenPreview_Initial() {
     Graduation_projectTheme {
         ConversationScreenContent(
-            uiState = ConversationUiState(),
+            uiState = ConversationUiState(userName = "홍길동"),
             snackbarHostState = SnackbarHostState(),
             onStartClick = {},
             onEndClick = {}
@@ -149,26 +144,46 @@ private fun ConversationScreenPreview_Initial() {
     }
 }
 
-// 미리보기: 대화 진행 중
+// 미리보기: 대화 진행 중 (듣고 있는 상태 + 실시간 음성 인식)
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
-private fun ConversationScreenPreview_Active() {
+private fun ConversationScreenPreview_Listening() {
     Graduation_projectTheme {
         ConversationScreenContent(
             uiState = ConversationUiState(
                 isConversationActive = true,
                 voiceStatus = VoiceStatus.LISTENING,
+                currentUserSpeech = "오늘 공원에서 산책을...",
                 messages = listOf(
                     MessageUiModel(
                         id = "1",
                         text = "안녕하세요! 오늘 하루는 어떠셨나요?",
                         isFromUser = false,
                         timestamp = System.currentTimeMillis() - 60000
-                    ),
+                    )
+                )
+            ),
+            snackbarHostState = SnackbarHostState(),
+            onStartClick = {},
+            onEndClick = {}
+        )
+    }
+}
+
+// 미리보기: AI가 말하고 있는 상태
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ConversationScreenPreview_Playing() {
+    Graduation_projectTheme {
+        ConversationScreenContent(
+            uiState = ConversationUiState(
+                isConversationActive = true,
+                voiceStatus = VoiceStatus.PLAYING,
+                messages = listOf(
                     MessageUiModel(
-                        id = "2",
-                        text = "좋았어요. 아침에 산책도 다녀왔어요.",
-                        isFromUser = true,
+                        id = "1",
+                        text = "산책하셨군요! 어디로 산책을 가셨나요? 날씨가 좋았으면 기분도 좋으셨겠어요.",
+                        isFromUser = false,
                         timestamp = System.currentTimeMillis()
                     )
                 )

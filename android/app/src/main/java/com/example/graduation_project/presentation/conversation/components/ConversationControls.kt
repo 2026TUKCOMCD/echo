@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -46,7 +47,7 @@ fun ConversationControls(
     modifier: Modifier = Modifier
 ) {
     // 버튼 텍스트
-    val buttonText = if (isConversationActive) "대화 종료하기" else "대화 시작하기"
+    val buttonText = if (isConversationActive) "대화 종료" else "대화 시작"
 
     // 버튼 클릭 핸들러
     val onClick = if (isConversationActive) onEndClick else onStartClick
@@ -58,16 +59,18 @@ fun ConversationControls(
         "대화 시작 버튼. 눌러서 AI와 대화를 시작하세요."
     }
 
-    // 버튼 색상 (시작: Primary, 종료: Error)
+    // 버튼 색상 (어르신 접근성 고려 - 고대비, 따뜻한 녹색 계열)
+    // 시작: 진한 녹색 (긍정적, 안정감)
+    // 종료: 진한 빨강 (명확한 구분)
     val buttonColors = if (isConversationActive) {
         ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.error,
-            contentColor = MaterialTheme.colorScheme.onError
+            containerColor = Color(0xFFC62828),  // 진한 빨강
+            contentColor = Color.White
         )
     } else {
         ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
+            containerColor = Color(0xFF2E7D32),  // 진한 녹색 (7:1+ 대비)
+            contentColor = Color.White
         )
     }
 
@@ -91,7 +94,7 @@ fun ConversationControls(
                     contentDescription = accessibilityDescription
                 },
             colors = buttonColors,
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(50)
         ) {
             if (isLoading) {
                 // 로딩 인디케이터
@@ -104,7 +107,7 @@ fun ConversationControls(
                 // 버튼 텍스트
                 Text(
                     text = buttonText,
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.headlineMedium
                 )
             }
         }
