@@ -27,7 +27,7 @@ import kotlin.random.Random
  * 이퀄라이저 막대 애니메이션 컴포넌트
  *
  * ## 동작
- * - 5개의 막대가 실제 음성 볼륨(amplitude)에 반응하여 움직임
+ * - 3개의 막대가 실제 음성 볼륨(amplitude)에 반응하여 움직임
  * - amplitude 값(0.0 ~ 1.0)에 따라 막대 높이가 변함
  * - 각 막대는 약간의 랜덤 변화를 주어 자연스러운 효과
  *
@@ -45,7 +45,7 @@ fun VoiceEqualizerAnimation(
     modifier: Modifier = Modifier,
     amplitude: Float = 0f,
     color: Color = MaterialTheme.colorScheme.primary,
-    barCount: Int = 5,
+    barCount: Int = 3,
     barWidth: Dp = 12.dp,
     maxHeight: Dp = 60.dp,
     minHeight: Dp = 16.dp,
