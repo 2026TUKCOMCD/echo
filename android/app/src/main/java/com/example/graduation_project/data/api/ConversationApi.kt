@@ -1,8 +1,9 @@
 package com.example.graduation_project.data.api
 
-import com.example.graduation_project.data.model.ConversationResponse
+import com.example.graduation_project.data.model.ConversationEndResponse
+import com.example.graduation_project.data.model.ConversationMessageResponse
+import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.model.HealthData
-import com.example.graduation_project.data.model.MessageRequest
 import okhttp3.MultipartBody
 import retrofit2.http.Body
 import retrofit2.http.Multipart
@@ -14,14 +15,14 @@ interface ConversationApi {
     @POST("/api/conversations/start")
     suspend fun startConversation(
         @Body healthData: HealthData
-    ): ConversationResponse
+    ): ConversationStartResponse
 
     @Multipart
     @POST("/api/conversations/message")
     suspend fun sendMessage(
         @Part audio: MultipartBody.Part
-    ): ConversationResponse
+    ): ConversationMessageResponse
 
     @POST("/api/conversations/end")
-    suspend fun endConversation(): ConversationResponse
+    suspend fun endConversation(): ConversationEndResponse
 }

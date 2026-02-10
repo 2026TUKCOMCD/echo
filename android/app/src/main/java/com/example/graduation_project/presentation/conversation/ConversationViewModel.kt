@@ -1,9 +1,12 @@
 package com.example.graduation_project.presentation.conversation
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.local.AppDatabase
+import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.presentation.model.ConversationUiState
@@ -14,6 +17,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.UUID
 
 /**
@@ -31,7 +37,7 @@ import java.util.UUID
  * 4. 대화 종료 버튼 클릭 -> endConversation() 호출
  * 5. 상태 초기화
  */
-class ConversationViewModel : ViewModel() {
+class ConversationViewModel(application: Application) : AndroidViewModel(application) {
 
     // 내부에서만 수정 가능한 상태
     private val _uiState = MutableStateFlow(ConversationUiState())
@@ -41,6 +47,12 @@ class ConversationViewModel : ViewModel() {
 
     // Repository
     private val repository = ConversationRepository()
+
+    // Room DB
+    private val messageDao = AppDatabase.getInstance(application).messageDao()
+
+    // 로컬 대화 세션 ID (대화 시작 시 생성, 종료 시 초기화)
+    private var conversationId: String? = null
 
     /**
      * 대화를 시작합니다.
@@ -58,23 +70,84 @@ class ConversationViewModel : ViewModel() {
             when (result) {
                 is ApiResult.Success -> {
                     val response = result.data
+                    conversationId = UUID.randomUUID().toString()
+                    val aiMessage = createAiMessage(
+                        response.message ?: "안녕하세요! 오늘 하루는 어떠셨나요?"
+                    )
+
                     _uiState.update { currentState ->
                         currentState.copy(
                             isLoading = false,
                             isConversationActive = true,
-                            sessionId = response.sessionId,
+                            sessionId = conversationId,
                             voiceStatus = VoiceStatus.PLAYING,
-                            messages = currentState.messages + createAiMessage(
-                                response.message ?: "안녕하세요! 오늘 하루는 어떠셨나요?"
-                            )
+                            messages = currentState.messages + aiMessage
+                            // TODO: response.audioData (Base64) 디코딩 후 TTS 재생
                         )
                     }
+
+                    // AI 인사 메시지 Room DB 저장
+                    saveMessageToDb(aiMessage)
                 }
 
                 is ApiResult.Error -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            errorMessage = getErrorMessage(result.exception)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 녹음된 음성을 서버에 전송합니다.
+     * 1. WAV ByteArray → MultipartBody.Part 변환
+     * 2. Repository를 통해 서버에 업로드
+     * 3. 성공 시: 사용자 메시지(STT) + AI 응답 메시지 추가
+     * 4. 실패 시: 에러 메시지 표시
+     *
+     * @param wavData VoiceRecordingViewModel에서 전달받은 WAV 바이너리 데이터
+     */
+    fun sendMessage(wavData: ByteArray) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(isLoading = true, errorMessage = null, voiceStatus = VoiceStatus.IDLE)
+            }
+
+            // WAV ByteArray → MultipartBody.Part 변환
+            val requestBody = wavData.toRequestBody("audio/wav".toMediaType())
+            val audioPart = MultipartBody.Part.createFormData("audio", "recording.wav", requestBody)
+
+            val result = repository.sendMessage(audioPart)
+
+            when (result) {
+                is ApiResult.Success -> {
+                    val response = result.data
+                    val userMessage = createUserMessage(response.userMessage ?: "")
+                    val aiMessage = createAiMessage(response.aiResponse ?: "")
+
+                    _uiState.update { currentState ->
+                        currentState.copy(
+                            isLoading = false,
+                            voiceStatus = VoiceStatus.PLAYING,
+                            messages = currentState.messages + userMessage + aiMessage
+                            // TODO: response.audioData (Base64) 디코딩 후 TTS 재생
+                        )
+                    }
+
+                    // 사용자 메시지 + AI 응답 메시지 Room DB 저장
+                    saveMessageToDb(userMessage)
+                    saveMessageToDb(aiMessage)
+                }
+
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            voiceStatus = VoiceStatus.LISTENING,
                             errorMessage = getErrorMessage(result.exception)
                         )
                     }
@@ -106,6 +179,7 @@ class ConversationViewModel : ViewModel() {
 
             when (result) {
                 is ApiResult.Success -> {
+                    conversationId = null
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -194,6 +268,14 @@ class ConversationViewModel : ViewModel() {
         }
     }
 
+    // 사용자 메시지 객체 생성 헬퍼 함수
+    private fun createUserMessage(text: String) = MessageUiModel(
+        id = UUID.randomUUID().toString(),
+        text = text,
+        isFromUser = true,
+        timestamp = System.currentTimeMillis()
+    )
+
     // AI 메시지 객체 생성 헬퍼 함수
     private fun createAiMessage(text: String) = MessageUiModel(
         id = UUID.randomUUID().toString(),
@@ -201,6 +283,22 @@ class ConversationViewModel : ViewModel() {
         isFromUser = false,
         timestamp = System.currentTimeMillis()
     )
+
+    // 메시지를 Room DB에 저장하는 헬퍼 함수
+    private fun saveMessageToDb(message: MessageUiModel) {
+        val convId = conversationId ?: return
+        viewModelScope.launch {
+            messageDao.insertMessage(
+                MessageEntity(
+                    id = message.id,
+                    conversationId = convId,
+                    role = if (message.isFromUser) MessageEntity.ROLE_USER else MessageEntity.ROLE_ASSISTANT,
+                    content = message.text,
+                    timestamp = message.timestamp
+                )
+            )
+        }
+    }
 
     // 에러 타입별 사용자 친화적 메시지
     private fun getErrorMessage(exception: ApiException): String = when (exception) {
