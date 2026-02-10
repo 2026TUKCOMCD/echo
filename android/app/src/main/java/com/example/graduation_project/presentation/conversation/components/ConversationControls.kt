@@ -47,7 +47,7 @@ fun ConversationControls(
     modifier: Modifier = Modifier
 ) {
     // 버튼 텍스트
-    val buttonText = if (isConversationActive) "대화 종료하기" else "대화 시작하기"
+    val buttonText = if (isConversationActive) "대화 종료" else "대화 시작"
 
     // 버튼 클릭 핸들러
     val onClick = if (isConversationActive) onEndClick else onStartClick
@@ -107,7 +107,7 @@ fun ConversationControls(
                 // 버튼 텍스트
                 Text(
                     text = buttonText,
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.headlineMedium
                 )
             }
         }
