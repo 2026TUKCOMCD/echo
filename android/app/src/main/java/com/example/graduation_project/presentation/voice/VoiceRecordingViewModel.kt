@@ -4,11 +4,12 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.graduation_project.data.voice.VoiceRecordingManager
+import com.example.graduation_project.data.voice.AudioRecordManager
+import com.example.graduation_project.domain.voice.AudioRecordException
+import com.example.graduation_project.domain.voice.AudioRecordListener
+import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.domain.voice.VadConfig
 import com.example.graduation_project.domain.voice.VadException
-import com.example.graduation_project.domain.voice.VadListener
-import com.example.graduation_project.domain.voice.VadState
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -17,79 +18,128 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * 음성 녹음 및 VAD 상태 관리 ViewModel
+ *
+ * [T2.2-4] AudioRecordManager 연동
+ * - VoiceRecordingManager → AudioRecordManager로 교체
+ * - 파일 기반 녹음 결과 제공
+ * - 세분화된 상태 관리 (Preparing, Processing 등)
  */
 class VoiceRecordingViewModel(
     context: Context,
     config: VadConfig = VadConfig()
 ) : ViewModel() {
 
-    private val voiceRecordingManager = VoiceRecordingManager(context.applicationContext, config)
+    private val audioRecordManager = AudioRecordManager(context.applicationContext, config)
 
     private val _uiState = MutableStateFlow(VoiceRecordingState())
     val uiState: StateFlow<VoiceRecordingState> = _uiState.asStateFlow()
 
-    /** 음성 종료 이벤트 (one-shot event) - WAV 데이터 포함 */
+    /** 녹음 완료 이벤트 (one-shot event) - File 참조 포함 */
+    private val _recordingCompleteEvent = MutableSharedFlow<File>()
+    val recordingCompleteEvent: SharedFlow<File> = _recordingCompleteEvent.asSharedFlow()
+
+    /** 음성 종료 이벤트 (one-shot event) - WAV 데이터 포함 (하위 호환) */
     private val _speechEndEvent = MutableSharedFlow<ByteArray>()
     val speechEndEvent: SharedFlow<ByteArray> = _speechEndEvent.asSharedFlow()
 
     init {
-        setupVadListener()
-        observeVadState()
+        setupAudioRecordListener()
+        observeAudioRecordState()
     }
 
-    private fun setupVadListener() {
-        voiceRecordingManager.setVadListener(object : VadListener {
-            override fun onSpeechStart() {
-                _uiState.update { it.copy(isSpeechDetected = true) }
+    private fun setupAudioRecordListener() {
+        audioRecordManager.setListener(object : AudioRecordListener {
+            override fun onReady() {
+                _uiState.update {
+                    it.copy(isPreparing = false, isRecording = true)
+                }
             }
 
-            override fun onSpeechEnd(wavData: ByteArray) {
+            override fun onRecordingStart() {
+                _uiState.update {
+                    it.copy(isSpeechDetected = true)
+                }
+            }
+
+            override fun onRecordingComplete(audioFile: File) {
                 _uiState.update {
                     it.copy(
                         isSpeechDetected = false,
-                        lastRecordedAudio = wavData
+                        isProcessing = false,
+                        lastAudioFile = audioFile,
+                        lastRecordedAudio = audioFile.readBytes()
                     )
                 }
                 viewModelScope.launch {
-                    _speechEndEvent.emit(wavData)
+                    _recordingCompleteEvent.emit(audioFile)
+                    _speechEndEvent.emit(audioFile.readBytes())
                 }
             }
 
-            override fun onError(exception: VadException) {
+            override fun onError(exception: AudioRecordException) {
+                val vadException = when (exception) {
+                    is AudioRecordException.VadError -> exception.vadException
+                    else -> VadException.UnknownError(
+                        message = exception.message,
+                        cause = exception.cause
+                    )
+                }
                 _uiState.update {
                     it.copy(
                         isRecording = false,
                         isSpeechDetected = false,
-                        error = exception
+                        isPreparing = false,
+                        isProcessing = false,
+                        error = vadException
                     )
                 }
             }
         })
     }
 
-    private fun observeVadState() {
+    private fun observeAudioRecordState() {
         viewModelScope.launch {
-            voiceRecordingManager.vadState.collect { state ->
+            audioRecordManager.state.collect { state ->
                 when (state) {
-                    is VadState.Listening -> {
+                    is AudioRecordState.Preparing -> {
                         _uiState.update {
-                            it.copy(isRecording = true, isSpeechDetected = false)
+                            it.copy(isPreparing = true, isRecording = false)
                         }
                     }
-                    is VadState.SpeechDetected -> {
+                    is AudioRecordState.Listening -> {
+                        _uiState.update {
+                            it.copy(
+                                isPreparing = false,
+                                isRecording = true,
+                                isSpeechDetected = false
+                            )
+                        }
+                    }
+                    is AudioRecordState.Recording -> {
                         _uiState.update {
                             it.copy(isRecording = true, isSpeechDetected = true)
                         }
                     }
-                    is VadState.Stopped -> {
+                    is AudioRecordState.Processing -> {
                         _uiState.update {
-                            it.copy(isRecording = false, isSpeechDetected = false)
+                            it.copy(isProcessing = true, isSpeechDetected = false)
                         }
                     }
-                    else -> { /* 다른 상태는 리스너에서 처리 */ }
+                    is AudioRecordState.Idle -> {
+                        _uiState.update {
+                            it.copy(
+                                isRecording = false,
+                                isSpeechDetected = false,
+                                isPreparing = false,
+                                isProcessing = false
+                            )
+                        }
+                    }
+                    else -> { /* Completed, Error는 리스너에서 처리 */ }
                 }
             }
         }
@@ -100,14 +150,22 @@ class VoiceRecordingViewModel(
      */
     fun startRecording() {
         _uiState.update { it.copy(error = null) }
-        voiceRecordingManager.start()
+        audioRecordManager.start()
     }
 
     /**
      * 음성 녹음 중지
      */
     fun stopRecording() {
-        voiceRecordingManager.stop()
+        audioRecordManager.stop()
+    }
+
+    /**
+     * 서버 전송 완료 후 임시 파일 정리 및 다음 발화 대기
+     */
+    fun onAudioSent() {
+        audioRecordManager.deleteLastAudioFile()
+        audioRecordManager.resumeListening()
     }
 
     /**
@@ -119,7 +177,7 @@ class VoiceRecordingViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        voiceRecordingManager.release()
+        audioRecordManager.release()
     }
 
     /**
