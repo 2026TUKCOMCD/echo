@@ -9,6 +9,9 @@ import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
+import com.example.graduation_project.data.voice.AudioPlayerManager
+import com.example.graduation_project.domain.voice.AudioPlayException
+import com.example.graduation_project.domain.voice.AudioPlayListener
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.VoiceStatus
@@ -54,6 +57,35 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     // 로컬 대화 세션 ID (대화 시작 시 생성, 종료 시 초기화)
     private var conversationId: String? = null
 
+    // AI 응답 음성 재생 관리자
+    private val audioPlayerManager = AudioPlayerManager(getApplication())
+
+    init {
+        setupAudioPlayListener()
+    }
+
+    private fun setupAudioPlayListener() {
+        audioPlayerManager.setListener(object : AudioPlayListener {
+            override fun onPlaybackStart() {
+                // 재생 시작 확인 (voiceStatus는 이미 PLAYING으로 설정됨)
+            }
+
+            override fun onPlaybackComplete() {
+                // 재생 완료 → LISTENING 상태로 전환
+                _uiState.update { it.copy(voiceStatus = VoiceStatus.LISTENING) }
+            }
+
+            override fun onError(exception: AudioPlayException) {
+                _uiState.update {
+                    it.copy(
+                        voiceStatus = VoiceStatus.LISTENING,
+                        errorMessage = exception.message
+                    )
+                }
+            }
+        })
+    }
+
     /**
      * 대화를 시작합니다.
      * 1. 로딩 상태로 변경
@@ -82,8 +114,15 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                             sessionId = conversationId,
                             voiceStatus = VoiceStatus.PLAYING,
                             messages = currentState.messages + aiMessage
-                            // TODO: response.audioData (Base64) 디코딩 후 TTS 재생
                         )
+                    }
+
+                    // AI 응답 음성 재생
+                    response.audioData?.let { audioData ->
+                        audioPlayerManager.play(audioData)
+                    } ?: run {
+                        // audioData가 없으면 바로 LISTENING으로 전환
+                        _uiState.update { it.copy(voiceStatus = VoiceStatus.LISTENING) }
                     }
 
                     // AI 인사 메시지 Room DB 저장
@@ -134,8 +173,15 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                             isLoading = false,
                             voiceStatus = VoiceStatus.PLAYING,
                             messages = currentState.messages + userMessage + aiMessage
-                            // TODO: response.audioData (Base64) 디코딩 후 TTS 재생
                         )
+                    }
+
+                    // AI 응답 음성 재생
+                    response.audioData?.let { audioData ->
+                        audioPlayerManager.play(audioData)
+                    } ?: run {
+                        // audioData가 없으면 바로 LISTENING으로 전환
+                        _uiState.update { it.copy(voiceStatus = VoiceStatus.LISTENING) }
                     }
 
                     // 사용자 메시지 + AI 응답 메시지 Room DB 저장
@@ -179,6 +225,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
             when (result) {
                 is ApiResult.Success -> {
+                    audioPlayerManager.stop()
                     conversationId = null
                     _uiState.update {
                         it.copy(
@@ -306,6 +353,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         is ApiException.ServerError -> "서버에 문제가 생겼습니다. 잠시 후 다시 시도해주세요"
         is ApiException.ClientError -> "요청에 문제가 있습니다"
         is ApiException.UnknownError -> "알 수 없는 오류가 발생했습니다"
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        audioPlayerManager.release()
     }
 
     // 임시 건강 데이터 (추후 Health Connect 연동)
