@@ -14,6 +14,7 @@ import com.example.graduation_project.domain.voice.AudioPlayException
 import com.example.graduation_project.domain.voice.AudioPlayListener
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
+import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.model.VoiceStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,18 +68,25 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     private fun setupAudioPlayListener() {
         audioPlayerManager.setListener(object : AudioPlayListener {
             override fun onPlaybackStart() {
-                // 재생 시작 확인 (voiceStatus는 이미 PLAYING으로 설정됨)
+                // Preparing → Playing 전환
+                _uiState.update { it.copy(playbackStatus = PlaybackStatus.PLAYING) }
             }
 
             override fun onPlaybackComplete() {
-                // 재생 완료 → LISTENING 상태로 전환
-                _uiState.update { it.copy(voiceStatus = VoiceStatus.LISTENING) }
+                // 재생 완료 → LISTENING + playbackStatus 초기화
+                _uiState.update {
+                    it.copy(
+                        voiceStatus = VoiceStatus.LISTENING,
+                        playbackStatus = PlaybackStatus.NONE
+                    )
+                }
             }
 
             override fun onError(exception: AudioPlayException) {
                 _uiState.update {
                     it.copy(
                         voiceStatus = VoiceStatus.LISTENING,
+                        playbackStatus = PlaybackStatus.NONE,
                         errorMessage = exception.message
                     )
                 }
@@ -113,6 +121,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                             isConversationActive = true,
                             sessionId = conversationId,
                             voiceStatus = VoiceStatus.PLAYING,
+                            playbackStatus = PlaybackStatus.PREPARING,
                             messages = currentState.messages + aiMessage
                         )
                     }
@@ -122,7 +131,12 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                         audioPlayerManager.play(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환
-                        _uiState.update { it.copy(voiceStatus = VoiceStatus.LISTENING) }
+                        _uiState.update {
+                            it.copy(
+                                voiceStatus = VoiceStatus.LISTENING,
+                                playbackStatus = PlaybackStatus.NONE
+                            )
+                        }
                     }
 
                     // AI 인사 메시지 Room DB 저장
@@ -153,7 +167,12 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     fun sendMessage(wavData: ByteArray) {
         viewModelScope.launch {
             _uiState.update {
-                it.copy(isLoading = true, errorMessage = null, voiceStatus = VoiceStatus.IDLE)
+                it.copy(
+                    isLoading = true,
+                    errorMessage = null,
+                    voiceStatus = VoiceStatus.IDLE,
+                    playbackStatus = PlaybackStatus.NONE
+                )
             }
 
             // WAV ByteArray → MultipartBody.Part 변환
@@ -172,6 +191,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                         currentState.copy(
                             isLoading = false,
                             voiceStatus = VoiceStatus.PLAYING,
+                            playbackStatus = PlaybackStatus.PREPARING,
                             messages = currentState.messages + userMessage + aiMessage
                         )
                     }
@@ -181,7 +201,12 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                         audioPlayerManager.play(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환
-                        _uiState.update { it.copy(voiceStatus = VoiceStatus.LISTENING) }
+                        _uiState.update {
+                            it.copy(
+                                voiceStatus = VoiceStatus.LISTENING,
+                                playbackStatus = PlaybackStatus.NONE
+                            )
+                        }
                     }
 
                     // 사용자 메시지 + AI 응답 메시지 Room DB 저장
@@ -232,7 +257,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                             isLoading = false,
                             isConversationActive = false,
                             sessionId = null,
-                            voiceStatus = VoiceStatus.IDLE
+                            voiceStatus = VoiceStatus.IDLE,
+                            playbackStatus = PlaybackStatus.NONE
                             // messages는 유지 (대화 기록 보존)
                         )
                     }

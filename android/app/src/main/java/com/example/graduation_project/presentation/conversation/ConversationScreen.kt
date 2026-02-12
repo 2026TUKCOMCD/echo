@@ -22,6 +22,7 @@ import com.example.graduation_project.presentation.conversation.components.Conve
 import com.example.graduation_project.presentation.conversation.components.EmptyConversationView
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
+import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.model.VoiceStatus
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
@@ -107,6 +108,7 @@ private fun ConversationScreenContent(
 
                     ActiveConversationView(
                         voiceStatus = uiState.voiceStatus,
+                        playbackStatus = uiState.playbackStatus,
                         currentAiMessage = currentAiMessage,
                         currentUserSpeech = uiState.currentUserSpeech,
                         voiceAmplitude = uiState.voiceAmplitude
@@ -179,6 +181,7 @@ private fun ConversationScreenPreview_Playing() {
             uiState = ConversationUiState(
                 isConversationActive = true,
                 voiceStatus = VoiceStatus.PLAYING,
+                playbackStatus = PlaybackStatus.PLAYING,
                 messages = listOf(
                     MessageUiModel(
                         id = "1",

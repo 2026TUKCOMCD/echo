@@ -29,9 +29,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.graduation_project.presentation.component.RecordingIndicator
+import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.model.VoiceStatus
+import com.example.graduation_project.presentation.voice.VoiceRecordingState
 import com.example.graduation_project.ui.theme.Dimens
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
+import com.example.graduation_project.ui.theme.PreparingOrange
 
 /**
  * 실시간 대화 중 화면
@@ -55,33 +59,43 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
 @Composable
 fun ActiveConversationView(
     voiceStatus: VoiceStatus,
+    playbackStatus: PlaybackStatus = PlaybackStatus.NONE,
+    recordingState: VoiceRecordingState = VoiceRecordingState(),
     currentAiMessage: String?,
     currentUserSpeech: String? = null,
     voiceAmplitude: Float = 0f,
     modifier: Modifier = Modifier
 ) {
-    // 상태별 텍스트
-    val statusText = when (voiceStatus) {
-        VoiceStatus.IDLE -> "대기 중"
-        VoiceStatus.LISTENING -> "듣고 있어요"
-        VoiceStatus.RECORDING -> "녹음 중"
-        VoiceStatus.PLAYING -> "말하고 있어요"
+    // 상태별 텍스트 (Preparing 분기 추가)
+    val statusText = when {
+        voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING -> "응답 준비 중..."
+        voiceStatus == VoiceStatus.PLAYING -> "말하고 있어요"
+        voiceStatus == VoiceStatus.IDLE -> "대기 중"
+        voiceStatus == VoiceStatus.LISTENING -> "듣고 있어요"
+        voiceStatus == VoiceStatus.RECORDING -> "녹음 중"
+        else -> "대기 중"
     }
 
     // 상태별 색상 (어르신 접근성 고려 - 고대비)
-    val statusColor = when (voiceStatus) {
-        VoiceStatus.IDLE -> Color(0xFF616161)        // 진한 회색
-        VoiceStatus.LISTENING -> Color(0xFF0D47A1)   // 진한 파랑 (듣는 중)
-        VoiceStatus.RECORDING -> Color(0xFFC62828)   // 진한 빨강 (녹음 중)
-        VoiceStatus.PLAYING -> Color(0xFF2E7D32)     // 진한 녹색 (말하는 중)
+    val statusColor = when {
+        voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING
+            -> PreparingOrange
+        voiceStatus == VoiceStatus.IDLE -> Color(0xFF616161)        // 진한 회색
+        voiceStatus == VoiceStatus.LISTENING -> Color(0xFF0D47A1)   // 진한 파랑 (듣는 중)
+        voiceStatus == VoiceStatus.RECORDING -> Color(0xFFC62828)   // 진한 빨강 (녹음 중)
+        voiceStatus == VoiceStatus.PLAYING -> Color(0xFF2E7D32)     // 진한 녹색 (말하는 중)
+        else -> Color(0xFF616161)
     }
 
     // 접근성 설명
-    val accessibilityDescription = when (voiceStatus) {
-        VoiceStatus.IDLE -> "대기 중입니다"
-        VoiceStatus.LISTENING -> "사용자의 음성을 듣고 있습니다"
-        VoiceStatus.RECORDING -> "음성을 녹음하고 있습니다"
-        VoiceStatus.PLAYING -> "AI가 응답 중입니다: ${currentAiMessage ?: ""}"
+    val accessibilityDescription = when {
+        voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING
+            -> "AI 응답을 준비하고 있습니다. 잠시만 기다려주세요."
+        voiceStatus == VoiceStatus.IDLE -> "대기 중입니다"
+        voiceStatus == VoiceStatus.LISTENING -> "사용자의 음성을 듣고 있습니다"
+        voiceStatus == VoiceStatus.RECORDING -> "음성을 녹음하고 있습니다"
+        voiceStatus == VoiceStatus.PLAYING -> "AI가 응답 중입니다: ${currentAiMessage ?: ""}"
+        else -> "대기 중입니다"
     }
 
     Column(
@@ -123,10 +137,11 @@ fun ActiveConversationView(
             Spacer(modifier = Modifier.height(24.dp))
 
             // AI 캐릭터 이미지 (어르신 접근성 - 더 큰 사이즈)
-            // AI가 말할 때만 애니메이션 활성화
+            // 실제 재생 중일 때만 떠다니기 애니메이션 활성화
             AiCharacterImage(
                 size = 200.dp,
                 enableFloatingAnimation = voiceStatus == VoiceStatus.PLAYING
+                    && playbackStatus == PlaybackStatus.PLAYING
             )
 
             Spacer(modifier = Modifier.height(Dimens.SpacingLarge))
@@ -183,9 +198,16 @@ fun ActiveConversationView(
             }
         }
 
-        // 하단: 동심원 파동 애니메이션 (음성 볼륨에 반응)
+        // 녹음 + 재생 상태 통합 표시
+        RecordingIndicator(
+            state = recordingState,
+            playbackStatus = playbackStatus
+        )
+
+        // 하단: 동심원 파동 애니메이션 (음성 볼륨에 반응, Preparing 중 비활성)
         RippleAnimation(
-            isActive = voiceStatus != VoiceStatus.IDLE,
+            isActive = voiceStatus != VoiceStatus.IDLE
+                && !(voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING),
             amplitude = voiceAmplitude,
             color = statusColor,
             size = 120.dp,
@@ -207,6 +229,19 @@ private fun ActiveConversationViewPreview_Listening() {
     }
 }
 
+// 미리보기: AI 응답 준비 중
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_PreparingPlayback() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            voiceStatus = VoiceStatus.PLAYING,
+            playbackStatus = PlaybackStatus.PREPARING,
+            currentAiMessage = "안녕하세요! 오늘 하루는 어떠셨나요?"
+        )
+    }
+}
+
 // 미리보기: AI 응답 중
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
@@ -214,6 +249,7 @@ private fun ActiveConversationViewPreview_Playing() {
     Graduation_projectTheme {
         ActiveConversationView(
             voiceStatus = VoiceStatus.PLAYING,
+            playbackStatus = PlaybackStatus.PLAYING,
             currentAiMessage = "오늘 하루는 어떠셨나요? 특별한 일이 있으셨는지 궁금해요."
         )
     }

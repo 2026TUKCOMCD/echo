@@ -12,6 +12,18 @@ enum class VoiceStatus {
 }
 
 /**
+ * 재생 세부 상태
+ * voiceStatus == PLAYING일 때의 세부 단계를 나타냄
+ *
+ * [T2.3-2] 재생 상태 UI 연동
+ */
+enum class PlaybackStatus {
+    NONE,       // 재생 비활성 (voiceStatus != PLAYING)
+    PREPARING,  // Base64 디코딩 + 파일 저장 중
+    PLAYING     // MediaPlayer 실제 재생 중
+}
+
+/**
  * 개별 메시지를 나타내는 데이터 클래스
  * @param id 메시지 고유 ID (중복 방지)
  * @param text 메시지 내용
@@ -45,6 +57,7 @@ data class ConversationUiState(
     val isLoading: Boolean = false,
     val sessionId: String? = null,
     val voiceStatus: VoiceStatus = VoiceStatus.IDLE,
+    val playbackStatus: PlaybackStatus = PlaybackStatus.NONE,
     val voiceAmplitude: Float = 0f,
     val messages: List<MessageUiModel> = emptyList(),
     val currentUserSpeech: String? = null,
