@@ -1,6 +1,5 @@
 package com.example.graduation_project.presentation.conversation.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,13 +7,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,14 +39,11 @@ import com.example.graduation_project.ui.theme.PreparingOrange
  *
  * ## 화면 구성
  * ┌─────────────────────────┐
- * │      상태 텍스트         │  <- "듣고 있어요", "말하고 있어요" 등
- * ├─────────────────────────┤
- * │                         │
- * │      AI 아이콘           │
- * │   현재 AI 응답 텍스트     │  <- 마지막 응답만 크게 표시
- * │                         │
- * ├─────────────────────────┤
- * │    원형 파동 애니메이션   │  <- RippleAnimation
+ * │      AI 캐릭터 이미지     │
+ * │   RecordingIndicator     │  <- 상태 아이콘 + 텍스트 ("말하고 있어요" 등)
+ * │    원형 파동 애니메이션    │  <- RippleAnimation
+ * │   AI 응답 텍스트          │
+ * │   사용자 발화 텍스트       │
  * └─────────────────────────┘
  *
  * ## 접근성
@@ -66,17 +60,7 @@ fun ActiveConversationView(
     voiceAmplitude: Float = 0f,
     modifier: Modifier = Modifier
 ) {
-    // 상태별 텍스트 (Preparing 분기 추가)
-    val statusText = when {
-        voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING -> "응답 준비 중..."
-        voiceStatus == VoiceStatus.PLAYING -> "말하고 있어요"
-        voiceStatus == VoiceStatus.IDLE -> "대기 중"
-        voiceStatus == VoiceStatus.LISTENING -> "듣고 있어요"
-        voiceStatus == VoiceStatus.RECORDING -> "녹음 중"
-        else -> "대기 중"
-    }
-
-    // 상태별 색상 (어르신 접근성 고려 - 고대비)
+    // 상태별 색상 (어르신 접근성 고려 - 고대비, RippleAnimation에 사용)
     val statusColor = when {
         voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING
             -> PreparingOrange
@@ -108,24 +92,33 @@ fun ActiveConversationView(
             },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 상단: 상태 텍스트 (흰색 배경 + 테두리 말풍선)
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color.White,
-            border = BorderStroke(width = 2.dp, color = statusColor),
-            modifier = Modifier.padding(top = Dimens.SpacingLarge)
-        ) {
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.SemiBold
-                ),
-                color = statusColor,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-            )
-        }
+        // 상단 여백
+        Spacer(modifier = Modifier.height(Dimens.SpacingLarge))
 
-        // 중앙 영역: AI 아이콘 + 현재 응답
+        // AI 캐릭터 이미지 (어르신 접근성 - 더 큰 사이즈)
+        // 실제 재생 중일 때만 떠다니기 애니메이션 활성화
+        AiCharacterImage(
+            size = 200.dp,
+            enableFloatingAnimation = voiceStatus == VoiceStatus.PLAYING
+                && playbackStatus == PlaybackStatus.PLAYING
+        )
+
+        // 녹음 + 재생 상태 통합 표시 (상태 아이콘 + "말하고 있어요" 등 텍스트)
+        RecordingIndicator(
+            state = recordingState,
+            playbackStatus = playbackStatus
+        )
+
+        // 동심원 파동 애니메이션 (음성 볼륨에 반응, Preparing 중 비활성)
+        RippleAnimation(
+            isActive = voiceStatus != VoiceStatus.IDLE
+                && !(voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING),
+            amplitude = voiceAmplitude,
+            color = statusColor,
+            size = 120.dp
+        )
+
+        // 하단 영역: AI 응답 + 사용자 발화 (RecordingIndicator와 버튼 사이)
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -133,21 +126,10 @@ fun ActiveConversationView(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
-            // 상단 여백 (voice status와 AI 응답 사이 중간 위치)
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // AI 캐릭터 이미지 (어르신 접근성 - 더 큰 사이즈)
-            // 실제 재생 중일 때만 떠다니기 애니메이션 활성화
-            AiCharacterImage(
-                size = 200.dp,
-                enableFloatingAnimation = voiceStatus == VoiceStatus.PLAYING
-                    && playbackStatus == PlaybackStatus.PLAYING
-            )
-
-            Spacer(modifier = Modifier.height(Dimens.SpacingLarge))
-
-            // AI 응답 (고정 영역 - 최대 높이 제한)
+            // AI 응답 텍스트 (위)
             if (!currentAiMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(Dimens.SpacingMedium))
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -167,9 +149,9 @@ fun ActiveConversationView(
                 }
             }
 
-            // 사용자 실시간 음성 인식 텍스트 (자동 스크롤)
+            // 사용자 실시간 음성 인식 텍스트 (아래, 자동 스크롤)
             if (!currentUserSpeech.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(Dimens.SpacingMedium))
 
                 val userSpeechScrollState = rememberScrollState()
 
@@ -197,22 +179,6 @@ fun ActiveConversationView(
                 }
             }
         }
-
-        // 녹음 + 재생 상태 통합 표시
-        RecordingIndicator(
-            state = recordingState,
-            playbackStatus = playbackStatus
-        )
-
-        // 하단: 동심원 파동 애니메이션 (음성 볼륨에 반응, Preparing 중 비활성)
-        RippleAnimation(
-            isActive = voiceStatus != VoiceStatus.IDLE
-                && !(voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING),
-            amplitude = voiceAmplitude,
-            color = statusColor,
-            size = 120.dp,
-            modifier = Modifier.padding(bottom = Dimens.SpacingLarge)
-        )
     }
 }
 
