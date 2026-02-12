@@ -59,7 +59,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     private var conversationId: String? = null
 
     // AI 응답 음성 재생 관리자
-    private val audioPlayerManager = AudioPlayerManager(getApplication())
+    private val audioPlayerManager = AudioPlayerManager()
 
     init {
         setupAudioPlayListener()

@@ -16,12 +16,6 @@ sealed class AudioPlayException(
         override val cause: Throwable? = null
     ) : AudioPlayException(message, cause)
 
-    /** 임시 파일 저장 실패 */
-    data class FileSaveError(
-        override val message: String = "음성 파일 저장에 실패했습니다",
-        override val cause: Throwable? = null
-    ) : AudioPlayException(message, cause)
-
     /** MediaPlayer 재생 실패 */
     data class PlaybackError(
         override val message: String = "음성 재생에 실패했습니다",

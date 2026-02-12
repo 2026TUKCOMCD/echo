@@ -1,6 +1,6 @@
 package com.example.graduation_project.data.voice
 
-import android.content.Context
+import android.media.MediaDataSource
 import android.media.MediaPlayer
 import android.util.Base64
 import com.example.graduation_project.domain.voice.AudioPlayException
@@ -14,32 +14,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * [T2.3-1] AudioPlayerManager
  *
  * AI 응답 음성(Base64 MP3)을 디코딩하여 재생하는 관리자
  * 1. Base64 String → ByteArray 디코딩
- * 2. ByteArray → 임시 MP3 파일 저장
- * 3. MediaPlayer로 재생
- * 4. 재생 완료 후 임시 파일 정리
+ * 2. ByteArray → MediaDataSource로 메모리에서 직접 재생
  *
  * 데이터 흐름:
  * play(base64AudioData)
  *   → Base64.decode()
- *   → saveTempMp3File(bytes)
- *   → MediaPlayer.setDataSource(file) → prepare() → start()
- *   → onCompletion → Completed → cleanup
+ *   → ByteArrayMediaDataSource(bytes)
+ *   → MediaPlayer.setDataSource(dataSource) → prepare() → start()
+ *   → onCompletion → Completed
  */
-class AudioPlayerManager(context: Context) {
-
-    private val appContext = context.applicationContext
+class AudioPlayerManager {
 
     private val _state = MutableStateFlow<AudioPlayState>(AudioPlayState.Idle)
     val state: StateFlow<AudioPlayState> = _state.asStateFlow()
@@ -47,25 +37,6 @@ class AudioPlayerManager(context: Context) {
     private var listener: AudioPlayListener? = null
     private var scope: CoroutineScope? = null
     private var mediaPlayer: MediaPlayer? = null
-    private var currentTempFile: File? = null
-
-    companion object {
-        private const val PLAYBACK_DIR_NAME = "audio_playback"
-        private const val FILE_PREFIX = "echo_tts_"
-        private const val FILE_EXTENSION = ".mp3"
-        private const val DATE_FORMAT = "yyyyMMdd_HHmmss_SSS"
-
-        /** 보관 기간: 1시간 */
-        private const val MAX_FILE_AGE_MS = 60 * 60 * 1000L
-
-        /** 최대 파일 수 */
-        private const val MAX_FILE_COUNT = 5
-    }
-
-    private val playbackDir: File
-        get() = File(appContext.cacheDir, PLAYBACK_DIR_NAME).also {
-            if (!it.exists()) it.mkdirs()
-        }
 
     /**
      * AudioPlayListener 설정
@@ -100,34 +71,17 @@ class AudioPlayerManager(context: Context) {
 
         _state.value = AudioPlayState.Preparing
 
-        // 오래된 파일 정리 (IO thread)
-        scope?.launch(Dispatchers.IO) {
-            cleanupOldFiles()
-            enforceFileLimit()
-        }
-
-        // Base64 디코딩 + 파일 저장 (IO thread) → 재생 (Main thread)
+        // Base64 디코딩 (IO thread) → MediaDataSource 재생 (Main thread)
         scope?.launch(Dispatchers.IO) {
             try {
-                // Step 1: Base64 디코딩
                 val audioBytes = try {
                     Base64.decode(base64AudioData, Base64.DEFAULT)
                 } catch (e: IllegalArgumentException) {
                     throw AudioPlayException.DecodeError(cause = e)
                 }
 
-                // Step 2: 임시 MP3 파일 저장
-                val tempFile = try {
-                    saveTempMp3File(audioBytes)
-                } catch (e: IOException) {
-                    throw AudioPlayException.FileSaveError(cause = e)
-                }
-
-                currentTempFile = tempFile
-
-                // Step 3: MediaPlayer 재생 (Main thread)
                 launch(Dispatchers.Main) {
-                    startPlayback(tempFile)
+                    startPlayback(audioBytes)
                 }
             } catch (e: AudioPlayException) {
                 launch(Dispatchers.Main) {
@@ -149,7 +103,6 @@ class AudioPlayerManager(context: Context) {
      */
     fun stop() {
         releaseMediaPlayer()
-        deleteTempFile()
 
         _state.value = AudioPlayState.Idle
 
@@ -165,28 +118,19 @@ class AudioPlayerManager(context: Context) {
         listener = null
     }
 
-    /**
-     * 모든 임시 재생 파일 삭제
-     */
-    fun clearPlaybackFiles() {
-        playbackDir.listFiles()
-            ?.filter { it.name.startsWith(FILE_PREFIX) }
-            ?.forEach { it.delete() }
-        currentTempFile = null
-    }
-
     // ---- Private: MediaPlayer ----
 
-    private fun startPlayback(file: File) {
+    private fun startPlayback(audioBytes: ByteArray) {
         try {
+            val dataSource = ByteArrayMediaDataSource(audioBytes)
+
             val player = MediaPlayer().apply {
-                setDataSource(file.absolutePath)
+                setDataSource(dataSource)
 
                 setOnCompletionListener {
                     _state.value = AudioPlayState.Completed
                     listener?.onPlaybackComplete()
                     releaseMediaPlayer()
-                    deleteTempFile()
                 }
 
                 setOnErrorListener { _, what, extra ->
@@ -196,7 +140,6 @@ class AudioPlayerManager(context: Context) {
                     _state.value = AudioPlayState.Error(exception)
                     listener?.onError(exception)
                     releaseMediaPlayer()
-                    deleteTempFile()
                     true
                 }
 
@@ -212,7 +155,6 @@ class AudioPlayerManager(context: Context) {
             _state.value = AudioPlayState.Error(exception)
             listener?.onError(exception)
             releaseMediaPlayer()
-            deleteTempFile()
         }
     }
 
@@ -228,49 +170,29 @@ class AudioPlayerManager(context: Context) {
         mediaPlayer = null
     }
 
-    // ---- Private: 임시 파일 관리 ----
+    // ---- Private: MediaDataSource ----
 
-    private fun saveTempMp3File(audioBytes: ByteArray): File {
-        val fileName = generateFileName()
-        val file = File(playbackDir, fileName)
+    /**
+     * ByteArray를 MediaDataSource로 감싸는 구현체
+     * MediaPlayer가 메모리에서 직접 오디오 데이터를 읽을 수 있게 함 (API 23+)
+     */
+    private class ByteArrayMediaDataSource(
+        private val data: ByteArray
+    ) : MediaDataSource() {
 
-        FileOutputStream(file).use { fos ->
-            fos.write(audioBytes)
-            fos.flush()
+        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+            if (position >= data.size) return -1
+
+            val remaining = (data.size - position).toInt()
+            val bytesToRead = minOf(size, remaining)
+            System.arraycopy(data, position.toInt(), buffer, offset, bytesToRead)
+            return bytesToRead
         }
 
-        return file
-    }
+        override fun getSize(): Long = data.size.toLong()
 
-    private fun deleteTempFile() {
-        currentTempFile?.let {
-            if (it.exists()) it.delete()
+        override fun close() {
+            // ByteArray는 GC가 처리하므로 별도 해제 불필요
         }
-        currentTempFile = null
-    }
-
-    private fun cleanupOldFiles() {
-        val now = System.currentTimeMillis()
-        playbackDir.listFiles()
-            ?.filter { it.name.startsWith(FILE_PREFIX) && it.extension == "mp3" }
-            ?.filter { now - it.lastModified() > MAX_FILE_AGE_MS }
-            ?.forEach { it.delete() }
-    }
-
-    private fun enforceFileLimit() {
-        val files = playbackDir.listFiles()
-            ?.filter { it.name.startsWith(FILE_PREFIX) && it.extension == "mp3" }
-            ?.sortedBy { it.lastModified() }
-            ?: return
-
-        if (files.size > MAX_FILE_COUNT) {
-            files.take(files.size - MAX_FILE_COUNT).forEach { it.delete() }
-        }
-    }
-
-    private fun generateFileName(): String {
-        val dateFormat = SimpleDateFormat(DATE_FORMAT, Locale.getDefault())
-        val timestamp = dateFormat.format(Date())
-        return "$FILE_PREFIX$timestamp$FILE_EXTENSION"
     }
 }
