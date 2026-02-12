@@ -101,7 +101,7 @@ private fun ConversationScreenContent(
                 modifier = Modifier.weight(1f)
             ) {
                 if (uiState.isConversationActive) {
-                    // 대화 중: 상태 + AI 응답 + 사용자 음성 + 동심원 애니메이션
+                    // 대화 중: AI 캐릭터 + 상태 표시 + 동심원 애니메이션
                     val currentAiMessage = uiState.messages
                         .lastOrNull { !it.isFromUser }
                         ?.text
@@ -146,7 +146,7 @@ private fun ConversationScreenPreview_Initial() {
     }
 }
 
-// 미리보기: 대화 진행 중 (듣고 있는 상태 + 실시간 음성 인식)
+// 미리보기: 대화 진행 중 (듣고 있는 상태)
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun ConversationScreenPreview_Listening() {
