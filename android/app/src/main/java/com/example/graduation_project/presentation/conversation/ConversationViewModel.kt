@@ -68,8 +68,15 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     private fun setupAudioPlayListener() {
         audioPlayerManager.setListener(object : AudioPlayListener {
             override fun onPlaybackStart() {
-                // Preparing → Playing 전환
-                _uiState.update { it.copy(playbackStatus = PlaybackStatus.PLAYING) }
+                // Preparing/Retrying → Playing 전환 (재시도 성공 시 폴백 숨김)
+                _uiState.update {
+                    it.copy(
+                        playbackStatus = PlaybackStatus.PLAYING,
+                        isAudioRetrying = false,
+                        showAudioFallbackText = false,
+                        retryProgress = null
+                    )
+                }
             }
 
             override fun onPlaybackComplete() {
@@ -77,21 +84,66 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 _uiState.update {
                     it.copy(
                         voiceStatus = VoiceStatus.LISTENING,
-                        playbackStatus = PlaybackStatus.NONE
+                        playbackStatus = PlaybackStatus.NONE,
+                        isAudioRetrying = false,
+                        showAudioFallbackText = false,
+                        retryProgress = null
                     )
                 }
             }
 
-            override fun onError(exception: AudioPlayException) {
+            override fun onRetrying(currentAttempt: Int, maxAttempts: Int) {
+                // 재시도 시작 → UI에 진행 상황 표시
+                _uiState.update {
+                    it.copy(
+                        isAudioRetrying = true,
+                        playbackStatus = PlaybackStatus.PREPARING,
+                        retryProgress = "재시도 중 ($currentAttempt/$maxAttempts)"
+                    )
+                }
+            }
+
+            override fun onError(exception: AudioPlayException, isFallbackNeeded: Boolean) {
+                // 마지막 AI 메시지 텍스트 추출 (폴백용)
+                val lastAiMessage = _uiState.value.messages
+                    .lastOrNull { !it.isFromUser }
+                    ?.text
+
                 _uiState.update {
                     it.copy(
                         voiceStatus = VoiceStatus.LISTENING,
                         playbackStatus = PlaybackStatus.NONE,
-                        errorMessage = exception.message
+                        isAudioRetrying = false,
+                        showAudioFallbackText = isFallbackNeeded && lastAiMessage != null,
+                        audioFallbackText = lastAiMessage,
+                        retryProgress = null,
+                        errorMessage = getAudioErrorMessage(exception, isFallbackNeeded)
                     )
                 }
             }
         })
+    }
+
+    /**
+     * 오디오 재생 에러 메시지 생성
+     *
+     * @param exception 발생한 예외
+     * @param isFallbackNeeded 텍스트 폴백 필요 여부
+     * @return 사용자에게 표시할 에러 메시지
+     *
+     * [T2.3-3] 재생 에러 처리
+     */
+    private fun getAudioErrorMessage(
+        exception: AudioPlayException,
+        isFallbackNeeded: Boolean
+    ): String {
+        return if (isFallbackNeeded) {
+            // 텍스트 폴백 표시 시 긍정적 메시지
+            "음성을 재생할 수 없어 텍스트로 보여드려요"
+        } else {
+            // 폴백 불가능 시 기존 에러 메시지
+            exception.message ?: "음성 재생 오류"
+        }
     }
 
     /**
@@ -171,7 +223,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                     isLoading = true,
                     errorMessage = null,
                     voiceStatus = VoiceStatus.IDLE,
-                    playbackStatus = PlaybackStatus.NONE
+                    playbackStatus = PlaybackStatus.NONE,
+                    // [T2.3-3] 폴백 텍스트 숨김 (새 음성 입력 시작)
+                    showAudioFallbackText = false,
+                    audioFallbackText = null,
+                    retryProgress = null
                 )
             }
 
@@ -250,7 +306,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
             when (result) {
                 is ApiResult.Success -> {
-                    audioPlayerManager.stop()
+                    audioPlayerManager.stop()  // 재시도 중이어도 즉시 중지
                     conversationId = null
                     _uiState.update {
                         it.copy(
@@ -258,7 +314,12 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                             isConversationActive = false,
                             sessionId = null,
                             voiceStatus = VoiceStatus.IDLE,
-                            playbackStatus = PlaybackStatus.NONE
+                            playbackStatus = PlaybackStatus.NONE,
+                            // [T2.3-3] 폴백 관련 상태 초기화
+                            isAudioRetrying = false,
+                            showAudioFallbackText = false,
+                            audioFallbackText = null,
+                            retryProgress = null
                             // messages는 유지 (대화 기록 보존)
                         )
                     }

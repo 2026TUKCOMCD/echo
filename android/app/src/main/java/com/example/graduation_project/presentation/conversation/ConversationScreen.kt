@@ -102,6 +102,7 @@ private fun ConversationScreenContent(
             ) {
                 if (uiState.isConversationActive) {
                     // 대화 중: AI 캐릭터 + 상태 표시 + 동심원 애니메이션
+                    // [T2.3-3] 음성 재생 실패 시 텍스트 폴백 표시
                     val currentAiMessage = uiState.messages
                         .lastOrNull { !it.isFromUser }
                         ?.text
@@ -111,7 +112,10 @@ private fun ConversationScreenContent(
                         playbackStatus = uiState.playbackStatus,
                         currentAiMessage = currentAiMessage,
                         currentUserSpeech = uiState.currentUserSpeech,
-                        voiceAmplitude = uiState.voiceAmplitude
+                        voiceAmplitude = uiState.voiceAmplitude,
+                        showAudioFallbackText = uiState.showAudioFallbackText,  // [T2.3-3]
+                        audioFallbackText = uiState.audioFallbackText,          // [T2.3-3]
+                        retryProgress = uiState.retryProgress                   // [T2.3-3]
                     )
                 } else {
                     // 대화 시작 전: AI 아이콘 + 인사 메시지
