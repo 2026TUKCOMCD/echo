@@ -4,19 +4,30 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.graduation_project.presentation.settings.VoiceSettingsDialog
 import com.example.graduation_project.presentation.conversation.components.ActiveConversationView
 import com.example.graduation_project.presentation.conversation.components.ConversationControls
 import com.example.graduation_project.presentation.conversation.components.EmptyConversationView
@@ -62,13 +73,22 @@ fun ConversationScreen(
         }
     }
 
+    // 설정 다이얼로그 상태
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
     // 화면 구성
     ConversationScreenContent(
         uiState = uiState,
         snackbarHostState = snackbarHostState,
         onStartClick = viewModel::startConversation,
-        onEndClick = viewModel::endConversation
+        onEndClick = viewModel::endConversation,
+        onSettingsClick = { showSettingsDialog = true }
     )
+
+    // 음성 설정 다이얼로그
+    if (showSettingsDialog) {
+        VoiceSettingsDialog(onDismiss = { showSettingsDialog = false })
+    }
 }
 
 /**
@@ -80,7 +100,8 @@ private fun ConversationScreenContent(
     uiState: ConversationUiState,
     snackbarHostState: SnackbarHostState,
     onStartClick: () -> Unit,
-    onEndClick: () -> Unit
+    onEndClick: () -> Unit,
+    onSettingsClick: () -> Unit = {}
 ) {
     // 따뜻한 느낌 + 고대비 색상 (어르신 접근성 고려)
     val backgroundColor = Color(0xFFFFFDF9)  // 아주 연한 아이보리
@@ -99,6 +120,25 @@ private fun ConversationScreenContent(
             Box(
                 modifier = Modifier.weight(1f)
             ) {
+                // 대화 시작 전: 설정 버튼 (우측 상단)
+                if (!uiState.isConversationActive) {
+                    IconButton(
+                        onClick = onSettingsClick,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp)
+                            .height(48.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = Color(0xFF666666)
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "음성 설정"
+                        )
+                    }
+                }
+
                 if (uiState.isConversationActive) {
                     // 대화 중: 상태 + AI 응답 + 사용자 음성 + 동심원 애니메이션
                     val currentAiMessage = uiState.messages
