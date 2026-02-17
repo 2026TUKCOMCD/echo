@@ -39,9 +39,9 @@ class AudioPlayerManager {
     private var mediaPlayer: MediaPlayer? = null
 
     // [T2.3-3] 재시도 로직 관련 필드
-    private var cachedAudioData: String? = null  // 재시도용 Base64 캐시
-    private var retryCount: Int = 0              // 현재 재시도 횟수
-    private val maxRetries: Int = 3              // 최대 재시도 횟수
+    private var cachedAudioBytes: ByteArray? = null  // 재시도용 디코딩된 오디오 데이터 캐시
+    private var retryCount: Int = 0                  // 현재 재시도 횟수
+    private val maxRetries: Int = 3                  // 최대 재시도 횟수
     private val retryDelays = listOf(100L, 300L, 900L)  // Exponential backoff (ms)
 
     /**
@@ -68,6 +68,7 @@ class AudioPlayerManager {
      *               → Error (재시도 실패)
      *
      * [T2.3-3] 재시도 로직: PlaybackError 발생 시 자동으로 2-3회 재시도
+     * [개선] Base64 디코딩을 한 번만 수행하고 ByteArray 캐시 (재시도 시 디코딩 불필요)
      */
     fun play(base64AudioData: String) {
         // 이전 재생 중이면 중지
@@ -77,25 +78,13 @@ class AudioPlayerManager {
             stop()
         }
 
-        // 재시도용 캐시 및 카운터 초기화
-        cachedAudioData = base64AudioData
+        // 재시도 카운터 초기화
         retryCount = 0
 
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         _state.value = AudioPlayState.Preparing
 
-        // 첫 재생 시도
-        attemptPlayback(base64AudioData, isRetry = false)
-    }
-
-    /**
-     * 실제 재생 시도 (재시도 로직 포함)
-     *
-     * @param base64AudioData Base64 오디오 데이터
-     * @param isRetry 재시도 여부 (true면 재시도 중)
-     */
-    private fun attemptPlayback(base64AudioData: String, isRetry: Boolean) {
-        // Base64 디코딩 (IO thread) → MediaDataSource 재생 (Main thread)
+        // Base64 디코딩 (한 번만 수행)
         scope?.launch(Dispatchers.IO) {
             try {
                 val audioBytes = try {
@@ -104,20 +93,34 @@ class AudioPlayerManager {
                     throw AudioPlayException.DecodeError(cause = e)
                 }
 
+                // 첫 재생 시도 (Main 스레드로 전환)
                 launch(Dispatchers.Main) {
-                    startPlayback(audioBytes, isRetry)
+                    // 디코딩 성공 → ByteArray 캐시 (Main 스레드에서)
+                    cachedAudioBytes = audioBytes
+                    attemptPlayback(audioBytes, isRetry = false)
                 }
             } catch (e: AudioPlayException) {
                 launch(Dispatchers.Main) {
-                    handlePlaybackError(e, isRetry)
+                    handlePlaybackError(e, isRetry = false)
                 }
             } catch (e: Exception) {
                 val exception = AudioPlayException.UnknownError(cause = e)
                 launch(Dispatchers.Main) {
-                    handlePlaybackError(exception, isRetry)
+                    handlePlaybackError(exception, isRetry = false)
                 }
             }
         }
+    }
+
+    /**
+     * 실제 재생 시도 (재시도 로직 포함)
+     *
+     * @param audioBytes 디코딩된 오디오 데이터 (ByteArray)
+     * @param isRetry 재시도 여부 (true면 재시도 중)
+     */
+    private fun attemptPlayback(audioBytes: ByteArray, isRetry: Boolean) {
+        // 디코딩된 ByteArray를 바로 MediaPlayer로 재생
+        startPlayback(audioBytes, isRetry)
     }
 
     /**
@@ -129,7 +132,7 @@ class AudioPlayerManager {
         releaseMediaPlayer()
 
         // 재시도 관련 상태 초기화
-        cachedAudioData = null
+        cachedAudioBytes = null
         retryCount = 0
 
         _state.value = AudioPlayState.Idle
@@ -163,7 +166,7 @@ class AudioPlayerManager {
 
                 setOnCompletionListener {
                     // 재생 성공 → 캐시 해제
-                    cachedAudioData = null
+                    cachedAudioBytes = null
                     retryCount = 0
 
                     _state.value = AudioPlayState.Completed
@@ -201,12 +204,13 @@ class AudioPlayerManager {
      * @param isRetry 현재 재시도 중인지 여부
      *
      * [T2.3-3] 재시도 로직 핵심 메서드
+     * [개선] 캐시된 ByteArray 재사용 (디코딩 불필요)
      */
     private fun handlePlaybackError(exception: AudioPlayException, isRetry: Boolean) {
         val canRetry = isRetryableError(exception) && retryCount < maxRetries
 
-        if (canRetry && cachedAudioData != null) {
-            // 재시도 가능 → 자동 재시도
+        if (canRetry && cachedAudioBytes != null) {
+            // 재시도 가능 → 자동 재시도 (디코딩 불필요)
             retryCount++
             _state.value = AudioPlayState.Retrying(retryCount, maxRetries)
             listener?.onRetrying(retryCount, maxRetries)
@@ -215,11 +219,11 @@ class AudioPlayerManager {
             val delay = retryDelays.getOrElse(retryCount - 1) { 900L }
             scope?.launch {
                 kotlinx.coroutines.delay(delay)
-                attemptPlayback(cachedAudioData!!, isRetry = true)
+                attemptPlayback(cachedAudioBytes!!, isRetry = true)
             }
         } else {
             // 최종 실패 → 캐시 해제 및 에러 전파
-            cachedAudioData = null
+            cachedAudioBytes = null
             retryCount = 0
 
             _state.value = AudioPlayState.Error(exception, isFallbackNeeded = true)
