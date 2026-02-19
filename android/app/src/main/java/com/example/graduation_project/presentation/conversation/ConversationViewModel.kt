@@ -4,10 +4,10 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.graduation_project.BuildConfig
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.AppDatabase
+import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
@@ -39,19 +39,17 @@ import java.util.UUID
  * 4. 대화 종료 버튼 클릭 -> endConversation() 호출
  * 5. 상태 초기화
  */
-class ConversationViewModel(application: Application) : AndroidViewModel(application) {
+class ConversationViewModel(
+    application: Application,
+    private val repository: ConversationRepository = ConversationRepository(),
+    private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao()
+) : AndroidViewModel(application) {
 
     // 내부에서만 수정 가능한 상태
     private val _uiState = MutableStateFlow(ConversationUiState())
 
     // 외부에서 관찰만 가능한 상태 (읽기 전용)
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
-
-    // Repository
-    private val repository = ConversationRepository()
-
-    // Room DB
-    private val messageDao = AppDatabase.getInstance(application).messageDao()
 
     // 로컬 대화 세션 ID (대화 시작 시 생성, 종료 시 초기화)
     private var conversationId: String? = null
@@ -65,8 +63,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun startConversation() {
         viewModelScope.launch {
-            // Idle → Sending
-            transitionTo(ConversationState.Sending)
+            // Idle → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
             _uiState.update { it.copy(errorMessage = null) }
 
             val result = repository.startConversation(getDummyHealthData())
@@ -113,8 +111,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun sendMessage(wavData: ByteArray) {
         viewModelScope.launch {
-            // Recording → Sending
-            transitionTo(ConversationState.Sending)
+            // Recording → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
             _uiState.update { it.copy(errorMessage = null) }
 
             // WAV ByteArray → MultipartBody.Part 변환
@@ -169,8 +167,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun endConversation() {
         viewModelScope.launch {
-            // Listening → Sending
-            transitionTo(ConversationState.Sending)
+            // Listening → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
 
             val result = repository.endConversation()
 
@@ -271,21 +269,22 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
     /**
      * 현재 상태 → [next] 상태 전이를 검증한 뒤 적용합니다.
-     * - Debug: 잘못된 전이 시 IllegalStateException throw (개발 중 버그 조기 발견)
-     * - Release: 잘못된 전이 시 로그 출력 후 무시 (앱 크래시 방지)
+     * - 유효한 전이: 상태 업데이트 후 true 반환
+     * - 유효하지 않은 전이: Log.w 출력 후 false 반환 (VAD 등 비동기 이벤트 중복 호출도 안전하게 처리)
+     *
+     * 호출자는 반환값으로 중복 요청을 차단할 수 있습니다:
+     * ```
+     * if (!transitionTo(ConversationState.Sending)) return@launch
+     * ```
      */
-    private fun transitionTo(next: ConversationState) {
+    private fun transitionTo(next: ConversationState): Boolean {
         val current = _uiState.value.conversationState
         if (!current.canTransitionTo(next)) {
-            val msg = "Invalid transition: ${current::class.simpleName} → ${next::class.simpleName}"
-            if (BuildConfig.DEBUG) {
-                throw IllegalStateException(msg)
-            } else {
-                Log.w(TAG, msg)
-                return
-            }
+            Log.w(TAG, "Invalid transition: ${current::class.simpleName} → ${next::class.simpleName}")
+            return false
         }
         _uiState.update { it.copy(conversationState = next) }
+        return true
     }
 
     // 사용자 메시지 객체 생성 헬퍼 함수
