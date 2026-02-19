@@ -12,6 +12,18 @@ enum class VoiceStatus {
 }
 
 /**
+ * 재생 세부 상태
+ * voiceStatus == PLAYING일 때의 세부 단계를 나타냄
+ *
+ * [T2.3-2] 재생 상태 UI 연동
+ */
+enum class PlaybackStatus {
+    NONE,       // 재생 비활성 (voiceStatus != PLAYING)
+    PREPARING,  // Base64 디코딩 + 파일 저장 중
+    PLAYING     // MediaPlayer 실제 재생 중
+}
+
+/**
  * 개별 메시지를 나타내는 데이터 클래스
  * @param id 메시지 고유 ID (중복 방지)
  * @param text 메시지 내용
@@ -39,15 +51,24 @@ data class MessageUiModel(
  * @param currentUserSpeech 실시간 음성 인식 텍스트 (녹음 중 표시)
  * @param userName 사용자 이름 (인사말에 표시)
  * @param errorMessage 에러 메시지 (null이면 에러 없음)
+ * @param isAudioRetrying 오디오 재생 재시도 중 여부 [T2.3-3]
+ * @param showAudioFallbackText 오디오 재생 실패 후 텍스트 폴백 표시 중 [T2.3-3]
+ * @param audioFallbackText 폴백 텍스트 (AI 응답) [T2.3-3]
+ * @param retryProgress 재시도 진행 상황 (예: "재시도 중 (1/3)") [T2.3-3]
  */
 data class ConversationUiState(
     val isConversationActive: Boolean = false,
     val isLoading: Boolean = false,
     val sessionId: String? = null,
     val voiceStatus: VoiceStatus = VoiceStatus.IDLE,
+    val playbackStatus: PlaybackStatus = PlaybackStatus.NONE,
     val voiceAmplitude: Float = 0f,
     val messages: List<MessageUiModel> = emptyList(),
     val currentUserSpeech: String? = null,
     val userName: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isAudioRetrying: Boolean = false,
+    val showAudioFallbackText: Boolean = false,
+    val audioFallbackText: String? = null,
+    val retryProgress: String? = null
 )
