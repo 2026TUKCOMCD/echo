@@ -8,6 +8,7 @@ import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.model.HealthData
+import com.example.graduation_project.data.model.TtsRetryResponse
 import okhttp3.MultipartBody
 
 class ConversationRepository(
@@ -29,6 +30,12 @@ class ConversationRepository(
     suspend fun endConversation(): ApiResult<ConversationEndResponse> {
         return safeApiCall {
             conversationApi.endConversation()
+        }
+    }
+
+    suspend fun retryTts(): ApiResult<TtsRetryResponse> {
+        return safeApiCall {
+            conversationApi.retryTts()
         }
     }
 }

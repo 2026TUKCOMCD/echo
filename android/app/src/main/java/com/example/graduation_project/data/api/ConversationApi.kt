@@ -4,6 +4,7 @@ import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.model.HealthData
+import com.example.graduation_project.data.model.TtsRetryResponse
 import okhttp3.MultipartBody
 import retrofit2.http.Body
 import retrofit2.http.Multipart
@@ -25,4 +26,7 @@ interface ConversationApi {
 
     @POST("/api/conversations/end")
     suspend fun endConversation(): ConversationEndResponse
+
+    @POST("/api/conversations/tts-retry")
+    suspend fun retryTts(): TtsRetryResponse
 }

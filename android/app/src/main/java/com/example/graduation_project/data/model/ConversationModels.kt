@@ -25,6 +25,12 @@ data class ConversationEndResponse(
     val endedAt: String? = null
 )
 
+// /api/conversations/tts-retry 응답 Model(DTO)
+@Serializable
+data class TtsRetryResponse(
+    val audioData: String? = null
+)
+
 // 요청 Model(DTO) -> /start에 대한 DTO
 @Serializable
 data class HealthData(
