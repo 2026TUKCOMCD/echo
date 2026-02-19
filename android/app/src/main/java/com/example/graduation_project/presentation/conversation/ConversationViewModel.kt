@@ -9,9 +9,9 @@ import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
-import com.example.graduation_project.presentation.model.VoiceStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,7 +63,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun startConversation() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(conversationState = ConversationState.Sending, errorMessage = null) }
 
             val result = repository.startConversation(getDummyHealthData())
 
@@ -77,10 +77,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
                     _uiState.update { currentState ->
                         currentState.copy(
-                            isLoading = false,
-                            isConversationActive = true,
+                            conversationState = ConversationState.Playing,
                             sessionId = conversationId,
-                            voiceStatus = VoiceStatus.PLAYING,
                             messages = currentState.messages + aiMessage
                             // TODO: response.audioData (Base64) 디코딩 후 TTS 재생
                         )
@@ -93,7 +91,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 is ApiResult.Error -> {
                     _uiState.update {
                         it.copy(
-                            isLoading = false,
+                            conversationState = ConversationState.Idle,
                             errorMessage = getErrorMessage(result.exception)
                         )
                     }
@@ -114,7 +112,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     fun sendMessage(wavData: ByteArray) {
         viewModelScope.launch {
             _uiState.update {
-                it.copy(isLoading = true, errorMessage = null, voiceStatus = VoiceStatus.IDLE)
+                it.copy(conversationState = ConversationState.Sending, errorMessage = null)
             }
 
             // WAV ByteArray → MultipartBody.Part 변환
@@ -131,8 +129,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
                     _uiState.update { currentState ->
                         currentState.copy(
-                            isLoading = false,
-                            voiceStatus = VoiceStatus.PLAYING,
+                            conversationState = ConversationState.Playing,
                             messages = currentState.messages + userMessage + aiMessage
                             // TODO: response.audioData (Base64) 디코딩 후 TTS 재생
                         )
@@ -146,8 +143,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 is ApiResult.Error -> {
                     _uiState.update {
                         it.copy(
-                            isLoading = false,
-                            voiceStatus = VoiceStatus.LISTENING,
+                            conversationState = ConversationState.Listening,
                             errorMessage = getErrorMessage(result.exception)
                         )
                     }
@@ -173,7 +169,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun endConversation() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(conversationState = ConversationState.Sending) }
 
             val result = repository.endConversation()
 
@@ -182,10 +178,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                     conversationId = null
                     _uiState.update {
                         it.copy(
-                            isLoading = false,
-                            isConversationActive = false,
-                            sessionId = null,
-                            voiceStatus = VoiceStatus.IDLE
+                            conversationState = ConversationState.Ended,
+                            sessionId = null
                             // messages는 유지 (대화 기록 보존)
                         )
                     }
@@ -194,7 +188,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 is ApiResult.Error -> {
                     _uiState.update {
                         it.copy(
-                            isLoading = false,
+                            conversationState = ConversationState.Listening,
                             errorMessage = getErrorMessage(result.exception)
                         )
                     }
@@ -204,11 +198,25 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     }
 
     /**
-     * 음성 상태를 업데이트합니다.
+     * 대화 상태를 업데이트합니다.
      * - 음성 녹음/재생 상태에 따라 호출
      */
-    fun updateVoiceStatus(status: VoiceStatus) {
-        _uiState.update { it.copy(voiceStatus = status) }
+    fun updateConversationState(state: ConversationState) {
+        _uiState.update { it.copy(conversationState = state) }
+    }
+
+    /**
+     * 상태를 IDLE로 초기화합니다.
+     * - ENDED 상태에서 사용자가 시작 버튼을 클릭하면 호출
+     */
+    fun resetToIdle() {
+        _uiState.update {
+            it.copy(
+                conversationState = ConversationState.Idle,
+                messages = emptyList(),
+                sessionId = null
+            )
+        }
     }
 
     /**
