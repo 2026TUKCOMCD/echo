@@ -1,5 +1,7 @@
 package com.example.graduation_project.presentation.model
 
+import com.example.graduation_project.presentation.character.CharacterState
+
 /**
  * 음성 상태를 나타내는 열거형
  * - 화면에서 현재 음성 처리 상태를 표시하는 데 사용
@@ -21,6 +23,15 @@ enum class PlaybackStatus {
     NONE,       // 재생 비활성 (voiceStatus != PLAYING)
     PREPARING,  // Base64 디코딩 + 파일 저장 중
     PLAYING     // MediaPlayer 실제 재생 중
+}
+
+/**
+ * 발화 인식 오류 타입
+ */
+enum class SpeechErrorType {
+    NOT_DETECTED,  // 발화가 감지되지 않음
+    TOO_SHORT,     // 발화가 너무 짧음
+    STT_FAILED,    // 서버 STT 인식 실패
 }
 
 /**
@@ -55,6 +66,16 @@ data class MessageUiModel(
  * @param showAudioFallbackText 오디오 재생 실패 후 텍스트 폴백 표시 중 [T2.3-3]
  * @param audioFallbackText 폴백 텍스트 (AI 응답) [T2.3-3]
  * @param retryProgress 재시도 진행 상황 (예: "재시도 중 (1/3)") [T2.3-3]
+ * @param characterState 캐릭터 애니메이션 상태
+ * @param processingMessage PROCESSING 상태 오버레이 메시지 (3초 후 "잠시만요", 6초 후 "조금만 기다려주세요")
+ * @param processingElapsedSeconds PROCESSING 상태 경과 시간 (초)
+ * @param speechErrorMessage 발화 인식 실패 메시지
+ * @param speechErrorHint 발화 인식 실패 힌트 (연속 실패 횟수에 따라 다른 힌트)
+ * @param speechFailCount 발화 인식 연속 실패 횟수
+ * @param userRetryCount 사용자 재시도 버튼 클릭 횟수 (네트워크/서버 오류)
+ * @param isRetryButtonEnabled 재시도 버튼 활성화 여부
+ * @param showContactSupport 고객센터 연결 버튼 표시 여부 (재시도 3회 초과)
+ * @param showFarewellDialog 종료 확인 다이얼로그 표시 여부
  */
 data class ConversationUiState(
     val isConversationActive: Boolean = false,
@@ -70,5 +91,20 @@ data class ConversationUiState(
     val isAudioRetrying: Boolean = false,
     val showAudioFallbackText: Boolean = false,
     val audioFallbackText: String? = null,
-    val retryProgress: String? = null
+    val retryProgress: String? = null,
+    // 캐릭터 상태
+    val characterState: CharacterState = CharacterState.IDLE,
+    // PROCESSING 오버레이
+    val processingMessage: String? = null,
+    val processingElapsedSeconds: Int = 0,
+    // 발화 인식 실패
+    val speechErrorMessage: String? = null,
+    val speechErrorHint: String? = null,
+    val speechFailCount: Int = 0,
+    // 재시도 관련
+    val userRetryCount: Int = 0,
+    val isRetryButtonEnabled: Boolean = false,
+    val showContactSupport: Boolean = false,
+    // 종료 다이얼로그
+    val showFarewellDialog: Boolean = false,
 )
