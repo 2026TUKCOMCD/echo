@@ -34,6 +34,7 @@ import com.example.graduation_project.presentation.conversation.components.Empty
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
+import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
 /**
@@ -140,16 +141,21 @@ private fun ConversationScreenContent(
                 }
 
                 if (uiState.isConversationActive) {
-                    // 대화 중: 상태 + AI 응답 + 사용자 음성 + 동심원 애니메이션
+                    // 대화 중: AI 캐릭터 + 상태 표시 + 동심원 애니메이션
+                    // [T2.3-3] 음성 재생 실패 시 텍스트 폴백 표시
                     val currentAiMessage = uiState.messages
                         .lastOrNull { !it.isFromUser }
                         ?.text
 
                     ActiveConversationView(
                         conversationState = uiState.conversationState,
+                        playbackStatus = uiState.playbackStatus,
                         currentAiMessage = currentAiMessage,
                         currentUserSpeech = uiState.currentUserSpeech,
-                        voiceAmplitude = uiState.voiceAmplitude
+                        voiceAmplitude = uiState.voiceAmplitude,
+                        showAudioFallbackText = uiState.showAudioFallbackText,  // [T2.3-3]
+                        audioFallbackText = uiState.audioFallbackText,          // [T2.3-3]
+                        retryProgress = uiState.retryProgress                   // [T2.3-3]
                     )
                 } else {
                     // 대화 시작 전: AI 아이콘 + 인사 메시지
@@ -184,7 +190,7 @@ private fun ConversationScreenPreview_Initial() {
     }
 }
 
-// 미리보기: 대화 진행 중 (듣고 있는 상태 + 실시간 음성 인식)
+// 미리보기: 대화 진행 중 (듣고 있는 상태)
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun ConversationScreenPreview_Listening() {
@@ -217,6 +223,7 @@ private fun ConversationScreenPreview_Playing() {
         ConversationScreenContent(
             uiState = ConversationUiState(
                 conversationState = ConversationState.Playing,
+                playbackStatus = PlaybackStatus.PLAYING,
                 messages = listOf(
                     MessageUiModel(
                         id = "1",

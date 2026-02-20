@@ -17,3 +17,8 @@ val RecordingGreen = Color(0xFF66BB6A)
 val RecordingGreenLight = Color(0xFFC8E6C9)
 val IdleGray = Color(0xFF9E9E9E)
 val PreparingAmber = Color(0xFFFFA726)
+
+// Playback state colors (T2.3-2)
+val PlayingGreen = Color(0xFF388E3C)
+val PlayingGreenLight = Color(0xFFA5D6A7)
+val PreparingOrange = Color(0xFFF57C00)

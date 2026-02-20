@@ -22,9 +22,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "server"
+    productFlavors {
+        create("local") {
+            dimension = "server"
+            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080\"")
+        }
+        create("prod") {
+            dimension = "server"
+            buildConfigField("String", "BASE_URL", "\"http://13.209.21.186:8080\"")
+        }
+    }
+
     buildTypes {
         debug {
-            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080\"")
         }
         release {
             isMinifyEnabled = false
@@ -32,7 +43,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "BASE_URL", "\"https://api.echo.com\"")
         }
     }
     compileOptions {
