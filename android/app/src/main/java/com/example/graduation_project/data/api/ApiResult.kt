@@ -1,5 +1,6 @@
 package com.example.graduation_project.data.api
 
+import kotlinx.coroutines.CancellationException
 import retrofit2.HttpException
 import java.io.IOException
 
@@ -57,6 +58,8 @@ suspend fun <T> safeApiCall(apiCall: suspend () -> T): ApiResult<T> {
             else -> ApiException.UnknownError(cause = e)
         }
         ApiResult.Error(error)
+    } catch (e: CancellationException) {
+        throw e  // 코루틴 취소 신호는 반드시 rethrow (structured concurrency 유지)
     } catch (e: Exception) {
         ApiResult.Error(ApiException.UnknownError(cause = e))
     }

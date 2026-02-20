@@ -27,8 +27,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.graduation_project.presentation.component.RecordingIndicator
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.model.VoiceStatus
 import com.example.graduation_project.presentation.voice.VoiceRecordingState
 import com.example.graduation_project.ui.theme.Dimens
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
@@ -55,7 +55,7 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  */
 @Composable
 fun ActiveConversationView(
-    voiceStatus: VoiceStatus,
+    conversationState: ConversationState,
     playbackStatus: PlaybackStatus = PlaybackStatus.NONE,
     recordingState: VoiceRecordingState = VoiceRecordingState(),
     currentAiMessage: String?,
@@ -72,12 +72,14 @@ fun ActiveConversationView(
             -> "음성 재생에 실패했습니다. 텍스트로 보여드립니다: $audioFallbackText"
         retryProgress != null
             -> retryProgress
-        voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING
+        conversationState is ConversationState.Playing && playbackStatus == PlaybackStatus.PREPARING
             -> "AI 응답을 준비하고 있습니다. 잠시만 기다려주세요."
-        voiceStatus == VoiceStatus.IDLE -> "대기 중입니다"
-        voiceStatus == VoiceStatus.LISTENING -> "사용자의 음성을 듣고 있습니다"
-        voiceStatus == VoiceStatus.RECORDING -> "음성을 녹음하고 있습니다"
-        voiceStatus == VoiceStatus.PLAYING -> "AI가 응답 중입니다: ${currentAiMessage ?: ""}"
+        conversationState is ConversationState.Idle      -> "대기 중입니다"
+        conversationState is ConversationState.Listening -> "사용자의 음성을 듣고 있습니다"
+        conversationState is ConversationState.Recording -> "음성을 녹음하고 있습니다"
+        conversationState is ConversationState.Sending   -> "서버에 전송 중입니다"
+        conversationState is ConversationState.Playing   -> "AI가 응답 중입니다: ${currentAiMessage ?: ""}"
+        conversationState is ConversationState.Ended     -> "대화가 종료됐습니다"
         else -> "대기 중입니다"
     }
 
@@ -98,7 +100,7 @@ fun ActiveConversationView(
         // 실제 재생 중일 때만 떠다니기 애니메이션 활성화
         AiCharacterImage(
             size = 200.dp,
-            enableFloatingAnimation = voiceStatus == VoiceStatus.PLAYING
+            enableFloatingAnimation = conversationState is ConversationState.Playing
                 && playbackStatus == PlaybackStatus.PLAYING
         )
 
@@ -202,7 +204,7 @@ private fun AudioFallbackTextView(
 private fun ActiveConversationViewPreview_AudioFallback() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.LISTENING,
+            conversationState = ConversationState.Listening,
             playbackStatus = PlaybackStatus.NONE,
             currentAiMessage = "오늘 하루는 어떠셨나요?",
             showAudioFallbackText = true,
@@ -217,7 +219,7 @@ private fun ActiveConversationViewPreview_AudioFallback() {
 private fun ActiveConversationViewPreview_Retrying() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.PLAYING,
+            conversationState = ConversationState.Playing,
             playbackStatus = PlaybackStatus.PREPARING,
             currentAiMessage = null,
             retryProgress = "재시도 중 (2/3)"
@@ -231,8 +233,9 @@ private fun ActiveConversationViewPreview_Retrying() {
 private fun ActiveConversationViewPreview_Listening() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.LISTENING,
-            currentAiMessage = null
+            conversationState = ConversationState.Listening,
+            currentAiMessage = "안녕하세요! 오늘 하루는 어떠셨나요?",
+            currentUserSpeech = "오늘 공원에서 산책을..."
         )
     }
 }
@@ -243,7 +246,7 @@ private fun ActiveConversationViewPreview_Listening() {
 private fun ActiveConversationViewPreview_PreparingPlayback() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.PLAYING,
+            conversationState = ConversationState.Playing,
             playbackStatus = PlaybackStatus.PREPARING,
             currentAiMessage = null
         )
@@ -256,9 +259,9 @@ private fun ActiveConversationViewPreview_PreparingPlayback() {
 private fun ActiveConversationViewPreview_Playing() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.PLAYING,
+            conversationState = ConversationState.Playing,
             playbackStatus = PlaybackStatus.PLAYING,
-            currentAiMessage = "오늘 하루는 어떠셨나요?"  // 접근성용
+            currentAiMessage = "오늘 하루는 어떠셨나요? 특별한 일이 있으셨는지 궁금해요."
         )
     }
 }
@@ -269,8 +272,32 @@ private fun ActiveConversationViewPreview_Playing() {
 private fun ActiveConversationViewPreview_Recording() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.RECORDING,
-            currentAiMessage = null
+            conversationState = ConversationState.Recording,
+            currentAiMessage = "안녕하세요! 오늘 하루는 어떠셨나요?"
+        )
+    }
+}
+
+// 미리보기: 전송 중
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_Sending() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            conversationState = ConversationState.Sending,
+            currentAiMessage = "안녕하세요! 오늘 하루는 어떠셨나요?"
+        )
+    }
+}
+
+// 미리보기: 대화 종료
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_Ended() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            conversationState = ConversationState.Ended,
+            currentAiMessage = "오늘도 즐거운 대화였습니다! 내일 또 만나요."
         )
     }
 }

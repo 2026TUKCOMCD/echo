@@ -1,21 +1,23 @@
 package com.example.graduation_project.presentation.conversation
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.AppDatabase
+import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.voice.AudioPlayerManager
 import com.example.graduation_project.domain.voice.AudioPlayException
 import com.example.graduation_project.domain.voice.AudioPlayListener
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.model.VoiceStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +26,10 @@ import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.viewmodel.CreationExtras
 import java.util.UUID
 
 /**
@@ -41,19 +47,17 @@ import java.util.UUID
  * 4. 대화 종료 버튼 클릭 -> endConversation() 호출
  * 5. 상태 초기화
  */
-class ConversationViewModel(application: Application) : AndroidViewModel(application) {
+class ConversationViewModel(
+    application: Application,
+    private val repository: ConversationRepository = ConversationRepository(),
+    private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao()
+) : AndroidViewModel(application) {
 
     // 내부에서만 수정 가능한 상태
     private val _uiState = MutableStateFlow(ConversationUiState())
 
     // 외부에서 관찰만 가능한 상태 (읽기 전용)
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
-
-    // Repository
-    private val repository = ConversationRepository()
-
-    // Room DB
-    private val messageDao = AppDatabase.getInstance(application).messageDao()
 
     // 로컬 대화 세션 ID (대화 시작 시 생성, 종료 시 초기화)
     private var conversationId: String? = null
@@ -89,9 +93,9 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             override fun onPlaybackComplete() {
                 // 재생 완료 → LISTENING + playbackStatus 초기화
                 isServerRetryInProgress = false
+                transitionTo(ConversationState.Listening)
                 _uiState.update {
                     it.copy(
-                        voiceStatus = VoiceStatus.LISTENING,
                         playbackStatus = PlaybackStatus.NONE,
                         isAudioRetrying = false,
                         showAudioFallbackText = false,
@@ -166,9 +170,9 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             .lastOrNull { !it.isFromUser }
             ?.text
 
+        transitionTo(ConversationState.Listening)
         _uiState.update {
             it.copy(
-                voiceStatus = VoiceStatus.LISTENING,
                 playbackStatus = PlaybackStatus.NONE,
                 isAudioRetrying = false,
                 showAudioFallbackText = lastAiMessage != null,
@@ -189,7 +193,9 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     fun startConversation() {
         viewModelScope.launch {
             isServerRetryInProgress = false
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            // Idle → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
+            _uiState.update { it.copy(errorMessage = null) }
 
             val result = repository.startConversation(getDummyHealthData())
 
@@ -201,12 +207,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                         response.message ?: "안녕하세요! 오늘 하루는 어떠셨나요?"
                     )
 
+                    // Sending → Playing
+                    transitionTo(ConversationState.Playing)
                     _uiState.update { currentState ->
                         currentState.copy(
-                            isLoading = false,
-                            isConversationActive = true,
                             sessionId = conversationId,
-                            voiceStatus = VoiceStatus.PLAYING,
                             playbackStatus = PlaybackStatus.PREPARING,
                             messages = currentState.messages + aiMessage
                         )
@@ -218,11 +223,9 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                         audioPlayerManager.play(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환
+                        transitionTo(ConversationState.Listening)
                         _uiState.update {
-                            it.copy(
-                                voiceStatus = VoiceStatus.LISTENING,
-                                playbackStatus = PlaybackStatus.NONE
-                            )
+                            it.copy(playbackStatus = PlaybackStatus.NONE)
                         }
                     }
 
@@ -231,12 +234,9 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = getErrorMessage(result.exception)
-                        )
-                    }
+                    // Sending → Idle
+                    transitionTo(ConversationState.Idle)
+                    _uiState.update { it.copy(errorMessage = getErrorMessage(result.exception)) }
                 }
             }
         }
@@ -254,12 +254,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     fun sendMessage(wavData: ByteArray) {
         viewModelScope.launch {
             isServerRetryInProgress = false
+            // Recording → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
             _uiState.update {
                 it.copy(
-                    isLoading = true,
                     errorMessage = null,
-                    voiceStatus = VoiceStatus.IDLE,
-                    playbackStatus = PlaybackStatus.NONE,
                     // [T2.3-3] 폴백 텍스트 숨김 (새 음성 입력 시작)
                     showAudioFallbackText = false,
                     audioFallbackText = null,
@@ -279,10 +278,10 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                     val userMessage = createUserMessage(response.userMessage ?: "")
                     val aiMessage = createAiMessage(response.aiResponse ?: "")
 
+                    // Sending → Playing
+                    transitionTo(ConversationState.Playing)
                     _uiState.update { currentState ->
                         currentState.copy(
-                            isLoading = false,
-                            voiceStatus = VoiceStatus.PLAYING,
                             playbackStatus = PlaybackStatus.PREPARING,
                             messages = currentState.messages + userMessage + aiMessage
                         )
@@ -294,11 +293,9 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                         audioPlayerManager.play(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환
+                        transitionTo(ConversationState.Listening)
                         _uiState.update {
-                            it.copy(
-                                voiceStatus = VoiceStatus.LISTENING,
-                                playbackStatus = PlaybackStatus.NONE
-                            )
+                            it.copy(playbackStatus = PlaybackStatus.NONE)
                         }
                     }
 
@@ -308,13 +305,9 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            voiceStatus = VoiceStatus.LISTENING,
-                            errorMessage = getErrorMessage(result.exception)
-                        )
-                    }
+                    // Sending → Listening
+                    transitionTo(ConversationState.Listening)
+                    _uiState.update { it.copy(errorMessage = getErrorMessage(result.exception)) }
                 }
             }
         }
@@ -337,7 +330,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun endConversation() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            // Listening → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
 
             val result = repository.endConversation()
 
@@ -345,12 +339,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 is ApiResult.Success -> {
                     audioPlayerManager.stop()  // 재시도 중이어도 즉시 중지
                     conversationId = null
+                    // Sending → Ended
+                    transitionTo(ConversationState.Ended)
                     _uiState.update {
                         it.copy(
-                            isLoading = false,
-                            isConversationActive = false,
                             sessionId = null,
-                            voiceStatus = VoiceStatus.IDLE,
                             playbackStatus = PlaybackStatus.NONE,
                             // [T2.3-3] 폴백 관련 상태 초기화
                             isAudioRetrying = false,
@@ -363,23 +356,31 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = getErrorMessage(result.exception)
-                        )
-                    }
+                    // Sending → Listening
+                    transitionTo(ConversationState.Listening)
+                    _uiState.update { it.copy(errorMessage = getErrorMessage(result.exception)) }
                 }
             }
         }
     }
 
     /**
-     * 음성 상태를 업데이트합니다.
+     * 대화 상태를 업데이트합니다.
+     * 내부적으로 전이 검증을 통과한 경우에만 상태가 변경됩니다.
      * - 음성 녹음/재생 상태에 따라 호출
      */
-    fun updateVoiceStatus(status: VoiceStatus) {
-        _uiState.update { it.copy(voiceStatus = status) }
+    fun updateConversationState(state: ConversationState) {
+        transitionTo(state)
+    }
+
+    /**
+     * 상태를 IDLE로 초기화합니다.
+     * - ENDED 상태에서 사용자가 시작 버튼을 클릭하면 호출
+     */
+    fun resetToIdle() {
+        // Ended → Idle
+        transitionTo(ConversationState.Idle)
+        _uiState.update { it.copy(messages = emptyList(), sessionId = null) }
     }
 
     /**
@@ -439,6 +440,26 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    /**
+     * 현재 상태 → [next] 상태 전이를 검증한 뒤 적용합니다.
+     * - 유효한 전이: 상태 업데이트 후 true 반환
+     * - 유효하지 않은 전이: Log.w 출력 후 false 반환 (VAD 등 비동기 이벤트 중복 호출도 안전하게 처리)
+     *
+     * 호출자는 반환값으로 중복 요청을 차단할 수 있습니다:
+     * ```
+     * if (!transitionTo(ConversationState.Sending)) return@launch
+     * ```
+     */
+    private fun transitionTo(next: ConversationState): Boolean {
+        val current = _uiState.value.conversationState
+        if (!current.canTransitionTo(next)) {
+            Log.w(TAG, "Invalid transition: ${current::class.simpleName} → ${next::class.simpleName}")
+            return false
+        }
+        _uiState.update { it.copy(conversationState = next) }
+        return true
+    }
+
     // 사용자 메시지 객체 생성 헬퍼 함수
     private fun createUserMessage(text: String) = MessageUiModel(
         id = UUID.randomUUID().toString(),
@@ -491,4 +512,16 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         exerciseDistance = 3.5,   // 3.5km
         exerciseActivity = "걷기"
     )
+
+    companion object {
+        private const val TAG = "ConversationViewModel"
+
+        val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+                val application = checkNotNull(extras[APPLICATION_KEY])
+                return ConversationViewModel(application) as T
+            }
+        }
+    }
 }
