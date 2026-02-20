@@ -58,7 +58,7 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  */
 @Composable
 fun ConversationScreen(
-    viewModel: ConversationViewModel = viewModel()
+    viewModel: ConversationViewModel = viewModel(factory = ConversationViewModel.Factory)
 ) {
     // ViewModel의 상태를 Compose State로 변환
     val uiState by viewModel.uiState.collectAsState()
