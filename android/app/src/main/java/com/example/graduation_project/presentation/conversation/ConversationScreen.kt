@@ -31,10 +31,10 @@ import com.example.graduation_project.presentation.settings.VoiceSettingsDialog
 import com.example.graduation_project.presentation.conversation.components.ActiveConversationView
 import com.example.graduation_project.presentation.conversation.components.ConversationControls
 import com.example.graduation_project.presentation.conversation.components.EmptyConversationView
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.model.VoiceStatus
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
 /**
@@ -148,7 +148,7 @@ private fun ConversationScreenContent(
                         ?.text
 
                     ActiveConversationView(
-                        voiceStatus = uiState.voiceStatus,
+                        conversationState = uiState.conversationState,
                         playbackStatus = uiState.playbackStatus,
                         currentAiMessage = currentAiMessage,
                         currentUserSpeech = uiState.currentUserSpeech,
@@ -197,8 +197,7 @@ private fun ConversationScreenPreview_Listening() {
     Graduation_projectTheme {
         ConversationScreenContent(
             uiState = ConversationUiState(
-                isConversationActive = true,
-                voiceStatus = VoiceStatus.LISTENING,
+                conversationState = ConversationState.Listening,
                 currentUserSpeech = "오늘 공원에서 산책을...",
                 messages = listOf(
                     MessageUiModel(
@@ -223,8 +222,7 @@ private fun ConversationScreenPreview_Playing() {
     Graduation_projectTheme {
         ConversationScreenContent(
             uiState = ConversationUiState(
-                isConversationActive = true,
-                voiceStatus = VoiceStatus.PLAYING,
+                conversationState = ConversationState.Playing,
                 playbackStatus = PlaybackStatus.PLAYING,
                 messages = listOf(
                     MessageUiModel(
@@ -242,13 +240,13 @@ private fun ConversationScreenPreview_Playing() {
     }
 }
 
-// 미리보기: 로딩 중
+// 미리보기: 전송 중 (로딩)
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
-private fun ConversationScreenPreview_Loading() {
+private fun ConversationScreenPreview_Sending() {
     Graduation_projectTheme {
         ConversationScreenContent(
-            uiState = ConversationUiState(isLoading = true),
+            uiState = ConversationUiState(conversationState = ConversationState.Sending),
             snackbarHostState = SnackbarHostState(),
             onStartClick = {},
             onEndClick = {}

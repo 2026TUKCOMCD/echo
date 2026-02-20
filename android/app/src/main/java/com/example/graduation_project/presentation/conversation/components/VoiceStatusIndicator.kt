@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,7 +36,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
-import com.example.graduation_project.presentation.model.VoiceStatus
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.ui.theme.Dimens
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
@@ -53,39 +55,45 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  */
 @Composable
 fun VoiceStatusIndicator(
-    status: VoiceStatus,
+    status: ConversationState,
     modifier: Modifier = Modifier
 ) {
     // 상태별 텍스트 (한국어)
     val statusText = when (status) {
-        VoiceStatus.IDLE -> "대기 중"
-        VoiceStatus.LISTENING -> "듣고 있어요"
-        VoiceStatus.RECORDING -> "녹음 중"
-        VoiceStatus.PLAYING -> "말하고 있어요"
+        is ConversationState.Idle      -> "대기 중"
+        is ConversationState.Listening -> "듣고 있어요"
+        is ConversationState.Recording -> "녹음 중"
+        is ConversationState.Sending   -> "전송 중"
+        is ConversationState.Playing   -> "말하고 있어요"
+        is ConversationState.Ended     -> "대화 종료"
     }
 
     // 상태별 아이콘
     val statusIcon: ImageVector = when (status) {
-        VoiceStatus.IDLE -> Icons.Default.MicOff
-        VoiceStatus.LISTENING -> Icons.Default.Mic
-        VoiceStatus.RECORDING -> Icons.Default.RecordVoiceOver
-        VoiceStatus.PLAYING -> Icons.Default.PlayArrow
+        is ConversationState.Idle      -> Icons.Default.MicOff
+        is ConversationState.Listening -> Icons.Default.Mic
+        is ConversationState.Recording -> Icons.Default.RecordVoiceOver
+        is ConversationState.Sending   -> Icons.Default.Send
+        is ConversationState.Playing   -> Icons.Default.PlayArrow
+        is ConversationState.Ended     -> Icons.Default.Done
     }
 
     // 상태별 색상 (애니메이션으로 부드럽게 전환)
     val statusColor by animateColorAsState(
         targetValue = when (status) {
-            VoiceStatus.IDLE -> Color.Gray
-            VoiceStatus.LISTENING -> Color(0xFF1976D2)   // 파랑
-            VoiceStatus.RECORDING -> Color(0xFFD32F2F)   // 빨강
-            VoiceStatus.PLAYING -> Color(0xFF388E3C)     // 녹색
+            is ConversationState.Idle      -> Color.Gray
+            is ConversationState.Listening -> Color(0xFF1976D2)  // 파랑
+            is ConversationState.Recording -> Color(0xFFD32F2F)  // 빨강
+            is ConversationState.Sending   -> Color(0xFFE65100)  // 주황
+            is ConversationState.Playing   -> Color(0xFF388E3C)  // 녹색
+            is ConversationState.Ended     -> Color.Gray
         },
         animationSpec = tween(durationMillis = 300),
         label = "statusColorAnimation"
     )
 
     // 펄스 애니메이션 (LISTENING, RECORDING 상태에서만 활성화)
-    val shouldAnimate = status == VoiceStatus.LISTENING || status == VoiceStatus.RECORDING
+    val shouldAnimate = status is ConversationState.Listening || status is ConversationState.Recording
     val infiniteTransition = rememberInfiniteTransition(label = "pulseTransition")
     val scale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -99,10 +107,12 @@ fun VoiceStatusIndicator(
 
     // TalkBack을 위한 접근성 설명
     val accessibilityDescription = when (status) {
-        VoiceStatus.IDLE -> "음성 대화 대기 중입니다"
-        VoiceStatus.LISTENING -> "사용자의 음성을 듣고 있습니다"
-        VoiceStatus.RECORDING -> "음성을 녹음하고 있습니다"
-        VoiceStatus.PLAYING -> "AI가 응답을 말하고 있습니다"
+        is ConversationState.Idle      -> "음성 대화 대기 중입니다"
+        is ConversationState.Listening -> "사용자의 음성을 듣고 있습니다"
+        is ConversationState.Recording -> "음성을 녹음하고 있습니다"
+        is ConversationState.Sending   -> "서버에 전송 중입니다"
+        is ConversationState.Playing   -> "AI가 응답을 말하고 있습니다"
+        is ConversationState.Ended     -> "대화가 종료됐습니다"
     }
 
     Column(
@@ -151,7 +161,7 @@ fun VoiceStatusIndicator(
 @Composable
 private fun VoiceStatusIndicatorPreview_Idle() {
     Graduation_projectTheme {
-        VoiceStatusIndicator(status = VoiceStatus.IDLE)
+        VoiceStatusIndicator(status = ConversationState.Idle)
     }
 }
 
@@ -159,7 +169,7 @@ private fun VoiceStatusIndicatorPreview_Idle() {
 @Composable
 private fun VoiceStatusIndicatorPreview_Listening() {
     Graduation_projectTheme {
-        VoiceStatusIndicator(status = VoiceStatus.LISTENING)
+        VoiceStatusIndicator(status = ConversationState.Listening)
     }
 }
 
@@ -167,6 +177,6 @@ private fun VoiceStatusIndicatorPreview_Listening() {
 @Composable
 private fun VoiceStatusIndicatorPreview_Playing() {
     Graduation_projectTheme {
-        VoiceStatusIndicator(status = VoiceStatus.PLAYING)
+        VoiceStatusIndicator(status = ConversationState.Playing)
     }
 }
