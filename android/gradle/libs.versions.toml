@@ -61,7 +61,6 @@ room-compiler = { group = "androidx.room", name = "room-compiler", version.ref =
 
 # Test
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
-kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
