@@ -93,6 +93,10 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
+    // Media3 (ExoPlayer) - 캐릭터 애니메이션 영상 재생
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
