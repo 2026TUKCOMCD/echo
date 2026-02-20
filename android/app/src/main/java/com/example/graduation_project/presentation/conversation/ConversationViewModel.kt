@@ -61,6 +61,12 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     // AI 응답 음성 재생 관리자
     private val audioPlayerManager = AudioPlayerManager()
 
+    // 서버 TTS 재요청 진행 중 여부 (무한 루프 방지)
+    private var isServerRetryInProgress = false
+
+    // [TEST ONLY] true로 설정하면 음성 재생 시 강제로 DecodeError 발생 → 서버 TTS 재요청 흐름 테스트
+    private val forceDecodeErrorForTest = false
+
     init {
         setupAudioPlayListener()
     }
@@ -69,6 +75,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         audioPlayerManager.setListener(object : AudioPlayListener {
             override fun onPlaybackStart() {
                 // Preparing/Retrying → Playing 전환 (재시도 성공 시 폴백 숨김)
+                isServerRetryInProgress = false
                 _uiState.update {
                     it.copy(
                         playbackStatus = PlaybackStatus.PLAYING,
@@ -81,6 +88,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
             override fun onPlaybackComplete() {
                 // 재생 완료 → LISTENING + playbackStatus 초기화
+                isServerRetryInProgress = false
                 _uiState.update {
                     it.copy(
                         voiceStatus = VoiceStatus.LISTENING,
@@ -104,45 +112,70 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             }
 
             override fun onError(exception: AudioPlayException, isFallbackNeeded: Boolean) {
-                // 마지막 AI 메시지 텍스트 추출 (폴백용)
-                val lastAiMessage = _uiState.value.messages
-                    .lastOrNull { !it.isFromUser }
-                    ?.text
-
-                _uiState.update {
-                    it.copy(
-                        voiceStatus = VoiceStatus.LISTENING,
-                        playbackStatus = PlaybackStatus.NONE,
-                        isAudioRetrying = false,
-                        showAudioFallbackText = isFallbackNeeded && lastAiMessage != null,
-                        audioFallbackText = lastAiMessage,
-                        retryProgress = null,
-                        errorMessage = getAudioErrorMessage(exception, isFallbackNeeded)
-                    )
+                if (!isServerRetryInProgress) {
+                    // 서버 TTS 재요청 시도 (DecodeError: 바로 진입 / PlaybackError: 로컬 재시도 소진 후 진입)
+                    isServerRetryInProgress = true
+                    requestServerTtsRetry()
+                } else {
+                    // 서버 재요청 후에도 실패 → 텍스트 폴백 (최후 수단)
+                    isServerRetryInProgress = false
+                    showTextFallback()
                 }
             }
         })
     }
 
     /**
-     * 오디오 재생 에러 메시지 생성
-     *
-     * @param exception 발생한 예외
-     * @param isFallbackNeeded 텍스트 폴백 필요 여부
-     * @return 사용자에게 표시할 에러 메시지
-     *
-     * [T2.3-3] 재생 에러 처리
+     * 서버에 TTS 재생성을 요청합니다.
+     * - 로컬 재시도 소진 또는 DecodeError 발생 시 호출
+     * - 서버의 마지막 AI 응답 텍스트를 TTS로 재생성하여 반환
      */
-    private fun getAudioErrorMessage(
-        exception: AudioPlayException,
-        isFallbackNeeded: Boolean
-    ): String {
-        return if (isFallbackNeeded) {
-            // 텍스트 폴백 표시 시 긍정적 메시지
-            "음성을 재생할 수 없어 텍스트로 보여드려요"
-        } else {
-            // 폴백 불가능 시 기존 에러 메시지
-            exception.message ?: "음성 재생 오류"
+    private fun requestServerTtsRetry() {
+        _uiState.update {
+            it.copy(
+                isAudioRetrying = true,
+                playbackStatus = PlaybackStatus.PREPARING,
+                retryProgress = "음성을 다시 불러오는 중..."
+            )
+        }
+        viewModelScope.launch {
+            when (val result = repository.retryTts()) {
+                is ApiResult.Success -> {
+                    val audioData = result.data.audioData
+                    if (audioData != null) {
+                        audioPlayerManager.play(audioData)
+                    } else {
+                        isServerRetryInProgress = false
+                        showTextFallback()
+                    }
+                }
+                is ApiResult.Error -> {
+                    isServerRetryInProgress = false
+                    showTextFallback()
+                }
+            }
+        }
+    }
+
+    /**
+     * 텍스트 폴백을 표시합니다.
+     * - 서버 TTS 재요청도 실패했을 때 최후 수단으로 호출
+     */
+    private fun showTextFallback() {
+        val lastAiMessage = _uiState.value.messages
+            .lastOrNull { !it.isFromUser }
+            ?.text
+
+        _uiState.update {
+            it.copy(
+                voiceStatus = VoiceStatus.LISTENING,
+                playbackStatus = PlaybackStatus.NONE,
+                isAudioRetrying = false,
+                showAudioFallbackText = lastAiMessage != null,
+                audioFallbackText = lastAiMessage,
+                retryProgress = null,
+                errorMessage = "음성을 재생할 수 없어 텍스트로 보여드려요"
+            )
         }
     }
 
@@ -155,6 +188,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun startConversation() {
         viewModelScope.launch {
+            isServerRetryInProgress = false
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
             val result = repository.startConversation(getDummyHealthData())
@@ -180,6 +214,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
                     // AI 응답 음성 재생
                     response.audioData?.let { audioData ->
+                        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
                         audioPlayerManager.play(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환
@@ -218,6 +253,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun sendMessage(wavData: ByteArray) {
         viewModelScope.launch {
+            isServerRetryInProgress = false
             _uiState.update {
                 it.copy(
                     isLoading = true,
@@ -254,6 +290,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
                     // AI 응답 음성 재생
                     response.audioData?.let { audioData ->
+                        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
                         audioPlayerManager.play(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환

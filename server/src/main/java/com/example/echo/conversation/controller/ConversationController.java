@@ -4,6 +4,7 @@ import com.example.echo.common.auth.CurrentUser;
 import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
+import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.service.ConversationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -54,6 +55,14 @@ public class ConversationController {
         ConversationEndResponse response = ConversationEndResponse.builder()
                 .endedAt(LocalDateTime.now())
                 .build();
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/tts-retry")
+    public ResponseEntity<TtsRetryResponse> retryTts(
+            @CurrentUser Long userId
+    ) {
+        TtsRetryResponse response = conversationService.retryTts(userId);
         return ResponseEntity.ok(response);
     }
 }
