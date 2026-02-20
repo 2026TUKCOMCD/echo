@@ -1,22 +1,33 @@
 package com.example.graduation_project.presentation.conversation.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -26,6 +37,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.ui.PlayerView
+import com.example.graduation_project.presentation.character.CharacterAnimationManager
+import com.example.graduation_project.presentation.character.CharacterState
 import com.example.graduation_project.presentation.component.RecordingIndicator
 import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.model.VoiceStatus
@@ -38,15 +53,18 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  *
  * ## 화면 구성
  * ┌─────────────────────────┐
- * │      AI 캐릭터 이미지     │
+ * │   CharacterPlayer       │  <- ExoPlayer mp4 영상
+ * │   + PROCESSING 오버레이  │  <- 3초 후 "잠시만요", 6초 후 "조금만 기다려주세요"
  * │   RecordingIndicator     │  <- 상태 아이콘 + 텍스트 ("말하고 있어요" 등)
  * │  or AudioFallbackText    │  <- 음성 재생 실패 시 텍스트 표시 [T2.3-3]
+ * │  or ErrorOverlay         │  <- 네트워크/서버 오류 시 재시도 버튼
  * └─────────────────────────┘
  *
  * ## 설계 의도
  * - 어르신 대상 앱으로 UI 단순화 (인지 부담 감소)
  * - 음성 대화에 집중할 수 있도록 최소한의 요소만 표시
  * - 음성 재생 실패 시 자동으로 텍스트 폴백 표시 (접근성 보장)
+ * - mp4 영상으로 캐릭터 애니메이션 표현 (ExoPlayer 사용)
  *
  * ## 접근성
  * - liveRegion으로 상태 변화 자동 안내 (스크린 리더 지원)
@@ -64,14 +82,28 @@ fun ActiveConversationView(
     showAudioFallbackText: Boolean = false,  // [T2.3-3] 텍스트 폴백 표시 여부
     audioFallbackText: String? = null,        // [T2.3-3] 폴백 텍스트 (AI 응답)
     retryProgress: String? = null,            // [T2.3-3] 재시도 진행 상황
+    // 캐릭터 애니메이션 관련
+    animationManager: CharacterAnimationManager? = null,
+    characterState: CharacterState = CharacterState.IDLE,
+    // PROCESSING 오버레이 관련
+    processingMessage: String? = null,
+    // 발화 인식 오류 관련
+    speechErrorMessage: String? = null,
+    speechErrorHint: String? = null,
+    // 재시도 관련 (네트워크/서버 오류)
+    isRetryButtonEnabled: Boolean = false,
+    showContactSupport: Boolean = false,
+    onRetryClick: () -> Unit = {},
+    onContactSupportClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // 접근성 설명
     val accessibilityDescription = when {
+        speechErrorMessage != null -> "$speechErrorMessage $speechErrorHint"
         showAudioFallbackText && audioFallbackText != null
             -> "음성 재생에 실패했습니다. 텍스트로 보여드립니다: $audioFallbackText"
-        retryProgress != null
-            -> retryProgress
+        processingMessage != null -> processingMessage
+        retryProgress != null -> retryProgress
         voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING
             -> "AI 응답을 준비하고 있습니다. 잠시만 기다려주세요."
         voiceStatus == VoiceStatus.IDLE -> "대기 중입니다"
@@ -94,16 +126,56 @@ fun ActiveConversationView(
         // 상단 여백
         Spacer(modifier = Modifier.height(Dimens.SpacingLarge))
 
-        // AI 캐릭터 이미지 (어르신 접근성 - 더 큰 사이즈)
-        // 실제 재생 중일 때만 떠다니기 애니메이션 활성화
-        AiCharacterImage(
-            size = 200.dp,
-            enableFloatingAnimation = voiceStatus == VoiceStatus.PLAYING
-                && playbackStatus == PlaybackStatus.PLAYING
-        )
+        // 캐릭터 영상 + 오버레이
+        Box(
+            modifier = Modifier
+                .size(200.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // ExoPlayer 영상 (animationManager가 있으면 사용, 없으면 정적 이미지)
+            if (animationManager != null) {
+                CharacterPlayer(
+                    animationManager = animationManager,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                )
+            } else {
+                // 폴백: 기존 정적 이미지 (Preview용)
+                AiCharacterImage(
+                    size = 200.dp,
+                    enableFloatingAnimation = voiceStatus == VoiceStatus.PLAYING
+                            && playbackStatus == PlaybackStatus.PLAYING
+                )
+            }
 
+            // PROCESSING 오버레이 (3초 후 "잠시만요", 6초 후 "조금만 기다려주세요")
+            if (processingMessage != null) {
+                ProcessingOverlay(message = processingMessage)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(Dimens.SpacingMedium))
+
+        // 발화 인식 오류 표시
+        if (speechErrorMessage != null) {
+            SpeechErrorView(
+                message = speechErrorMessage,
+                hint = speechErrorHint
+            )
+        }
+        // 네트워크/서버 오류 시 재시도 버튼
+        else if (characterState == CharacterState.NETWORK_ERROR || characterState == CharacterState.SERVER_ERROR) {
+            ErrorRetryView(
+                isNetworkError = characterState == CharacterState.NETWORK_ERROR,
+                isRetryButtonEnabled = isRetryButtonEnabled,
+                showContactSupport = showContactSupport,
+                onRetryClick = onRetryClick,
+                onContactSupportClick = onContactSupportClick
+            )
+        }
         // [T2.3-3] 조건부 렌더링: 텍스트 폴백 OR 상태 인디케이터
-        if (showAudioFallbackText && audioFallbackText != null) {
+        else if (showAudioFallbackText && audioFallbackText != null) {
             // 음성 재생 실패 → 텍스트 폴백 표시
             AudioFallbackTextView(
                 text = audioFallbackText,
@@ -119,17 +191,178 @@ fun ActiveConversationView(
             // [T2.3-3] 재시도 진행 상황 표시
             if (retryProgress != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                androidx.compose.material3.Text(
+                Text(
                     text = retryProgress,
                     fontSize = 18.sp,
-                    color = androidx.compose.ui.graphics.Color(0xFFFF9800),  // 주황색 (준비 중 상태 색상)
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    color = Color(0xFFFF9800),  // 주황색 (준비 중 상태 색상)
+                    textAlign = TextAlign.Center
                 )
             }
         }
 
         // 하단 여백 (버튼과의 간격)
         Spacer(modifier = Modifier.weight(1f))
+    }
+}
+
+/**
+ * ExoPlayer 캐릭터 영상 재생 컴포넌트
+ */
+@Composable
+fun CharacterPlayer(
+    animationManager: CharacterAnimationManager,
+    modifier: Modifier = Modifier
+) {
+    AndroidView(
+        factory = { context ->
+            PlayerView(context).apply {
+                player = animationManager.player
+                useController = false // 컨트롤러 숨김
+                setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+            }
+        },
+        modifier = modifier
+    )
+}
+
+/**
+ * PROCESSING 상태 오버레이
+ * 반투명 배경 + 메시지 텍스트
+ */
+@Composable
+private fun ProcessingOverlay(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                color = Color.Black.copy(alpha = 0.4f),
+                shape = CircleShape
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = message,
+            color = Color.White,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * 발화 인식 오류 표시
+ */
+@Composable
+private fun SpeechErrorView(
+    message: String,
+    hint: String?,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .background(
+                color = Color(0xFFFFF3E0),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = message,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFE65100),
+            textAlign = TextAlign.Center
+        )
+        if (hint != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = hint,
+                fontSize = 18.sp,
+                color = Color(0xFF795548),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/**
+ * 네트워크/서버 오류 재시도 UI
+ */
+@Composable
+private fun ErrorRetryView(
+    isNetworkError: Boolean,
+    isRetryButtonEnabled: Boolean,
+    showContactSupport: Boolean,
+    onRetryClick: () -> Unit,
+    onContactSupportClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .background(
+                color = if (isNetworkError) Color(0xFFFFEBEE) else Color(0xFFFFF3E0),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = if (isNetworkError) "인터넷 연결을 확인해주세요" else "서버에 문제가 생겼어요",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isNetworkError) Color(0xFFD32F2F) else Color(0xFFE65100),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (isRetryButtonEnabled) {
+            Button(
+                onClick = onRetryClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isNetworkError) Color(0xFFD32F2F) else Color(0xFFFF9800)
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "다시 시도",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        if (showContactSupport) {
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onContactSupportClick
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SupportAgent,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "고객센터 연결",
+                    fontSize = 16.sp
+                )
+            }
+        }
     }
 }
 
@@ -271,6 +504,65 @@ private fun ActiveConversationViewPreview_Recording() {
         ActiveConversationView(
             voiceStatus = VoiceStatus.RECORDING,
             currentAiMessage = null
+        )
+    }
+}
+
+// 미리보기: PROCESSING 오버레이
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_Processing() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            voiceStatus = VoiceStatus.IDLE,
+            currentAiMessage = null,
+            characterState = CharacterState.PROCESSING,
+            processingMessage = "잠시만요"
+        )
+    }
+}
+
+// 미리보기: 발화 인식 오류
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_SpeechError() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            voiceStatus = VoiceStatus.LISTENING,
+            currentAiMessage = null,
+            characterState = CharacterState.SPEECH_UNRECOGNIZED,
+            speechErrorMessage = "말씀이 잘 들리지 않았어요",
+            speechErrorHint = "천천히, 또박또박 말씀해 주세요"
+        )
+    }
+}
+
+// 미리보기: 네트워크 오류 + 재시도 버튼
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_NetworkError() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            voiceStatus = VoiceStatus.IDLE,
+            currentAiMessage = null,
+            characterState = CharacterState.NETWORK_ERROR,
+            isRetryButtonEnabled = true,
+            showContactSupport = false
+        )
+    }
+}
+
+// 미리보기: 서버 오류 + 고객센터 연결
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_ServerErrorWithSupport() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            voiceStatus = VoiceStatus.IDLE,
+            currentAiMessage = null,
+            characterState = CharacterState.SERVER_ERROR,
+            isRetryButtonEnabled = false,
+            showContactSupport = true
         )
     }
 }
