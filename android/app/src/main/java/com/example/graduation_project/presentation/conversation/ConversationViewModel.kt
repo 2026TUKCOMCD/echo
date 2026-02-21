@@ -17,6 +17,7 @@ import com.example.graduation_project.domain.voice.AudioPlayException
 import com.example.graduation_project.domain.voice.AudioPlayListener
 import com.example.graduation_project.domain.voice.AudioRecordException
 import com.example.graduation_project.domain.voice.AudioRecordListener
+import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
@@ -63,7 +64,8 @@ class ConversationViewModel(
 ) : AndroidViewModel(application) {
 
     // 내부에서만 수정 가능한 상태
-    private val _uiState = MutableStateFlow(ConversationUiState())
+    // TODO: 실제 사용자 정보는 DataStore/SharedPreferences에서 가져오기
+    private val _uiState = MutableStateFlow(ConversationUiState(userName = "홍길동"))
 
     // 외부에서 관찰만 가능한 상태 (읽기 전용)
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
@@ -92,6 +94,7 @@ class ConversationViewModel(
     init {
         setupAudioPlayListener()
         setupAudioRecordListener()
+        observeAudioRecordState()
     }
 
     /**
@@ -121,10 +124,24 @@ class ConversationViewModel(
 
             override fun onError(exception: AudioRecordException) {
                 Log.e(TAG, "AudioRecordListener.onError()", exception)
-                _uiState.update { it.copy(isSpeechDetected = false) }
+                _uiState.update { it.copy(isSpeechDetected = false, isRecordingPreparing = false) }
                 // VAD 오류 시 Listening 상태 유지 (재시도 가능)
             }
         })
+    }
+
+    /**
+     * AudioRecordManager 상태 변화를 관찰하여 isRecordingPreparing 업데이트
+     * - Preparing 상태: isRecordingPreparing = true (어르신 혼란 방지)
+     * - 그 외 상태: isRecordingPreparing = false
+     */
+    private fun observeAudioRecordState() {
+        viewModelScope.launch {
+            audioRecordManager.state.collect { state ->
+                val isPreparing = state is AudioRecordState.Preparing
+                _uiState.update { it.copy(isRecordingPreparing = isPreparing) }
+            }
+        }
     }
 
     private fun setupAudioPlayListener() {
@@ -463,7 +480,8 @@ class ConversationViewModel(
                             showContactSupport = false,
                             showFarewellDialog = false,
                             // 녹음 상태 초기화
-                            isSpeechDetected = false
+                            isSpeechDetected = false,
+                            isRecordingPreparing = false
                             // messages는 유지 (대화 기록 보존)
                         )
                     }

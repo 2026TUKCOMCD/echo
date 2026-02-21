@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -42,6 +43,7 @@ import com.example.graduation_project.presentation.component.RecordingIndicator
 import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.PlaybackStatus
+import com.example.graduation_project.ui.theme.CharacterVideoBgColor
 import com.example.graduation_project.ui.theme.Dimens
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
@@ -73,6 +75,7 @@ fun ActiveConversationView(
     conversationState: ConversationState,
     playbackStatus: PlaybackStatus = PlaybackStatus.NONE,
     isSpeechDetected: Boolean = false,
+    isRecordingPreparing: Boolean = false,
     currentAiMessage: String?,
     currentUserSpeech: String? = null,
     voiceAmplitude: Float = 0f,
@@ -126,24 +129,23 @@ fun ActiveConversationView(
         // 상단 여백
         Spacer(modifier = Modifier.height(Dimens.SpacingLarge))
 
-        // 캐릭터 영상 + 오버레이
+        // 캐릭터 영상 + 오버레이 (동그라미)
         Box(
             modifier = Modifier
-                .size(200.dp),
+                .size(280.dp)
+                .clip(CircleShape),
             contentAlignment = Alignment.Center
         ) {
             // ExoPlayer 영상 (animationManager가 있으면 사용, 없으면 정적 이미지)
             if (animationManager != null) {
                 CharacterPlayer(
                     animationManager = animationManager,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape)
+                    modifier = Modifier.fillMaxSize()
                 )
             } else {
                 // 폴백: 기존 정적 이미지 (Preview용)
                 AiCharacterImage(
-                    size = 200.dp,
+                    size = 280.dp,
                     enableFloatingAnimation = conversationState is ConversationState.Playing
                             && playbackStatus == PlaybackStatus.PLAYING
                 )
@@ -186,7 +188,8 @@ fun ActiveConversationView(
             RecordingIndicator(
                 conversationState = conversationState,
                 playbackStatus = playbackStatus,
-                isSpeechDetected = isSpeechDetected
+                isSpeechDetected = isSpeechDetected,
+                isRecordingPreparing = isRecordingPreparing
             )
 
             // [T2.3-3] 재시도 진행 상황 표시
@@ -208,6 +211,7 @@ fun ActiveConversationView(
 
 /**
  * ExoPlayer 캐릭터 영상 재생 컴포넌트
+ * 상반신만 보이도록 확대 + 위치 조정
  */
 @Composable
 fun CharacterPlayer(
@@ -223,6 +227,11 @@ fun CharacterPlayer(
             }
         },
         modifier = modifier
+            .graphicsLayer {
+                scaleX = 1.3f  // 확대
+                scaleY = 1.3f
+                translationY = 50f  // 상반신만 보이도록 아래로 이동
+            }
     )
 }
 

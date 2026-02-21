@@ -91,6 +91,8 @@ data class ConversationUiState(
     val showFarewellDialog: Boolean = false,
     // 음성 감지 여부 (VAD)
     val isSpeechDetected: Boolean = false,
+    // 녹음 준비 중 여부 (VAD 초기화 - 어르신 혼란 방지)
+    val isRecordingPreparing: Boolean = false,
 ) {
     val isConversationActive: Boolean
         get() = conversationState !is ConversationState.Idle

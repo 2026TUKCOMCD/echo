@@ -30,6 +30,7 @@ class CharacterAnimationManager(private val context: Context) {
     val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
         volume = 0f // 캐릭터 영상 자체 소리 없음
         repeatMode = Player.REPEAT_MODE_ONE
+        setPlaybackSpeed(0.8f) // 속도 느리게 (0.8배속)
     }
 
     var onFarewellFinished: (() -> Unit)? = null
