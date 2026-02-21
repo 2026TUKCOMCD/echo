@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.graduation_project.presentation.character.AnimationMode
 import com.example.graduation_project.presentation.character.CharacterAnimationManager
 import com.example.graduation_project.presentation.settings.VoiceSettingsDialog
 import com.example.graduation_project.presentation.conversation.components.ActiveConversationView
@@ -89,7 +90,7 @@ fun ConversationScreen(
     // 캐릭터 애니메이션 관리자
     val context = LocalContext.current
     val animationManager = remember {
-        CharacterAnimationManager(context).apply {
+        CharacterAnimationManager(context, AnimationMode.LEGACY).apply {
             onFarewellFinished = {
                 viewModel.onFarewellAnimationFinished()
             }

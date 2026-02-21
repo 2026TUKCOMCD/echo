@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -261,3 +262,44 @@ private fun RecordingIndicatorPlayingPreview() {
 }
 
 // endregion
+
+/**
+ * 커스텀 CircularProgressIndicator
+ * 마이크 주변을 도는 로딩 애니메이션 (속도 조절 가능)
+ *
+ * @param durationMs 한 바퀴 회전에 걸리는 시간 (ms). 값이 클수록 느림.
+ */
+@Composable
+private fun CircularProgressIndicator(
+    modifier: Modifier = Modifier,
+    color: androidx.compose.ui.graphics.Color = ProcessingGray,
+    strokeWidth: androidx.compose.ui.unit.Dp = 4.dp,
+    durationMs: Int = 2500  // 기본값: 2500ms (느린 회전)
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "circularProgress")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMs, easing = LinearEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+
+    Canvas(
+        modifier = modifier.graphicsLayer { rotationZ = rotation }
+    ) {
+        val sweepAngle = 270f
+        val startAngle = -90f
+        val strokeWidthPx = strokeWidth.toPx()
+
+        drawArc(
+            color = color,
+            startAngle = startAngle,
+            sweepAngle = sweepAngle,
+            useCenter = false,
+            style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+        )
+    }
+}

@@ -137,16 +137,19 @@ fun ActiveConversationView(
                 .clip(CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            // ExoPlayer 영상 (animationManager가 있으면 사용, 없으면 정적 이미지)
-            if (animationManager != null) {
+            // 캐릭터 표시: NEW_VIDEO 모드에서 Idle/Ended는 이미지, 나머지는 영상
+            val useImage = animationManager?.shouldUseImage(conversationState, currentError) ?: true
+
+            if (animationManager != null && !useImage) {
+                // 영상 재생
                 CharacterPlayer(
                     animationManager = animationManager,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // 폴백: 기존 정적 이미지 (Preview용)
+                // 정적 이미지 (Idle/Ended 또는 animationManager 없음)
                 AiCharacterImage(
-                    size = 280.dp,
+                    size = 240.dp,
                     enableFloatingAnimation = conversationState is ConversationState.Playing
                             && playbackStatus == PlaybackStatus.PLAYING
                 )
@@ -212,7 +215,7 @@ fun ActiveConversationView(
 
 /**
  * ExoPlayer 캐릭터 영상 재생 컴포넌트
- * 상반신만 보이도록 확대 + 위치 조정
+ * 동그라미 크기에 맞춤
  */
 @Composable
 fun CharacterPlayer(
@@ -225,15 +228,15 @@ fun CharacterPlayer(
                 player = animationManager.player
                 useController = false // 컨트롤러 숨김
                 setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                // 영상 크기를 일관되게 유지 (ZOOM: 컨테이너를 채우도록 확대)
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                // 1:1 정사각형 영상에 맞춤 (FIT: 영상 전체 표시)
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             }
         },
         modifier = modifier
             .graphicsLayer {
-                scaleX = 1.15f  // 확대 (1.3 → 1.15로 축소)
-                scaleY = 1.15f
-                translationY = 30f  // 더듬이가 보이도록 이동값 축소 (50 → 30)
+                scaleX = 1.0f  // 동그라미 크기에 맞춤
+                scaleY = 1.0f
+                translationY = 0f
             }
     )
 }
