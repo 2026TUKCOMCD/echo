@@ -252,8 +252,11 @@ private fun ConversationScreenContent(
                         onContactSupportClick = onContactSupportClick
                     )
                 } else {
-                    // 대화 시작 전: AI 아이콘 + 인사 메시지
-                    EmptyConversationView(userName = uiState.userName)
+                    // 대화 시작 전: 캐릭터 영상 + 인사 메시지
+                    EmptyConversationView(
+                        userName = uiState.userName,
+                        animationManager = animationManager
+                    )
                 }
             }
 
@@ -404,7 +407,7 @@ private fun FarewellDialog(
                             .height(52.dp)
                     ) {
                         Text(
-                            text = "더 대화하기",
+                            text = "이어하기",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium
                         )

@@ -37,6 +37,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.graduation_project.presentation.character.CharacterAnimationManager
 import com.example.graduation_project.presentation.component.RecordingIndicator
@@ -132,7 +133,7 @@ fun ActiveConversationView(
         // 캐릭터 영상 + 오버레이 (동그라미)
         Box(
             modifier = Modifier
-                .size(280.dp)
+                .size(240.dp)  // 280 → 240으로 축소
                 .clip(CircleShape),
             contentAlignment = Alignment.Center
         ) {
@@ -224,13 +225,15 @@ fun CharacterPlayer(
                 player = animationManager.player
                 useController = false // 컨트롤러 숨김
                 setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                // 영상 크기를 일관되게 유지 (ZOOM: 컨테이너를 채우도록 확대)
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             }
         },
         modifier = modifier
             .graphicsLayer {
-                scaleX = 1.3f  // 확대
-                scaleY = 1.3f
-                translationY = 50f  // 상반신만 보이도록 아래로 이동
+                scaleX = 1.15f  // 확대 (1.3 → 1.15로 축소)
+                scaleY = 1.15f
+                translationY = 30f  // 더듬이가 보이도록 이동값 축소 (50 → 30)
             }
     )
 }
