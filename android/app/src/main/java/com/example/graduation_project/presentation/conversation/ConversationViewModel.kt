@@ -109,14 +109,25 @@ class ConversationViewModel(
             }
 
             override fun onRecordingStart() {
-                // VAD가 음성 감지
+                // VAD가 음성 감지 - Listening 상태에서만 Recording으로 전환
+                // (Playing 상태에서 VAD 이벤트 무시)
+                val currentState = _uiState.value.conversationState
+                if (currentState !is ConversationState.Listening) {
+                    Log.d(TAG, "AudioRecordListener.onRecordingStart() - 무시됨 (현재 상태: $currentState)")
+                    return
+                }
                 Log.d(TAG, "AudioRecordListener.onRecordingStart() - 음성 감지됨")
                 _uiState.update { it.copy(isSpeechDetected = true) }
                 transitionTo(ConversationState.Recording)
             }
 
             override fun onRecordingComplete(audioFile: File) {
-                // 녹음 완료 → 서버 전송
+                // 녹음 완료 → 서버 전송 (Recording 상태에서만)
+                val currentState = _uiState.value.conversationState
+                if (currentState !is ConversationState.Recording) {
+                    Log.d(TAG, "AudioRecordListener.onRecordingComplete() - 무시됨 (현재 상태: $currentState)")
+                    return
+                }
                 Log.d(TAG, "AudioRecordListener.onRecordingComplete() - 파일: ${audioFile.path}")
                 _uiState.update { it.copy(isSpeechDetected = false) }
                 sendMessage(audioFile.readBytes())
@@ -147,6 +158,9 @@ class ConversationViewModel(
     private fun setupAudioPlayListener() {
         audioPlayerManager.setListener(object : AudioPlayListener {
             override fun onPlaybackStart() {
+                // TTS 재생 시작 시 VAD 중지 (스피커 소리 감지 방지)
+                stopRecording()
+
                 // Preparing/Retrying → Playing 전환 (재시도 성공 시 폴백 숨김)
                 isServerRetryInProgress = false
                 _uiState.update {
