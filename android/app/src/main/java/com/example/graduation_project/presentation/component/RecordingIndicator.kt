@@ -32,8 +32,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.voice.VoiceRecordingState
 import com.example.graduation_project.ui.theme.IdleGray
 import com.example.graduation_project.ui.theme.ListeningBlue
 import com.example.graduation_project.ui.theme.PlayingGreen
@@ -46,7 +46,7 @@ import com.example.graduation_project.ui.theme.RecordingGreenLight
 /**
  * 녹음 + 재생 상태 시각적 피드백 통합 Composable
  *
- * VoiceRecordingState와 PlaybackStatus를 받아 7가지 시각 상태로 분기:
+ * ConversationState와 PlaybackStatus, isSpeechDetected를 받아 7가지 시각 상태로 분기:
  * IDLE / PREPARING / LISTENING / RECORDING / PROCESSING / PREPARING_PLAYBACK / PLAYING_AUDIO
  *
  * playbackStatus가 NONE이 아닌 경우 재생 상태가 우선 표시됨.
@@ -58,24 +58,23 @@ import com.example.graduation_project.ui.theme.RecordingGreenLight
  */
 @Composable
 fun RecordingIndicator(
-    state: VoiceRecordingState,
+    conversationState: ConversationState,
     playbackStatus: PlaybackStatus = PlaybackStatus.NONE,
+    isSpeechDetected: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val visualState = remember(
         playbackStatus,
-        state.isPreparing,
-        state.isProcessing,
-        state.isRecording,
-        state.isSpeechDetected
+        conversationState,
+        isSpeechDetected
     ) {
         when {
             playbackStatus == PlaybackStatus.PREPARING -> RecordingVisualState.PREPARING_PLAYBACK
             playbackStatus == PlaybackStatus.PLAYING -> RecordingVisualState.PLAYING_AUDIO
-            state.isPreparing -> RecordingVisualState.PREPARING
-            state.isProcessing -> RecordingVisualState.PROCESSING
-            state.isRecording && state.isSpeechDetected -> RecordingVisualState.RECORDING
-            state.isRecording && !state.isSpeechDetected -> RecordingVisualState.LISTENING
+            conversationState is ConversationState.Sending -> RecordingVisualState.PROCESSING
+            conversationState is ConversationState.Listening && isSpeechDetected -> RecordingVisualState.RECORDING
+            conversationState is ConversationState.Listening && !isSpeechDetected -> RecordingVisualState.LISTENING
+            conversationState is ConversationState.Recording -> RecordingVisualState.RECORDING
             else -> RecordingVisualState.IDLE
         }
     }
@@ -236,40 +235,35 @@ private enum class RecordingVisualState {
 @Preview(name = "Idle", showBackground = true)
 @Composable
 private fun RecordingIndicatorIdlePreview() {
-    RecordingIndicator(state = VoiceRecordingState())
-}
-
-@Preview(name = "Preparing", showBackground = true)
-@Composable
-private fun RecordingIndicatorPreparingPreview() {
-    RecordingIndicator(state = VoiceRecordingState(isPreparing = true))
+    RecordingIndicator(conversationState = ConversationState.Idle)
 }
 
 @Preview(name = "Listening", showBackground = true)
 @Composable
 private fun RecordingIndicatorListeningPreview() {
-    RecordingIndicator(state = VoiceRecordingState(isRecording = true))
+    RecordingIndicator(conversationState = ConversationState.Listening)
 }
 
 @Preview(name = "Recording", showBackground = true)
 @Composable
 private fun RecordingIndicatorRecordingPreview() {
     RecordingIndicator(
-        state = VoiceRecordingState(isRecording = true, isSpeechDetected = true)
+        conversationState = ConversationState.Listening,
+        isSpeechDetected = true
     )
 }
 
 @Preview(name = "Processing", showBackground = true)
 @Composable
 private fun RecordingIndicatorProcessingPreview() {
-    RecordingIndicator(state = VoiceRecordingState(isProcessing = true))
+    RecordingIndicator(conversationState = ConversationState.Sending)
 }
 
 @Preview(name = "Preparing Playback", showBackground = true)
 @Composable
 private fun RecordingIndicatorPreparingPlaybackPreview() {
     RecordingIndicator(
-        state = VoiceRecordingState(),
+        conversationState = ConversationState.Playing,
         playbackStatus = PlaybackStatus.PREPARING
     )
 }
@@ -278,7 +272,7 @@ private fun RecordingIndicatorPreparingPlaybackPreview() {
 @Composable
 private fun RecordingIndicatorPlayingAudioPreview() {
     RecordingIndicator(
-        state = VoiceRecordingState(),
+        conversationState = ConversationState.Playing,
         playbackStatus = PlaybackStatus.PLAYING
     )
 }

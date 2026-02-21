@@ -12,8 +12,11 @@ import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.voice.AudioPlayerManager
+import com.example.graduation_project.data.voice.AudioRecordManager
 import com.example.graduation_project.domain.voice.AudioPlayException
 import com.example.graduation_project.domain.voice.AudioPlayListener
+import com.example.graduation_project.domain.voice.AudioRecordException
+import com.example.graduation_project.domain.voice.AudioRecordListener
 import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
@@ -34,6 +37,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewmodel.CreationExtras
+import java.io.File
 import java.util.UUID
 
 /**
@@ -70,6 +74,9 @@ class ConversationViewModel(
     // AI 응답 음성 재생 관리자
     private val audioPlayerManager = AudioPlayerManager()
 
+    // 음성 녹음 관리자 (VAD 포함)
+    private val audioRecordManager = AudioRecordManager(application)
+
     // PROCESSING 상태 타이머 Job
     private var processingTimerJob: Job? = null
 
@@ -84,6 +91,40 @@ class ConversationViewModel(
 
     init {
         setupAudioPlayListener()
+        setupAudioRecordListener()
+    }
+
+    /**
+     * 음성 녹음 리스너 설정
+     * VAD 상태 변화에 따라 isSpeechDetected 업데이트 및 ConversationState 전환
+     */
+    private fun setupAudioRecordListener() {
+        audioRecordManager.setListener(object : AudioRecordListener {
+            override fun onReady() {
+                // VAD 준비 완료 → Listening 상태로 전환
+                Log.d(TAG, "AudioRecordListener.onReady()")
+            }
+
+            override fun onRecordingStart() {
+                // VAD가 음성 감지
+                Log.d(TAG, "AudioRecordListener.onRecordingStart() - 음성 감지됨")
+                _uiState.update { it.copy(isSpeechDetected = true) }
+                transitionTo(ConversationState.Recording)
+            }
+
+            override fun onRecordingComplete(audioFile: File) {
+                // 녹음 완료 → 서버 전송
+                Log.d(TAG, "AudioRecordListener.onRecordingComplete() - 파일: ${audioFile.path}")
+                _uiState.update { it.copy(isSpeechDetected = false) }
+                sendMessage(audioFile.readBytes())
+            }
+
+            override fun onError(exception: AudioRecordException) {
+                Log.e(TAG, "AudioRecordListener.onError()", exception)
+                _uiState.update { it.copy(isSpeechDetected = false) }
+                // VAD 오류 시 Listening 상태 유지 (재시도 가능)
+            }
+        })
     }
 
     private fun setupAudioPlayListener() {
@@ -112,9 +153,12 @@ class ConversationViewModel(
                         currentError = null,
                         isAudioRetrying = false,
                         showAudioFallbackText = false,
-                        retryProgress = null
+                        retryProgress = null,
+                        isSpeechDetected = false
                     )
                 }
+                // 다음 발화 대기 시작
+                startRecording()
             }
 
             override fun onRetrying(currentAttempt: Int, maxAttempts: Int) {
@@ -192,9 +236,12 @@ class ConversationViewModel(
                 showAudioFallbackText = lastAiMessage != null,
                 audioFallbackText = lastAiMessage,
                 retryProgress = null,
-                errorMessage = "음성을 재생할 수 없어 텍스트로 보여드려요"
+                errorMessage = "음성을 재생할 수 없어 텍스트로 보여드려요",
+                isSpeechDetected = false
             )
         }
+        // 다음 발화 대기 시작
+        startRecording()
     }
 
     /**
@@ -242,11 +289,12 @@ class ConversationViewModel(
                         audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
                         audioPlayerManager.play(audioData)
                     } ?: run {
-                        // audioData가 없으면 바로 LISTENING으로 전환
+                        // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
                         transitionTo(ConversationState.Listening)
                         _uiState.update {
-                            it.copy(playbackStatus = PlaybackStatus.NONE)
+                            it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
                         }
+                        startRecording()
                     }
 
                     // AI 인사 메시지 Room DB 저장
@@ -322,11 +370,12 @@ class ConversationViewModel(
                         audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
                         audioPlayerManager.play(audioData)
                     } ?: run {
-                        // audioData가 없으면 바로 LISTENING으로 전환
+                        // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
                         transitionTo(ConversationState.Listening)
                         _uiState.update {
-                            it.copy(playbackStatus = PlaybackStatus.NONE)
+                            it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
                         }
+                        startRecording()
                     }
 
                     // 사용자 메시지 + AI 응답 메시지 Room DB 저장
@@ -388,6 +437,7 @@ class ConversationViewModel(
             when (result) {
                 is ApiResult.Success -> {
                     audioPlayerManager.stop()  // 재시도 중이어도 즉시 중지
+                    audioRecordManager.stop()  // 녹음 중지
                     stopProcessingTimer()  // PROCESSING 타이머 중지
                     conversationId = null
                     // Sending → Ended
@@ -411,7 +461,9 @@ class ConversationViewModel(
                             userRetryCount = 0,
                             isRetryButtonEnabled = false,
                             showContactSupport = false,
-                            showFarewellDialog = false
+                            showFarewellDialog = false,
+                            // 녹음 상태 초기화
+                            isSpeechDetected = false
                             // messages는 유지 (대화 기록 보존)
                         )
                     }
@@ -565,7 +617,29 @@ class ConversationViewModel(
     override fun onCleared() {
         super.onCleared()
         audioPlayerManager.release()
+        audioRecordManager.release()
         stopProcessingTimer()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 녹음 관련 메서드
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * 녹음 시작 (VAD 기반 자동 감지)
+     */
+    fun startRecording() {
+        Log.d(TAG, "startRecording()")
+        audioRecordManager.start()
+    }
+
+    /**
+     * 녹음 중지
+     */
+    fun stopRecording() {
+        Log.d(TAG, "stopRecording()")
+        audioRecordManager.stop()
+        _uiState.update { it.copy(isSpeechDetected = false) }
     }
 
     // 임시 건강 데이터 (추후 Health Connect 연동)

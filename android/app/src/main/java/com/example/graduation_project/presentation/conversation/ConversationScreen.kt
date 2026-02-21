@@ -203,6 +203,7 @@ private fun ConversationScreenContent(
                     ActiveConversationView(
                         conversationState = uiState.conversationState,
                         playbackStatus = uiState.playbackStatus,
+                        isSpeechDetected = uiState.isSpeechDetected,
                         currentAiMessage = currentAiMessage,
                         currentUserSpeech = uiState.currentUserSpeech,
                         voiceAmplitude = uiState.voiceAmplitude,

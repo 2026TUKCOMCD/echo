@@ -42,7 +42,6 @@ import com.example.graduation_project.presentation.component.RecordingIndicator
 import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.voice.VoiceRecordingState
 import com.example.graduation_project.ui.theme.Dimens
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
@@ -73,7 +72,7 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
 fun ActiveConversationView(
     conversationState: ConversationState,
     playbackStatus: PlaybackStatus = PlaybackStatus.NONE,
-    recordingState: VoiceRecordingState = VoiceRecordingState(),
+    isSpeechDetected: Boolean = false,
     currentAiMessage: String?,
     currentUserSpeech: String? = null,
     voiceAmplitude: Float = 0f,
@@ -185,8 +184,9 @@ fun ActiveConversationView(
         } else {
             // 녹음 + 재생 상태 통합 표시 (상태 아이콘 + "말하고 있어요" 등 텍스트)
             RecordingIndicator(
-                state = recordingState,
-                playbackStatus = playbackStatus
+                conversationState = conversationState,
+                playbackStatus = playbackStatus,
+                isSpeechDetected = isSpeechDetected
             )
 
             // [T2.3-3] 재시도 진행 상황 표시
