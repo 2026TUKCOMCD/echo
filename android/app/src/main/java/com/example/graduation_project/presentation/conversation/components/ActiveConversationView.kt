@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -40,10 +38,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
 import com.example.graduation_project.presentation.character.CharacterAnimationManager
-import com.example.graduation_project.presentation.character.CharacterState
 import com.example.graduation_project.presentation.component.RecordingIndicator
+import com.example.graduation_project.presentation.model.ConversationError
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.model.VoiceStatus
 import com.example.graduation_project.presentation.voice.VoiceRecordingState
 import com.example.graduation_project.ui.theme.Dimens
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
@@ -73,7 +71,7 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  */
 @Composable
 fun ActiveConversationView(
-    voiceStatus: VoiceStatus,
+    conversationState: ConversationState,
     playbackStatus: PlaybackStatus = PlaybackStatus.NONE,
     recordingState: VoiceRecordingState = VoiceRecordingState(),
     currentAiMessage: String?,
@@ -84,7 +82,8 @@ fun ActiveConversationView(
     retryProgress: String? = null,            // [T2.3-3] 재시도 진행 상황
     // 캐릭터 애니메이션 관련
     animationManager: CharacterAnimationManager? = null,
-    characterState: CharacterState = CharacterState.IDLE,
+    // 현재 오류 상태
+    currentError: ConversationError? = null,
     // PROCESSING 오버레이 관련
     processingMessage: String? = null,
     // 발화 인식 오류 관련
@@ -104,12 +103,14 @@ fun ActiveConversationView(
             -> "음성 재생에 실패했습니다. 텍스트로 보여드립니다: $audioFallbackText"
         processingMessage != null -> processingMessage
         retryProgress != null -> retryProgress
-        voiceStatus == VoiceStatus.PLAYING && playbackStatus == PlaybackStatus.PREPARING
+        conversationState is ConversationState.Playing && playbackStatus == PlaybackStatus.PREPARING
             -> "AI 응답을 준비하고 있습니다. 잠시만 기다려주세요."
-        voiceStatus == VoiceStatus.IDLE -> "대기 중입니다"
-        voiceStatus == VoiceStatus.LISTENING -> "사용자의 음성을 듣고 있습니다"
-        voiceStatus == VoiceStatus.RECORDING -> "음성을 녹음하고 있습니다"
-        voiceStatus == VoiceStatus.PLAYING -> "AI가 응답 중입니다: ${currentAiMessage ?: ""}"
+        conversationState is ConversationState.Idle      -> "대기 중입니다"
+        conversationState is ConversationState.Listening -> "사용자의 음성을 듣고 있습니다"
+        conversationState is ConversationState.Recording -> "음성을 녹음하고 있습니다"
+        conversationState is ConversationState.Sending   -> "서버에 전송 중입니다"
+        conversationState is ConversationState.Playing   -> "AI가 응답 중입니다: ${currentAiMessage ?: ""}"
+        conversationState is ConversationState.Ended     -> "대화가 종료됐습니다"
         else -> "대기 중입니다"
     }
 
@@ -144,7 +145,7 @@ fun ActiveConversationView(
                 // 폴백: 기존 정적 이미지 (Preview용)
                 AiCharacterImage(
                     size = 200.dp,
-                    enableFloatingAnimation = voiceStatus == VoiceStatus.PLAYING
+                    enableFloatingAnimation = conversationState is ConversationState.Playing
                             && playbackStatus == PlaybackStatus.PLAYING
                 )
             }
@@ -165,9 +166,9 @@ fun ActiveConversationView(
             )
         }
         // 네트워크/서버 오류 시 재시도 버튼
-        else if (characterState == CharacterState.NETWORK_ERROR || characterState == CharacterState.SERVER_ERROR) {
+        else if (currentError is ConversationError.NetworkError || currentError is ConversationError.ServerError) {
             ErrorRetryView(
-                isNetworkError = characterState == CharacterState.NETWORK_ERROR,
+                isNetworkError = currentError is ConversationError.NetworkError,
                 isRetryButtonEnabled = isRetryButtonEnabled,
                 showContactSupport = showContactSupport,
                 onRetryClick = onRetryClick,
@@ -435,7 +436,7 @@ private fun AudioFallbackTextView(
 private fun ActiveConversationViewPreview_AudioFallback() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.LISTENING,
+            conversationState = ConversationState.Listening,
             playbackStatus = PlaybackStatus.NONE,
             currentAiMessage = "오늘 하루는 어떠셨나요?",
             showAudioFallbackText = true,
@@ -450,7 +451,7 @@ private fun ActiveConversationViewPreview_AudioFallback() {
 private fun ActiveConversationViewPreview_Retrying() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.PLAYING,
+            conversationState = ConversationState.Playing,
             playbackStatus = PlaybackStatus.PREPARING,
             currentAiMessage = null,
             retryProgress = "재시도 중 (2/3)"
@@ -464,8 +465,9 @@ private fun ActiveConversationViewPreview_Retrying() {
 private fun ActiveConversationViewPreview_Listening() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.LISTENING,
-            currentAiMessage = null
+            conversationState = ConversationState.Listening,
+            currentAiMessage = "안녕하세요! 오늘 하루는 어떠셨나요?",
+            currentUserSpeech = "오늘 공원에서 산책을..."
         )
     }
 }
@@ -476,7 +478,7 @@ private fun ActiveConversationViewPreview_Listening() {
 private fun ActiveConversationViewPreview_PreparingPlayback() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.PLAYING,
+            conversationState = ConversationState.Playing,
             playbackStatus = PlaybackStatus.PREPARING,
             currentAiMessage = null
         )
@@ -489,9 +491,9 @@ private fun ActiveConversationViewPreview_PreparingPlayback() {
 private fun ActiveConversationViewPreview_Playing() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.PLAYING,
+            conversationState = ConversationState.Playing,
             playbackStatus = PlaybackStatus.PLAYING,
-            currentAiMessage = "오늘 하루는 어떠셨나요?"  // 접근성용
+            currentAiMessage = "오늘 하루는 어떠셨나요? 특별한 일이 있으셨는지 궁금해요."
         )
     }
 }
@@ -502,8 +504,32 @@ private fun ActiveConversationViewPreview_Playing() {
 private fun ActiveConversationViewPreview_Recording() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.RECORDING,
-            currentAiMessage = null
+            conversationState = ConversationState.Recording,
+            currentAiMessage = "안녕하세요! 오늘 하루는 어떠셨나요?"
+        )
+    }
+}
+
+// 미리보기: 전송 중
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_Sending() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            conversationState = ConversationState.Sending,
+            currentAiMessage = "안녕하세요! 오늘 하루는 어떠셨나요?"
+        )
+    }
+}
+
+// 미리보기: 대화 종료
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ActiveConversationViewPreview_Ended() {
+    Graduation_projectTheme {
+        ActiveConversationView(
+            conversationState = ConversationState.Ended,
+            currentAiMessage = "오늘도 즐거운 대화였습니다! 내일 또 만나요."
         )
     }
 }
@@ -514,9 +540,8 @@ private fun ActiveConversationViewPreview_Recording() {
 private fun ActiveConversationViewPreview_Processing() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.IDLE,
+            conversationState = ConversationState.Sending,
             currentAiMessage = null,
-            characterState = CharacterState.PROCESSING,
             processingMessage = "잠시만요"
         )
     }
@@ -528,9 +553,9 @@ private fun ActiveConversationViewPreview_Processing() {
 private fun ActiveConversationViewPreview_SpeechError() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.LISTENING,
+            conversationState = ConversationState.Listening,
             currentAiMessage = null,
-            characterState = CharacterState.SPEECH_UNRECOGNIZED,
+            currentError = ConversationError.SpeechUnrecognized,
             speechErrorMessage = "말씀이 잘 들리지 않았어요",
             speechErrorHint = "천천히, 또박또박 말씀해 주세요"
         )
@@ -543,9 +568,9 @@ private fun ActiveConversationViewPreview_SpeechError() {
 private fun ActiveConversationViewPreview_NetworkError() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.IDLE,
+            conversationState = ConversationState.Listening,
             currentAiMessage = null,
-            characterState = CharacterState.NETWORK_ERROR,
+            currentError = ConversationError.NetworkError,
             isRetryButtonEnabled = true,
             showContactSupport = false
         )
@@ -558,9 +583,9 @@ private fun ActiveConversationViewPreview_NetworkError() {
 private fun ActiveConversationViewPreview_ServerErrorWithSupport() {
     Graduation_projectTheme {
         ActiveConversationView(
-            voiceStatus = VoiceStatus.IDLE,
+            conversationState = ConversationState.Listening,
             currentAiMessage = null,
-            characterState = CharacterState.SERVER_ERROR,
+            currentError = ConversationError.ServerError,
             isRetryButtonEnabled = false,
             showContactSupport = true
         )

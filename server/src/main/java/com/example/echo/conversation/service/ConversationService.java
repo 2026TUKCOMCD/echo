@@ -5,6 +5,9 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
+import com.example.echo.context.domain.ConversationTurn;
+import com.example.echo.conversation.dto.TtsRetryResponse;
+import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
@@ -15,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 @Slf4j
 @Service
@@ -39,10 +43,8 @@ public class ConversationService {
         // 3. TTS 변환
         byte[] audioData = voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings());
 
-        // 4. 히스토리 추가 (비동기)
-        CompletableFuture.runAsync(() ->
-                contextService.addConversationTurn(userId, null, firstMessage)
-        );
+        // 4. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
+        contextService.addConversationTurn(userId, null, firstMessage);
 
         return ConversationStartResponse.builder()
                 .message(firstMessage)
@@ -78,6 +80,22 @@ public class ConversationService {
                 .aiResponse(aiResponse)
                 .audioData(audioData)
                 .timestamp(LocalDateTime.now())
+                .build();
+    }
+
+    public TtsRetryResponse retryTts(Long userId) {
+        UserContext context = contextService.getContext(userId);
+
+        List<ConversationTurn> history = context.getConversationHistory();
+        if (history.isEmpty()) {
+            throw new ConversationNotFoundException("재시도할 대화 기록이 없습니다.");
+        }
+
+        String lastAiResponse = history.get(history.size() - 1).getAiResponse();
+        byte[] audioData = voiceService.textToSpeech(lastAiResponse, context.getPreferences().getVoiceSettings());
+
+        return TtsRetryResponse.builder()
+                .audioData(audioData)
                 .build();
     }
 

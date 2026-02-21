@@ -1,6 +1,5 @@
 package com.example.graduation_project.presentation.conversation
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,15 +44,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.presentation.character.CharacterAnimationManager
-import com.example.graduation_project.presentation.character.CharacterState
 import com.example.graduation_project.presentation.settings.VoiceSettingsDialog
 import com.example.graduation_project.presentation.conversation.components.ActiveConversationView
 import com.example.graduation_project.presentation.conversation.components.ConversationControls
 import com.example.graduation_project.presentation.conversation.components.EmptyConversationView
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.model.VoiceStatus
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
 /**
@@ -78,7 +75,7 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  */
 @Composable
 fun ConversationScreen(
-    viewModel: ConversationViewModel = viewModel()
+    viewModel: ConversationViewModel = viewModel(factory = ConversationViewModel.Factory)
 ) {
     // ViewModel의 상태를 Compose State로 변환
     val uiState by viewModel.uiState.collectAsState()
@@ -96,9 +93,9 @@ fun ConversationScreen(
         }
     }
 
-    // 캐릭터 상태 변경 시 애니메이션 전환
-    LaunchedEffect(uiState.characterState) {
-        animationManager.changeState(uiState.characterState)
+    // ConversationState 및 currentError 변경 시 캐릭터 애니메이션 전환
+    LaunchedEffect(uiState.conversationState, uiState.currentError) {
+        animationManager.changeState(uiState.conversationState, uiState.currentError)
     }
 
     // 애니메이션 관리자 해제
@@ -204,7 +201,7 @@ private fun ConversationScreenContent(
                         ?.text
 
                     ActiveConversationView(
-                        voiceStatus = uiState.voiceStatus,
+                        conversationState = uiState.conversationState,
                         playbackStatus = uiState.playbackStatus,
                         currentAiMessage = currentAiMessage,
                         currentUserSpeech = uiState.currentUserSpeech,
@@ -214,7 +211,7 @@ private fun ConversationScreenContent(
                         retryProgress = uiState.retryProgress,                  // [T2.3-3]
                         // 캐릭터 애니메이션 관련
                         animationManager = animationManager,
-                        characterState = uiState.characterState,
+                        currentError = uiState.currentError,
                         // PROCESSING 오버레이 관련
                         processingMessage = uiState.processingMessage,
                         // 발화 인식 오류 관련
@@ -266,8 +263,7 @@ private fun ConversationScreenPreview_Listening() {
     Graduation_projectTheme {
         ConversationScreenContent(
             uiState = ConversationUiState(
-                isConversationActive = true,
-                voiceStatus = VoiceStatus.LISTENING,
+                conversationState = ConversationState.Listening,
                 currentUserSpeech = "오늘 공원에서 산책을...",
                 messages = listOf(
                     MessageUiModel(
@@ -292,8 +288,7 @@ private fun ConversationScreenPreview_Playing() {
     Graduation_projectTheme {
         ConversationScreenContent(
             uiState = ConversationUiState(
-                isConversationActive = true,
-                voiceStatus = VoiceStatus.PLAYING,
+                conversationState = ConversationState.Playing,
                 playbackStatus = PlaybackStatus.PLAYING,
                 messages = listOf(
                     MessageUiModel(
@@ -311,13 +306,13 @@ private fun ConversationScreenPreview_Playing() {
     }
 }
 
-// 미리보기: 로딩 중
+// 미리보기: 전송 중 (로딩)
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
-private fun ConversationScreenPreview_Loading() {
+private fun ConversationScreenPreview_Sending() {
     Graduation_projectTheme {
         ConversationScreenContent(
-            uiState = ConversationUiState(isLoading = true),
+            uiState = ConversationUiState(conversationState = ConversationState.Sending),
             snackbarHostState = SnackbarHostState(),
             onStartClick = {},
             onEndClick = {}

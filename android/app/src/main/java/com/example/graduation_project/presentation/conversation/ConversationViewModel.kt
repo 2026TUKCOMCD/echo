@@ -1,23 +1,25 @@
 package com.example.graduation_project.presentation.conversation
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.AppDatabase
+import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.voice.AudioPlayerManager
 import com.example.graduation_project.domain.voice.AudioPlayException
 import com.example.graduation_project.domain.voice.AudioPlayListener
-import com.example.graduation_project.presentation.character.CharacterState
+import com.example.graduation_project.presentation.model.ConversationError
+import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.model.SpeechErrorType
-import com.example.graduation_project.presentation.model.VoiceStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +30,10 @@ import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.viewmodel.CreationExtras
 import java.util.UUID
 
 /**
@@ -39,25 +45,24 @@ import java.util.UUID
  * - viewModelScope: ViewModel이 살아있는 동안 실행되는 코루틴 스코프
  *
  * ## 상태 흐름
- * 1. 대화 시작 버튼 클릭 -> startConversation() 호출
+ * 1.
+ * 대화 시작 버튼 클릭 -> startConversation() 호출
  * 2. API 호출 성공 -> isConversationActive = true, AI 메시지 추가
- * 3. 음성 상태 변화 -> voiceStatus 업데이트
+ * 3. 음성 상태 변화 -> conversationState 업데이트
  * 4. 대화 종료 버튼 클릭 -> endConversation() 호출
  * 5. 상태 초기화
  */
-class ConversationViewModel(application: Application) : AndroidViewModel(application) {
+class ConversationViewModel(
+    application: Application,
+    private val repository: ConversationRepository = ConversationRepository(),
+    private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao()
+) : AndroidViewModel(application) {
 
     // 내부에서만 수정 가능한 상태
     private val _uiState = MutableStateFlow(ConversationUiState())
 
     // 외부에서 관찰만 가능한 상태 (읽기 전용)
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
-
-    // Repository
-    private val repository = ConversationRepository()
-
-    // Room DB
-    private val messageDao = AppDatabase.getInstance(application).messageDao()
 
     // 로컬 대화 세션 ID (대화 시작 시 생성, 종료 시 초기화)
     private var conversationId: String? = null
@@ -68,12 +73,14 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     // PROCESSING 상태 타이머 Job
     private var processingTimerJob: Job? = null
 
+    // 서버 TTS 재요청 진행 중 여부 (무한 루프 방지)
+    private var isServerRetryInProgress = false
+
+    // [TEST ONLY] true로 설정하면 음성 재생 시 강제로 DecodeError 발생 → 서버 TTS 재요청 흐름 테스트
+    private val forceDecodeErrorForTest = false
+
     // 최대 사용자 재시도 횟수
-    private companion object {
-        const val MAX_USER_RETRY_COUNT = 3
-        // 테스트 모드: true면 서버 없이 UI 테스트 가능
-        const val TEST_MODE = false
-    }
+    private val MAX_USER_RETRY_COUNT = 3
 
     init {
         setupAudioPlayListener()
@@ -83,9 +90,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         audioPlayerManager.setListener(object : AudioPlayListener {
             override fun onPlaybackStart() {
                 // Preparing/Retrying → Playing 전환 (재시도 성공 시 폴백 숨김)
+                isServerRetryInProgress = false
                 _uiState.update {
                     it.copy(
                         playbackStatus = PlaybackStatus.PLAYING,
+                        currentError = null,
                         isAudioRetrying = false,
                         showAudioFallbackText = false,
                         retryProgress = null
@@ -95,11 +104,12 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
             override fun onPlaybackComplete() {
                 // 재생 완료 → LISTENING + playbackStatus 초기화
+                isServerRetryInProgress = false
+                transitionTo(ConversationState.Listening)
                 _uiState.update {
                     it.copy(
-                        voiceStatus = VoiceStatus.LISTENING,
                         playbackStatus = PlaybackStatus.NONE,
-                        characterState = CharacterState.LISTENING,  // 캐릭터 상태 동기화
+                        currentError = null,
                         isAudioRetrying = false,
                         showAudioFallbackText = false,
                         retryProgress = null
@@ -119,47 +129,71 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
             }
 
             override fun onError(exception: AudioPlayException, isFallbackNeeded: Boolean) {
-                // 마지막 AI 메시지 텍스트 추출 (폴백용)
-                val lastAiMessage = _uiState.value.messages
-                    .lastOrNull { !it.isFromUser }
-                    ?.text
-
-                _uiState.update {
-                    it.copy(
-                        voiceStatus = VoiceStatus.LISTENING,
-                        playbackStatus = PlaybackStatus.NONE,
-                        // TTS 에러 시 캐릭터 상태: 폴백 필요하면 TTS_ERROR, 아니면 LISTENING
-                        characterState = if (isFallbackNeeded) CharacterState.TTS_ERROR else CharacterState.LISTENING,
-                        isAudioRetrying = false,
-                        showAudioFallbackText = isFallbackNeeded && lastAiMessage != null,
-                        audioFallbackText = lastAiMessage,
-                        retryProgress = null,
-                        errorMessage = getAudioErrorMessage(exception, isFallbackNeeded)
-                    )
+                if (!isServerRetryInProgress) {
+                    // 서버 TTS 재요청 시도 (DecodeError: 바로 진입 / PlaybackError: 로컬 재시도 소진 후 진입)
+                    isServerRetryInProgress = true
+                    requestServerTtsRetry()
+                } else {
+                    // 서버 재요청 후에도 실패 → 텍스트 폴백 (최후 수단)
+                    isServerRetryInProgress = false
+                    showTextFallback()
                 }
             }
         })
     }
 
     /**
-     * 오디오 재생 에러 메시지 생성
-     *
-     * @param exception 발생한 예외
-     * @param isFallbackNeeded 텍스트 폴백 필요 여부
-     * @return 사용자에게 표시할 에러 메시지
-     *
-     * [T2.3-3] 재생 에러 처리
+     * 서버에 TTS 재생성을 요청합니다.
+     * - 로컬 재시도 소진 또는 DecodeError 발생 시 호출
+     * - 서버의 마지막 AI 응답 텍스트를 TTS로 재생성하여 반환
      */
-    private fun getAudioErrorMessage(
-        exception: AudioPlayException,
-        isFallbackNeeded: Boolean
-    ): String {
-        return if (isFallbackNeeded) {
-            // 텍스트 폴백 표시 시 긍정적 메시지
-            "음성을 재생할 수 없어 텍스트로 보여드려요"
-        } else {
-            // 폴백 불가능 시 기존 에러 메시지
-            exception.message ?: "음성 재생 오류"
+    private fun requestServerTtsRetry() {
+        _uiState.update {
+            it.copy(
+                isAudioRetrying = true,
+                playbackStatus = PlaybackStatus.PREPARING,
+                retryProgress = "음성을 다시 불러오는 중..."
+            )
+        }
+        viewModelScope.launch {
+            when (val result = repository.retryTts()) {
+                is ApiResult.Success -> {
+                    val audioData = result.data.audioData
+                    if (audioData != null) {
+                        audioPlayerManager.play(audioData)
+                    } else {
+                        isServerRetryInProgress = false
+                        showTextFallback()
+                    }
+                }
+                is ApiResult.Error -> {
+                    isServerRetryInProgress = false
+                    showTextFallback()
+                }
+            }
+        }
+    }
+
+    /**
+     * 텍스트 폴백을 표시합니다.
+     * - 서버 TTS 재요청도 실패했을 때 최후 수단으로 호출
+     */
+    private fun showTextFallback() {
+        val lastAiMessage = _uiState.value.messages
+            .lastOrNull { !it.isFromUser }
+            ?.text
+
+        transitionTo(ConversationState.Listening)
+        _uiState.update {
+            it.copy(
+                playbackStatus = PlaybackStatus.NONE,
+                currentError = ConversationError.TtsError,
+                isAudioRetrying = false,
+                showAudioFallbackText = lastAiMessage != null,
+                audioFallbackText = lastAiMessage,
+                retryProgress = null,
+                errorMessage = "음성을 재생할 수 없어 텍스트로 보여드려요"
+            )
         }
     }
 
@@ -171,16 +205,19 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      * 4. 실패 시: 에러 메시지 표시
      */
     fun startConversation() {
-        // 테스트 모드: 서버 없이 UI 테스트
-        if (TEST_MODE) {
-            startConversationTestMode()
-            return
-        }
-
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            isServerRetryInProgress = false
+            // Idle → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
+            _uiState.update { it.copy(errorMessage = null, currentError = null) }
+
+            // PROCESSING 타이머 시작
+            startProcessingTimer()
 
             val result = repository.startConversation(getDummyHealthData())
+
+            // PROCESSING 타이머 중지
+            stopProcessingTimer()
 
             when (result) {
                 is ApiResult.Success -> {
@@ -190,29 +227,25 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                         response.message ?: "안녕하세요! 오늘 하루는 어떠셨나요?"
                     )
 
+                    // Sending → Playing
+                    transitionTo(ConversationState.Playing)
                     _uiState.update { currentState ->
                         currentState.copy(
-                            isLoading = false,
-                            isConversationActive = true,
                             sessionId = conversationId,
-                            voiceStatus = VoiceStatus.PLAYING,
                             playbackStatus = PlaybackStatus.PREPARING,
-                            characterState = CharacterState.SPEAKING,  // 캐릭터 상태 동기화
                             messages = currentState.messages + aiMessage
                         )
                     }
 
                     // AI 응답 음성 재생
                     response.audioData?.let { audioData ->
+                        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
                         audioPlayerManager.play(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환
+                        transitionTo(ConversationState.Listening)
                         _uiState.update {
-                            it.copy(
-                                voiceStatus = VoiceStatus.LISTENING,
-                                playbackStatus = PlaybackStatus.NONE,
-                                characterState = CharacterState.LISTENING  // 캐릭터 상태 동기화
-                            )
+                            it.copy(playbackStatus = PlaybackStatus.NONE)
                         }
                     }
 
@@ -221,86 +254,10 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = getErrorMessage(result.exception)
-                        )
-                    }
+                    // Sending → Idle
+                    transitionTo(ConversationState.Idle)
+                    handleApiError(result.exception)
                 }
-            }
-        }
-    }
-
-    /**
-     * 테스트 모드: 서버 없이 UI 상태 전환 테스트
-     * 상태 순환: IDLE → LISTENING → PROCESSING → SPEAKING → LISTENING (반복)
-     */
-    private fun startConversationTestMode() {
-        viewModelScope.launch {
-            conversationId = UUID.randomUUID().toString()
-            val aiMessage = createAiMessage("안녕하세요! 테스트 모드입니다. 오늘 하루는 어떠셨나요?")
-
-            // 1. 대화 시작 → IDLE 캐릭터 애니메이션
-            _uiState.update { currentState ->
-                currentState.copy(
-                    isLoading = false,
-                    isConversationActive = true,
-                    sessionId = conversationId,
-                    voiceStatus = VoiceStatus.IDLE,
-                    characterState = CharacterState.IDLE,
-                    messages = currentState.messages + aiMessage
-                )
-            }
-
-            delay(2000L)
-
-            // 2. SPEAKING 상태 (AI가 말하는 중)
-            _uiState.update {
-                it.copy(
-                    voiceStatus = VoiceStatus.PLAYING,
-                    characterState = CharacterState.SPEAKING
-                )
-            }
-
-            delay(3000L)
-
-            // 3. LISTENING 상태 (사용자 음성 대기)
-            _uiState.update {
-                it.copy(
-                    voiceStatus = VoiceStatus.LISTENING,
-                    characterState = CharacterState.LISTENING
-                )
-            }
-
-            delay(3000L)
-
-            // 4. PROCESSING 상태 (서버 처리 중 - 타이머 테스트)
-            transitionToCharacterState(CharacterState.PROCESSING)
-            _uiState.update {
-                it.copy(voiceStatus = VoiceStatus.IDLE)
-            }
-
-            // 8초 대기 (3초 후 "잠시만요", 6초 후 "조금만 기다려주세요" 확인)
-            delay(8000L)
-
-            // 5. 다시 SPEAKING
-            _uiState.update {
-                it.copy(
-                    voiceStatus = VoiceStatus.PLAYING,
-                    characterState = CharacterState.SPEAKING,
-                    messages = it.messages + createAiMessage("처리가 완료되었습니다!")
-                )
-            }
-
-            delay(3000L)
-
-            // 6. LISTENING으로 복귀
-            _uiState.update {
-                it.copy(
-                    voiceStatus = VoiceStatus.LISTENING,
-                    characterState = CharacterState.LISTENING
-                )
             }
         }
     }
@@ -316,20 +273,22 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun sendMessage(wavData: ByteArray) {
         viewModelScope.launch {
-            // PROCESSING 상태로 전환 + 타이머 시작
-            transitionToCharacterState(CharacterState.PROCESSING)
+            isServerRetryInProgress = false
+            // Recording → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
             _uiState.update {
                 it.copy(
-                    isLoading = true,
                     errorMessage = null,
-                    voiceStatus = VoiceStatus.IDLE,
-                    playbackStatus = PlaybackStatus.NONE,
+                    currentError = null,
                     // [T2.3-3] 폴백 텍스트 숨김 (새 음성 입력 시작)
                     showAudioFallbackText = false,
                     audioFallbackText = null,
                     retryProgress = null
                 )
             }
+
+            // PROCESSING 타이머 시작
+            startProcessingTimer()
 
             // WAV ByteArray → MultipartBody.Part 변환
             val requestBody = wavData.toRequestBody("audio/wav".toMediaType())
@@ -346,27 +305,27 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                     val userMessage = createUserMessage(response.userMessage ?: "")
                     val aiMessage = createAiMessage(response.aiResponse ?: "")
 
+                    // 발화 인식 성공 → 실패 카운트 초기화
+                    onSpeechRecognized()
+
+                    // Sending → Playing
+                    transitionTo(ConversationState.Playing)
                     _uiState.update { currentState ->
                         currentState.copy(
-                            isLoading = false,
-                            voiceStatus = VoiceStatus.PLAYING,
                             playbackStatus = PlaybackStatus.PREPARING,
-                            characterState = CharacterState.SPEAKING,  // 캐릭터 상태 동기화
                             messages = currentState.messages + userMessage + aiMessage
                         )
                     }
 
                     // AI 응답 음성 재생
                     response.audioData?.let { audioData ->
+                        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
                         audioPlayerManager.play(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환
+                        transitionTo(ConversationState.Listening)
                         _uiState.update {
-                            it.copy(
-                                voiceStatus = VoiceStatus.LISTENING,
-                                playbackStatus = PlaybackStatus.NONE,
-                                characterState = CharacterState.LISTENING  // 캐릭터 상태 동기화
-                            )
+                            it.copy(playbackStatus = PlaybackStatus.NONE)
                         }
                     }
 
@@ -376,16 +335,31 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            voiceStatus = VoiceStatus.LISTENING,
-                            characterState = CharacterState.LISTENING,  // 캐릭터 상태 동기화
-                            errorMessage = getErrorMessage(result.exception)
-                        )
-                    }
+                    // Sending → Listening
+                    transitionTo(ConversationState.Listening)
+                    handleApiError(result.exception)
                 }
             }
+        }
+    }
+
+    /**
+     * API 오류 처리 (네트워크/서버 오류에 따른 상태 업데이트)
+     */
+    private fun handleApiError(exception: ApiException) {
+        val error = when (exception) {
+            is ApiException.NetworkError -> ConversationError.NetworkError
+            is ApiException.ServerError -> ConversationError.ServerError
+            else -> null
+        }
+
+        _uiState.update {
+            it.copy(
+                currentError = error,
+                isRetryButtonEnabled = error != null && it.userRetryCount < MAX_USER_RETRY_COUNT,
+                showContactSupport = error != null && it.userRetryCount >= MAX_USER_RETRY_COUNT,
+                errorMessage = getErrorMessage(exception)
+            )
         }
     }
 
@@ -406,7 +380,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun endConversation() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            // Listening → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            if (!transitionTo(ConversationState.Sending)) return@launch
 
             val result = repository.endConversation()
 
@@ -415,14 +390,13 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                     audioPlayerManager.stop()  // 재시도 중이어도 즉시 중지
                     stopProcessingTimer()  // PROCESSING 타이머 중지
                     conversationId = null
+                    // Sending → Ended
+                    transitionTo(ConversationState.Ended)
                     _uiState.update {
                         it.copy(
-                            isLoading = false,
-                            isConversationActive = false,
                             sessionId = null,
-                            voiceStatus = VoiceStatus.IDLE,
                             playbackStatus = PlaybackStatus.NONE,
-                            characterState = CharacterState.IDLE,  // 캐릭터 상태 초기화
+                            currentError = null,
                             // [T2.3-3] 폴백 관련 상태 초기화
                             isAudioRetrying = false,
                             showAudioFallbackText = false,
@@ -444,23 +418,31 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = getErrorMessage(result.exception)
-                        )
-                    }
+                    // Sending → Listening
+                    transitionTo(ConversationState.Listening)
+                    _uiState.update { it.copy(errorMessage = getErrorMessage(result.exception)) }
                 }
             }
         }
     }
 
     /**
-     * 음성 상태를 업데이트합니다.
+     * 대화 상태를 업데이트합니다.
+     * 내부적으로 전이 검증을 통과한 경우에만 상태가 변경됩니다.
      * - 음성 녹음/재생 상태에 따라 호출
      */
-    fun updateVoiceStatus(status: VoiceStatus) {
-        _uiState.update { it.copy(voiceStatus = status) }
+    fun updateConversationState(state: ConversationState) {
+        transitionTo(state)
+    }
+
+    /**
+     * 상태를 IDLE로 초기화합니다.
+     * - ENDED 상태에서 사용자가 시작 버튼을 클릭하면 호출
+     */
+    fun resetToIdle() {
+        // Ended → Idle
+        transitionTo(ConversationState.Idle)
+        _uiState.update { it.copy(messages = emptyList(), sessionId = null, currentError = null) }
     }
 
     /**
@@ -478,7 +460,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      * - Snackbar 닫기 시 호출
      */
     fun dismissError() {
-        _uiState.update { it.copy(errorMessage = null) }
+        _uiState.update { it.copy(errorMessage = null, currentError = null) }
     }
 
     /**
@@ -518,6 +500,26 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 messages = currentState.messages + createAiMessage(text)
             )
         }
+    }
+
+    /**
+     * 현재 상태 → [next] 상태 전이를 검증한 뒤 적용합니다.
+     * - 유효한 전이: 상태 업데이트 후 true 반환
+     * - 유효하지 않은 전이: Log.w 출력 후 false 반환 (VAD 등 비동기 이벤트 중복 호출도 안전하게 처리)
+     *
+     * 호출자는 반환값으로 중복 요청을 차단할 수 있습니다:
+     * ```
+     * if (!transitionTo(ConversationState.Sending)) return@launch
+     * ```
+     */
+    private fun transitionTo(next: ConversationState): Boolean {
+        val current = _uiState.value.conversationState
+        if (!current.canTransitionTo(next)) {
+            Log.w(TAG, "Invalid transition: ${current::class.simpleName} → ${next::class.simpleName}")
+            return false
+        }
+        _uiState.update { it.copy(conversationState = next) }
+        return true
     }
 
     // 사용자 메시지 객체 생성 헬퍼 함수
@@ -563,6 +565,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     override fun onCleared() {
         super.onCleared()
         audioPlayerManager.release()
+        stopProcessingTimer()
     }
 
     // 임시 건강 데이터 (추후 Health Connect 연동)
@@ -572,50 +575,6 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         exerciseDistance = 3.5,   // 3.5km
         exerciseActivity = "걷기"
     )
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 캐릭터 상태 관리
-    // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * 캐릭터 상태를 전환합니다.
-     * VoiceStatus와 동기화하여 적절한 CharacterState로 매핑
-     */
-    fun transitionToCharacterState(state: CharacterState) {
-        // 이전 PROCESSING 타이머 정리
-        if (state != CharacterState.PROCESSING) {
-            stopProcessingTimer()
-        }
-
-        _uiState.update {
-            it.copy(
-                characterState = state,
-                // 상태 전환 시 관련 필드 초기화
-                processingMessage = null,
-                processingElapsedSeconds = 0,
-                speechErrorMessage = null,
-                speechErrorHint = null
-            )
-        }
-
-        // PROCESSING 상태면 타이머 시작
-        if (state == CharacterState.PROCESSING) {
-            startProcessingTimer()
-        }
-    }
-
-    /**
-     * VoiceStatus 변경에 따른 CharacterState 동기화
-     */
-    private fun syncCharacterStateWithVoiceStatus(voiceStatus: VoiceStatus) {
-        val characterState = when (voiceStatus) {
-            VoiceStatus.IDLE -> CharacterState.IDLE
-            VoiceStatus.LISTENING -> CharacterState.LISTENING
-            VoiceStatus.RECORDING -> CharacterState.LISTENING // RECORDING도 LISTENING 영상 사용
-            VoiceStatus.PLAYING -> CharacterState.SPEAKING
-        }
-        transitionToCharacterState(characterState)
-    }
 
     // ═══════════════════════════════════════════════════════════════════
     // PROCESSING 타이머
@@ -679,7 +638,7 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
 
         _uiState.update {
             it.copy(
-                characterState = CharacterState.SPEECH_UNRECOGNIZED,
+                currentError = ConversationError.SpeechUnrecognized,
                 speechErrorMessage = message,
                 speechErrorHint = hint,
                 speechFailCount = currentFailCount
@@ -689,11 +648,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
         // 2초 후 자동으로 LISTENING으로 복귀
         viewModelScope.launch {
             delay(2000L)
-            if (_uiState.value.characterState == CharacterState.SPEECH_UNRECOGNIZED) {
+            if (_uiState.value.currentError == ConversationError.SpeechUnrecognized) {
+                transitionTo(ConversationState.Listening)
                 _uiState.update {
                     it.copy(
-                        characterState = CharacterState.LISTENING,
-                        voiceStatus = VoiceStatus.LISTENING,
+                        currentError = null,
                         speechErrorMessage = null,
                         speechErrorHint = null
                     )
@@ -731,38 +690,8 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // 네트워크/서버 오류 처리
+    // 사용자 재시도 처리
     // ═══════════════════════════════════════════════════════════════════
-
-    /**
-     * 네트워크 오류 발생 시 호출
-     */
-    fun onNetworkError() {
-        stopProcessingTimer()
-        _uiState.update {
-            it.copy(
-                characterState = CharacterState.NETWORK_ERROR,
-                isRetryButtonEnabled = it.userRetryCount < MAX_USER_RETRY_COUNT,
-                showContactSupport = it.userRetryCount >= MAX_USER_RETRY_COUNT,
-                errorMessage = "인터넷 연결을 확인해주세요"
-            )
-        }
-    }
-
-    /**
-     * 서버 오류 발생 시 호출
-     */
-    fun onServerError() {
-        stopProcessingTimer()
-        _uiState.update {
-            it.copy(
-                characterState = CharacterState.SERVER_ERROR,
-                isRetryButtonEnabled = it.userRetryCount < MAX_USER_RETRY_COUNT,
-                showContactSupport = it.userRetryCount >= MAX_USER_RETRY_COUNT,
-                errorMessage = "서버에 문제가 생겼습니다. 잠시 후 다시 시도해주세요"
-            )
-        }
-    }
 
     /**
      * 사용자 재시도 버튼 클릭 시 호출
@@ -774,24 +703,12 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
                 userRetryCount = newRetryCount,
                 isRetryButtonEnabled = newRetryCount < MAX_USER_RETRY_COUNT,
                 showContactSupport = newRetryCount >= MAX_USER_RETRY_COUNT,
-                characterState = CharacterState.PROCESSING,
+                currentError = null,
                 errorMessage = null
             )
         }
-        startProcessingTimer()
-    }
-
-    /**
-     * 재시도 관련 상태 초기화
-     */
-    private fun resetRetryState() {
-        _uiState.update {
-            it.copy(
-                userRetryCount = 0,
-                isRetryButtonEnabled = false,
-                showContactSupport = false
-            )
-        }
+        // 재시도 실행
+        retryStartConversation()
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -806,17 +723,11 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
     }
 
     /**
-     * 종료 확인 시 FAREWELL 애니메이션 재생
+     * 종료 확인 시 대화 종료 처리
      */
     fun onFarewellConfirmed() {
-        _uiState.update {
-            it.copy(
-                showFarewellDialog = false,
-                characterState = CharacterState.FAREWELL
-            )
-        }
-        // FAREWELL 애니메이션 완료 후 endConversation() 호출은
-        // CharacterAnimationManager.onFarewellFinished 콜백으로 처리
+        _uiState.update { it.copy(showFarewellDialog = false) }
+        endConversation()
     }
 
     /**
@@ -832,5 +743,17 @@ class ConversationViewModel(application: Application) : AndroidViewModel(applica
      */
     fun onFarewellAnimationFinished() {
         endConversation()
+    }
+
+    companion object {
+        private const val TAG = "ConversationViewModel"
+
+        val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+                val application = checkNotNull(extras[APPLICATION_KEY])
+                return ConversationViewModel(application) as T
+            }
+        }
     }
 }
