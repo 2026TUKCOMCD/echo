@@ -34,7 +34,7 @@ import kotlinx.coroutines.launch
  * ## 사용 예시
  * ```kotlin
  * RippleAnimation(
- *     isActive = voiceStatus != VoiceStatus.IDLE,
+ *     isActive = conversationState !is ConversationState.Idle,
  *     amplitude = currentAmplitude,
  *     color = MaterialTheme.colorScheme.primary
  * )
