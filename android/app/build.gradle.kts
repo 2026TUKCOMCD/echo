@@ -27,7 +27,7 @@ android {
         create("local") {
             dimension = "server"
             // 로컬 네트워크 서버 연결
-            buildConfigField("String", "BASE_URL", "\"http://192.168.35.233:8080\"")
+            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080\"")
         }
         create("prod") {
             dimension = "server"

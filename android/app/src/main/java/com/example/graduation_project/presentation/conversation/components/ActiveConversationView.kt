@@ -37,8 +37,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import com.example.graduation_project.presentation.character.CharacterAnimationManager
 import com.example.graduation_project.presentation.component.RecordingIndicator
 import com.example.graduation_project.presentation.model.ConversationError
@@ -222,22 +220,18 @@ fun CharacterPlayer(
     animationManager: CharacterAnimationManager,
     modifier: Modifier = Modifier
 ) {
+    // SurfaceView는 에뮬레이터에서 Compose 레이어 위로 올라와 검은 화면 발생
+    // → TextureView를 직접 사용해 player에 연결 (@UnstableApi 불필요)
     AndroidView(
         factory = { context ->
-            PlayerView(context).apply {
-                player = animationManager.player
-                useController = false // 컨트롤러 숨김
-                setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                // 1:1 정사각형 영상에 맞춤 (FIT: 영상 전체 표시)
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            android.view.TextureView(context).also { textureView ->
+                animationManager.player.setVideoTextureView(textureView)
             }
         },
+        onRelease = { textureView ->
+            animationManager.player.clearVideoTextureView(textureView)
+        },
         modifier = modifier
-            .graphicsLayer {
-                scaleX = 1.0f  // 동그라미 크기에 맞춤
-                scaleY = 1.0f
-                translationY = 0f
-            }
     )
 }
 

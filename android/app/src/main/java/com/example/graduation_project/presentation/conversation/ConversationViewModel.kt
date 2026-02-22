@@ -60,7 +60,8 @@ import java.util.UUID
 class ConversationViewModel(
     application: Application,
     private val repository: ConversationRepository = ConversationRepository(),
-    private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao()
+    private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao(),
+    private val audioRecordManager: AudioRecordManager = AudioRecordManager(application)
 ) : AndroidViewModel(application) {
 
     // 내부에서만 수정 가능한 상태
@@ -75,9 +76,6 @@ class ConversationViewModel(
 
     // AI 응답 음성 재생 관리자
     private val audioPlayerManager = AudioPlayerManager()
-
-    // 음성 녹음 관리자 (VAD 포함)
-    private val audioRecordManager = AudioRecordManager(application)
 
     // PROCESSING 상태 타이머 Job
     private var processingTimerJob: Job? = null
@@ -285,6 +283,10 @@ class ConversationViewModel(
      * 4. 실패 시: 에러 메시지 표시
      */
     fun startConversation() {
+        // Ended 상태에서 시작 버튼 클릭 시 먼저 Idle로 초기화
+        if (_uiState.value.conversationState is ConversationState.Ended) {
+            resetToIdle()
+        }
         viewModelScope.launch {
             isServerRetryInProgress = false
             // Idle → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
