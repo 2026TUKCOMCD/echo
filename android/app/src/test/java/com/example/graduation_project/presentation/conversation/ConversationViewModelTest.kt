@@ -9,6 +9,8 @@ import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.repository.ConversationRepository
+import com.example.graduation_project.data.voice.AudioRecordManager
+import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.presentation.model.ConversationState
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -19,6 +21,7 @@ import io.mockk.unmockkStatic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -29,7 +32,6 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestWatcher
@@ -56,6 +58,8 @@ class ConversationViewModelTest {
     private val mockRepository = mockk<ConversationRepository>()
     private val mockMessageDao = mockk<MessageDao>(relaxed = true)
     private val mockApplication = mockk<Application>(relaxed = true)
+    private val mockAudioRecordState = MutableStateFlow<AudioRecordState>(AudioRecordState.Idle)
+    private val mockAudioRecordManager = mockk<AudioRecordManager>(relaxed = true)
 
     private lateinit var viewModel: ConversationViewModel
 
@@ -63,12 +67,17 @@ class ConversationViewModelTest {
     fun setUp() {
         // android.util.Log은 JVM 단위 테스트에서 사용 불가 → static mock으로 대체
         mockkStatic(Log::class)
+        every { Log.d(any(), any<String>()) } returns 0
         every { Log.w(any(), any<String>()) } returns 0
+        every { Log.e(any(), any<String>()) } returns 0
+        every { Log.e(any(), any<String>(), any()) } returns 0
+        every { mockAudioRecordManager.state } returns mockAudioRecordState
 
         viewModel = ConversationViewModel(
             application = mockApplication,
             repository = mockRepository,
-            messageDao = mockMessageDao
+            messageDao = mockMessageDao,
+            audioRecordManager = mockAudioRecordManager
         )
     }
 
@@ -79,7 +88,6 @@ class ConversationViewModelTest {
 
     // ===== 중복 요청 방지 테스트 =====
 
-    @Ignore("AudioRecordManager 생성자 주입 필요 - ViewModel 리팩토링 후 활성화")
     @Test
     fun `startConversation 중복 호출 시 repository는 1번만 호출된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
@@ -96,7 +104,6 @@ class ConversationViewModelTest {
             coVerify(exactly = 1) { mockRepository.startConversation(any()) }
         }
 
-    @Ignore("AudioRecordManager 생성자 주입 필요 - ViewModel 리팩토링 후 활성화")
     @Test
     fun `sendMessage 중복 호출 시 repository는 1번만 호출된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
@@ -115,7 +122,6 @@ class ConversationViewModelTest {
             coVerify(exactly = 1) { mockRepository.sendMessage(any()) }
         }
 
-    @Ignore("AudioRecordManager 생성자 주입 필요 - ViewModel 리팩토링 후 활성화")
     @Test
     fun `endConversation 중복 호출 시 repository는 1번만 호출된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
@@ -135,7 +141,6 @@ class ConversationViewModelTest {
 
     // ===== 에러 복구 테스트 =====
 
-    @Ignore("AudioRecordManager 생성자 주입 필요 - ViewModel 리팩토링 후 활성화")
     @Test
     fun `startConversation 실패 시 Idle로 복구된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
@@ -148,7 +153,6 @@ class ConversationViewModelTest {
             assertEquals(ConversationState.Idle, viewModel.uiState.value.conversationState)
         }
 
-    @Ignore("AudioRecordManager 생성자 주입 필요 - ViewModel 리팩토링 후 활성화")
     @Test
     fun `sendMessage 실패 시 Listening으로 복구된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
@@ -162,7 +166,6 @@ class ConversationViewModelTest {
             assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
         }
 
-    @Ignore("AudioRecordManager 생성자 주입 필요 - ViewModel 리팩토링 후 활성화")
     @Test
     fun `endConversation 실패 시 Listening으로 복구된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
@@ -174,6 +177,22 @@ class ConversationViewModelTest {
             advanceUntilIdle()
 
             assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+        }
+
+    // ===== endConversation 성공 테스트 =====
+
+    @Test
+    fun `endConversation 성공 시 Ended 상태로 전환된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+
+            coEvery { mockRepository.endConversation() } returns
+                ApiResult.Success(ConversationEndResponse())
+
+            viewModel.endConversation()
+            advanceUntilIdle()
+
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
         }
 
     // ===== 헬퍼 =====
