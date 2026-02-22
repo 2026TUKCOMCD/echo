@@ -82,6 +82,7 @@ class ConversationViewModel(
     // PROCESSING 상태 타이머 Job
     private var processingTimerJob: Job? = null
 
+
     // 서버 TTS 재요청 진행 중 여부 (무한 루프 방지)
     private var isServerRetryInProgress = false
 
@@ -90,6 +91,7 @@ class ConversationViewModel(
 
     // 최대 사용자 재시도 횟수
     private val MAX_USER_RETRY_COUNT = 3
+
 
     init {
         setupAudioPlayListener()
