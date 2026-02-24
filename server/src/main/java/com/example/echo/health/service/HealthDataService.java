@@ -1,5 +1,6 @@
 package com.example.echo.health.service;
 
+import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.entity.HealthLog;
 import com.example.echo.health.repository.HealthLogRepository;
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +38,68 @@ public class HealthDataService {
                 .findByUserIdAndRecordedDate(userId, date)
                 .map(HealthLog::toHealthData)
                 .orElse(null);
+    }
+
+    /**
+     * 오늘의 Enriched 건강 데이터 조회 (원시 데이터 + 7일 평균 + 평가 결과 + 포맷팅)
+     *
+     * @param userId 사용자 ID
+     * @param preferredSleepHours 선호 수면 시간 (시간), null이면 수면 평가 생략
+     * @return EnrichedHealthData
+     */
+    public EnrichedHealthData getEnrichedHealthData(Long userId, Integer preferredSleepHours) {
+        // 1. 오늘 원시 건강 데이터 조회
+        HealthData healthData = getTodayHealthData(userId);
+
+        // 2. 7일 평균 조회
+        Double avgSteps = getWeeklyAverageSteps(userId);
+        Double avgSleepHours = getWeeklyAverageSleepHours(userId);
+        LocalTime avgWakeUpTime = getWeeklyAverageWakeTime(userId);
+
+        // 3. 평가 계산
+        String stepsEvaluation = "";
+        String sleepEvaluation = "";
+        String wakeTimeEvaluation = "";
+
+        if (healthData.getSteps() != null) {
+            stepsEvaluation = evaluateSteps(healthData.getSteps(), avgSteps);
+        }
+
+        if (healthData.getSleepDurationMinutes() != null && preferredSleepHours != null) {
+            sleepEvaluation = evaluateSleep(healthData.getSleepDurationMinutes(), preferredSleepHours);
+        }
+
+        if (healthData.getWakeUpTime() != null) {
+            wakeTimeEvaluation = evaluateWakeTime(healthData.getWakeUpTime(), avgWakeUpTime);
+        }
+
+        // 4. EnrichedHealthData 생성 및 반환
+        return EnrichedHealthData.builder()
+                // 원시 데이터
+                .steps(healthData.getSteps())
+                .sleepDurationMinutes(healthData.getSleepDurationMinutes())
+                .sleepStartTime(healthData.getSleepStartTime())
+                .wakeUpTime(healthData.getWakeUpTime())
+                .exerciseDistanceKm(healthData.getExerciseDistanceKm())
+                .exerciseActivity(healthData.getExerciseActivity())
+                .activityList(healthData.getActivityList())
+                // 7일 평균
+                .avgSteps(avgSteps)
+                .avgSleepHours(avgSleepHours)
+                .avgWakeUpTime(avgWakeUpTime)
+                // 평가 결과
+                .stepsEvaluation(stepsEvaluation)
+                .sleepEvaluation(sleepEvaluation)
+                .wakeTimeEvaluation(wakeTimeEvaluation)
+                // 포맷팅된 문자열
+                .stepsFormatted(formatSteps(healthData.getSteps()))
+                .sleepDurationFormatted(formatSleepDuration(healthData.getSleepDurationMinutes()))
+                .sleepStartTimeFormatted(formatTime(healthData.getSleepStartTime()))
+                .wakeUpTimeFormatted(formatTime(healthData.getWakeUpTime()))
+                .exerciseDistanceFormatted(formatExerciseDistance(healthData.getExerciseDistanceKm()))
+                // 사용자 선호도
+                .preferredSleepHours(preferredSleepHours)
+                .build();
     }
 
     /**
@@ -164,5 +228,45 @@ public class HealthDataService {
                 .exerciseActivity(null)
                 .activityList(null)
                 .build();
+    }
+
+    // ========== 포맷팅 헬퍼 메서드 ==========
+
+    /**
+     * 걸음 수 포맷팅: "5,000보"
+     */
+    private String formatSteps(Integer steps) {
+        if (steps == null) return "";
+        return String.format("%,d보", steps);
+    }
+
+    /**
+     * 수면 시간 포맷팅: "7시간 30분"
+     */
+    private String formatSleepDuration(Integer minutes) {
+        if (minutes == null) return "";
+        int hours = minutes / 60;
+        int mins = minutes % 60;
+        if (mins == 0) {
+            return hours + "시간";
+        }
+        return hours + "시간 " + mins + "분";
+    }
+
+    /**
+     * 시간 포맷팅: "오전 7시 30분"
+     */
+    private String formatTime(LocalTime time) {
+        if (time == null) return "";
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("a h시 m분");
+        return time.format(formatter);
+    }
+
+    /**
+     * 운동 거리 포맷팅: "2.5km"
+     */
+    private String formatExerciseDistance(Double distanceKm) {
+        if (distanceKm == null) return "";
+        return String.format("%.1fkm", distanceKm);
     }
 }
