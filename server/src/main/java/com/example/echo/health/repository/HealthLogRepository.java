@@ -57,4 +57,16 @@ public interface HealthLogRepository extends JpaRepository<HealthLog, Long> {
      * 특정 사용자의 특정 날짜에 데이터 존재 여부 확인
      */
     boolean existsByUserIdAndRecordedDate(Long userId, LocalDate recordedDate);
+
+    /**
+     * 특정 사용자의 기간별 기상 시간 목록 조회 (평균 계산용)
+     */
+    @Query("SELECT h.wakeUpTime FROM HealthLog h " +
+            "WHERE h.userId = :userId " +
+            "AND h.recordedDate BETWEEN :startDate AND :endDate " +
+            "AND h.wakeUpTime IS NOT NULL")
+    List<java.time.LocalTime> findWakeUpTimesByUserIdAndDateRange(
+            @Param("userId") Long userId,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate);
 }

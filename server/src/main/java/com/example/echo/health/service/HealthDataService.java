@@ -126,6 +126,32 @@ public class HealthDataService {
     }
 
     /**
+     * 7일 평균 기상 시간 조회
+     *
+     * @param userId 사용자 ID
+     * @return 평균 기상 시간 (데이터가 없으면 null)
+     */
+    public LocalTime getWeeklyAverageWakeTime(Long userId) {
+        LocalDate endDate = LocalDate.now().minusDays(1);
+        LocalDate startDate = endDate.minusDays(6);
+
+        java.util.List<LocalTime> wakeTimes = healthLogRepository
+                .findWakeUpTimesByUserIdAndDateRange(userId, startDate, endDate);
+
+        if (wakeTimes == null || wakeTimes.isEmpty()) {
+            return null;
+        }
+
+        // LocalTime을 초로 변환하여 평균 계산 후 다시 LocalTime으로 변환
+        long totalSeconds = wakeTimes.stream()
+                .mapToLong(LocalTime::toSecondOfDay)
+                .sum();
+        long avgSeconds = totalSeconds / wakeTimes.size();
+
+        return LocalTime.ofSecondOfDay(avgSeconds);
+    }
+
+    /**
      * 기본 건강 데이터 생성 (데이터 없을 때)
      */
     private HealthData createDefaultHealthData() {
