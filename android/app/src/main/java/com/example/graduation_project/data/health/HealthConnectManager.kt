@@ -3,7 +3,6 @@ package com.example.graduation_project.data.health
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import androidx.health.connect.client.HealthConnectClient
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 
@@ -11,7 +10,6 @@ import com.example.graduation_project.domain.health.HealthConnectAvailability
  * Health Connect SDK 초기화 및 가용성 확인 담당.
  * - checkAvailability()로 상태 확인
  * - NotInstalled 상태일 경우 openPlayStoreForHealthConnect()로 설치 유도
- * - minSdk=24이므로 API 26 미만은 런타임 분기로 안전하게 처리
  */
 class HealthConnectManager(private val context: Context) {
 
@@ -24,12 +22,8 @@ class HealthConnectManager(private val context: Context) {
 
     /**
      * Health Connect SDK 가용성 확인.
-     * API 26 미만: NotSupported 반환 (런타임 폴백)
      */
     fun checkAvailability(): HealthConnectAvailability {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return HealthConnectAvailability.NotSupported
-        }
         return when (HealthConnectClient.getSdkStatus(context, HEALTH_CONNECT_PACKAGE)) {
             HealthConnectClient.SDK_AVAILABLE ->
                 HealthConnectAvailability.Available
