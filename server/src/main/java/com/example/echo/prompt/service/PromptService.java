@@ -21,6 +21,7 @@ import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.HealthData;
+import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
@@ -28,6 +29,8 @@ import com.example.echo.user.dto.UserPreferences;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +50,7 @@ import java.util.Map;
 public class PromptService {
 
     private final PromptTemplateRepository promptTemplateRepository;
+    private final HealthDataService healthDataService;
 
     /**
      * 시스템 프롬프트 생성
@@ -54,11 +58,13 @@ public class PromptService {
      * AI의 페르소나와 대화 규칙을 정의하는 프롬프트
      * 모든 대화의 기본이 되며, 대화 시작 시 1회 생성
      *
-     * 템플릿 변수 (v2):
+     * 템플릿 변수 (v5):
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
-     * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}
+     * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}, {{preferredSleepHours}}
      * - 날씨: {{weather}}, {{temperature}}
      * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{sleepInfo}}
+     * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}, {{activityList}}
+     * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
      *
      * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
@@ -104,6 +110,27 @@ public class PromptService {
         variables.put("sleepInfo", healthData != null && healthData.getSleepDurationMinutes() != null
                 ? formatSleepInfo(healthData.getSleepDurationMinutes()) : "");
 
+        // 2-5. 수면 상세 데이터
+        variables.put("sleepDuration", healthData != null && healthData.getSleepDurationMinutes() != null
+                ? formatSleepInfo(healthData.getSleepDurationMinutes()) : "");
+        variables.put("sleepStartTime", healthData != null && healthData.getSleepStartTime() != null
+                ? formatTime(healthData.getSleepStartTime()) : "");
+        variables.put("wakeUpTime", healthData != null && healthData.getWakeUpTime() != null
+                ? formatTime(healthData.getWakeUpTime()) : "");
+        variables.put("activityList", healthData != null && healthData.getActivityList() != null
+                ? healthData.getActivityList() : "");
+
+        // 2-6. 사용자 선호 수면 시간
+        Integer preferredSleepHours = preferences != null ? preferences.getPreferredSleepHours() : null;
+        variables.put("preferredSleepHours", preferredSleepHours != null
+                ? preferredSleepHours + "시간" : "");
+
+        // 2-7. 평가 데이터 (7일 평균 대비 오늘 데이터)
+        Long userId = preferences != null ? preferences.getUserId() : null;
+        variables.put("sleepEvaluation", buildSleepEvaluation(healthData, preferredSleepHours));
+        variables.put("stepsEvaluation", buildStepsEvaluation(healthData, userId));
+        variables.put("wakeTimeEvaluation", buildWakeTimeEvaluation(healthData, userId));
+
         // 3. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
     }
@@ -122,6 +149,62 @@ public class PromptService {
             return hours + "시간";
         }
         return hours + "시간 " + mins + "분";
+    }
+
+    /**
+     * 시간을 읽기 쉬운 형식으로 변환
+     *
+     * @param time LocalTime
+     * @return "오전/오후 H시 M분" 형식의 문자열
+     */
+    private String formatTime(LocalTime time) {
+        if (time == null) return "";
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("a h시 m분");
+        return time.format(formatter);
+    }
+
+    /**
+     * 수면 평가 문자열 빌드
+     *
+     * @param healthData 건강 데이터
+     * @param preferredSleepHours 선호 수면 시간 (시간)
+     * @return 평가 결과 ("부족", "적당", "과도") 또는 빈 문자열
+     */
+    private String buildSleepEvaluation(HealthData healthData, Integer preferredSleepHours) {
+        if (healthData == null || healthData.getSleepDurationMinutes() == null || preferredSleepHours == null) {
+            return "";
+        }
+        return healthDataService.evaluateSleep(healthData.getSleepDurationMinutes(), preferredSleepHours);
+    }
+
+    /**
+     * 걸음 수 평가 문자열 빌드
+     *
+     * @param healthData 건강 데이터
+     * @param userId 사용자 ID (7일 평균 조회용)
+     * @return 평가 결과 ("평소보다 많음", "평소와 비슷", "평소보다 적음") 또는 빈 문자열
+     */
+    private String buildStepsEvaluation(HealthData healthData, Long userId) {
+        if (healthData == null || healthData.getSteps() == null || userId == null) {
+            return "";
+        }
+        Double avgSteps = healthDataService.getWeeklyAverageSteps(userId);
+        return healthDataService.evaluateSteps(healthData.getSteps(), avgSteps);
+    }
+
+    /**
+     * 기상 시간 평가 문자열 빌드
+     *
+     * @param healthData 건강 데이터
+     * @param userId 사용자 ID (7일 평균 조회용)
+     * @return 평가 결과 ("평소보다 일찍", "평소와 비슷", "평소보다 늦게") 또는 빈 문자열
+     */
+    private String buildWakeTimeEvaluation(HealthData healthData, Long userId) {
+        if (healthData == null || healthData.getWakeUpTime() == null || userId == null) {
+            return "";
+        }
+        LocalTime avgWakeTime = healthDataService.getWeeklyAverageWakeTime(userId);
+        return healthDataService.evaluateWakeTime(healthData.getWakeUpTime(), avgWakeTime);
     }
 
     /**
