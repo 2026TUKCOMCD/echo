@@ -27,6 +27,7 @@ public class UserService {
                         .voiceTone("warm")
                         .build())
                 .conversationTime(LocalTime.of(9, 0))
+                .preferredSleepHours(7)  // 선호 수면 시간: 7시간
                 .build();
     }
 }
