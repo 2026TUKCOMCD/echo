@@ -1,0 +1,59 @@
+package com.example.graduation_project.data.health
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import androidx.health.connect.client.HealthConnectClient
+import com.example.graduation_project.domain.health.HealthConnectAvailability
+
+/**
+ * Health Connect SDK 초기화 및 가용성 확인 담당.
+ * - checkAvailability()로 상태 확인
+ * - NotInstalled 상태일 경우 openPlayStoreForHealthConnect()로 설치 유도
+ * - minSdk=24이므로 API 26 미만은 런타임 분기로 안전하게 처리
+ */
+class HealthConnectManager(private val context: Context) {
+
+    companion object {
+        private const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
+        private const val PLAY_STORE_URI = "market://details?id=$HEALTH_CONNECT_PACKAGE"
+        private const val PLAY_STORE_WEB_URI =
+            "https://play.google.com/store/apps/details?id=$HEALTH_CONNECT_PACKAGE"
+    }
+
+    /**
+     * Health Connect SDK 가용성 확인.
+     * API 26 미만: NotSupported 반환 (런타임 폴백)
+     */
+    fun checkAvailability(): HealthConnectAvailability {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return HealthConnectAvailability.NotSupported
+        }
+        return when (HealthConnectClient.getSdkStatus(context, HEALTH_CONNECT_PACKAGE)) {
+            HealthConnectClient.SDK_AVAILABLE ->
+                HealthConnectAvailability.Available
+            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED ->
+                HealthConnectAvailability.NotInstalled
+            else ->
+                HealthConnectAvailability.NotSupported
+        }
+    }
+
+    /**
+     * NotInstalled 상태일 때 Play Store로 연결.
+     * Play Store 앱이 없으면 브라우저 웹 링크로 폴백.
+     */
+    fun openPlayStoreForHealthConnect() {
+        val playStoreIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = Uri.parse(PLAY_STORE_URI)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val webIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = Uri.parse(PLAY_STORE_WEB_URI)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val resolved = context.packageManager.resolveActivity(playStoreIntent, 0)
+        context.startActivity(if (resolved != null) playStoreIntent else webIntent)
+    }
+}
