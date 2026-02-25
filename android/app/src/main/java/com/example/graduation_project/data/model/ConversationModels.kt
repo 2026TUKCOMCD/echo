@@ -35,6 +35,7 @@ data class TtsRetryResponse(
 @Serializable
 data class HealthData(
     val sleepDuration: Int? = null,
+    val sleepStartTime: String? = null,   // "HH:mm" 형식, 서버 낮잠/야간 수면 분류용
     val steps: Int? = null,
     val exerciseDistance: Double? = null,
     val exerciseActivity: String? = null
