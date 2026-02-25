@@ -20,7 +20,9 @@ package com.example.echo.prompt.service;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
+import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
+import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
@@ -47,6 +49,7 @@ import java.util.Map;
 public class PromptService {
 
     private final PromptTemplateRepository promptTemplateRepository;
+    private final HealthDataService healthDataService;
 
     /**
      * 시스템 프롬프트 생성
@@ -54,11 +57,13 @@ public class PromptService {
      * AI의 페르소나와 대화 규칙을 정의하는 프롬프트
      * 모든 대화의 기본이 되며, 대화 시작 시 1회 생성
      *
-     * 템플릿 변수 (v2):
+     * 템플릿 변수 (v5):
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
-     * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}
+     * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}, {{preferredSleepHours}}
      * - 날씨: {{weather}}, {{temperature}}
      * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{sleepInfo}}
+     * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}, {{activityList}}
+     * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
      *
      * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
@@ -73,55 +78,55 @@ public class PromptService {
 
         // 2. UserContext에서 데이터 추출
         UserPreferences preferences = context.getPreferences();
-        HealthData healthData = context.getTodayHealthData();
         WeatherData weatherData = context.getTodayWeather();
+
+        // 3. EnrichedHealthData 조회 (원시 데이터 + 평균 + 평가 + 포맷팅 포함)
+        Long userId = preferences != null ? preferences.getUserId() : null;
+        Integer preferredSleepHours = preferences != null ? preferences.getPreferredSleepHours() : null;
+        EnrichedHealthData healthData = (userId != null)
+                ? healthDataService.getEnrichedHealthData(userId, preferredSleepHours)
+                : null;
 
         Map<String, Object> variables = new HashMap<>();
 
-        // 2-1. 사용자 기본 정보
+        // 4-1. 사용자 기본 정보
         variables.put("userName", preferences != null ? preferences.getName() : "사용자");
         variables.put("userAge", preferences != null ? preferences.getAge() : "");
         variables.put("userBirthday", preferences != null && preferences.getBirthday() != null
                 ? preferences.getBirthday().toString() : "");
 
-        // 2-2. 사용자 선호도
+        // 4-2. 사용자 선호도
         variables.put("hobby", preferences != null ? preferences.getHobbies() : "");
         variables.put("job", preferences != null ? preferences.getOccupation() : "");
         variables.put("family", preferences != null ? preferences.getFamilyInfo() : "");
         variables.put("preferredTopics", preferences != null ? preferences.getPreferredTopics() : "");
+        variables.put("preferredSleepHours", preferredSleepHours != null
+                ? preferredSleepHours + "시간" : "");
 
-        // 2-3. 날씨 정보
+        // 4-3. 날씨 정보
         variables.put("weather", weatherData != null ? weatherData.getDescription() : "");
         variables.put("temperature", weatherData != null && weatherData.getTemperature() != null
                 ? weatherData.getTemperature() + "°C" : "");
 
-        // 2-4. 건강 데이터
-        variables.put("steps", healthData != null && healthData.getSteps() != null
-                ? String.format("%,d보", healthData.getSteps()) : "");
-        variables.put("exerciseDistance", healthData != null && healthData.getExerciseDistanceKm() != null
-                ? String.format("%.1fkm", healthData.getExerciseDistanceKm()) : "");
+        // 4-4. 건강 데이터 (EnrichedHealthData에서 포맷팅된 값 사용)
+        variables.put("steps", healthData != null ? healthData.getStepsFormatted() : "");
+        variables.put("exerciseDistance", healthData != null ? healthData.getExerciseDistanceFormatted() : "");
         variables.put("exerciseActivity", healthData != null ? healthData.getExerciseActivity() : "");
-        variables.put("sleepInfo", healthData != null && healthData.getSleepDurationMinutes() != null
-                ? formatSleepInfo(healthData.getSleepDurationMinutes()) : "");
+        variables.put("sleepInfo", healthData != null ? healthData.getSleepDurationFormatted() : "");
+        variables.put("activityList", healthData != null ? healthData.getActivityList() : "");
 
-        // 3. 템플릿 컴파일 (변수 치환) 후 반환
+        // 4-5. 수면 상세 데이터 (EnrichedHealthData에서 포맷팅된 값 사용)
+        variables.put("sleepDuration", healthData != null ? healthData.getSleepDurationFormatted() : "");
+        variables.put("sleepStartTime", healthData != null ? healthData.getSleepStartTimeFormatted() : "");
+        variables.put("wakeUpTime", healthData != null ? healthData.getWakeUpTimeFormatted() : "");
+
+        // 4-6. 평가 데이터 (EnrichedHealthData에서 이미 계산된 값 사용)
+        variables.put("sleepEvaluation", healthData != null ? healthData.getSleepEvaluation() : "");
+        variables.put("stepsEvaluation", healthData != null ? healthData.getStepsEvaluation() : "");
+        variables.put("wakeTimeEvaluation", healthData != null ? healthData.getWakeTimeEvaluation() : "");
+
+        // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
-    }
-
-    /**
-     * 수면 시간을 읽기 쉬운 형식으로 변환
-     *
-     * @param minutes 수면 시간 (분)
-     * @return "X시간 Y분" 형식의 문자열
-     */
-    private String formatSleepInfo(Integer minutes) {
-        if (minutes == null) return "";
-        int hours = minutes / 60;
-        int mins = minutes % 60;
-        if (mins == 0) {
-            return hours + "시간";
-        }
-        return hours + "시간 " + mins + "분";
     }
 
     /**
