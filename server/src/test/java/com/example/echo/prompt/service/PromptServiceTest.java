@@ -3,7 +3,9 @@ package com.example.echo.prompt.service;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
+import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
+import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
@@ -23,6 +25,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)//Mock 설정(@Mock 필드 Mock 객체 자동 생성 등..)
@@ -31,10 +35,14 @@ class PromptServiceTest {
     @Mock
     private PromptTemplateRepository promptTemplateRepository;
 
+    @Mock
+    private HealthDataService healthDataService;
+
     @InjectMocks
     private PromptService promptService;
 
     private UserContext context;
+    private EnrichedHealthData enrichedHealthData;
     private final Long TEST_USER_ID = 1L;
 
     @BeforeEach
@@ -44,6 +52,7 @@ class PromptServiceTest {
                 .name("홍길동")
                 .age(65)
                 .location("서울")
+                .preferredSleepHours(7)
                 .build();
 
         HealthData healthData = HealthData.builder()
@@ -54,6 +63,20 @@ class PromptServiceTest {
         WeatherData weatherData = WeatherData.builder()
                 .description("맑음")
                 .temperature(20)
+                .build();
+
+        // EnrichedHealthData 설정 (테스트용)
+        enrichedHealthData = EnrichedHealthData.builder()
+                .steps(5000)
+                .sleepDurationMinutes(420)
+                .stepsFormatted("5,000보")
+                .sleepDurationFormatted("7시간")
+                .sleepStartTimeFormatted("")
+                .wakeUpTimeFormatted("")
+                .exerciseDistanceFormatted("")
+                .stepsEvaluation("평소와 비슷")
+                .sleepEvaluation("적당")
+                .wakeTimeEvaluation("")
                 .build();
 
         context = UserContext.builder()
@@ -77,6 +100,8 @@ class PromptServiceTest {
 
         when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
                 .thenReturn(Optional.of(template));
+        when(healthDataService.getEnrichedHealthData(eq(TEST_USER_ID), any()))
+                .thenReturn(enrichedHealthData);
 
         // When
         String result = promptService.buildSystemPrompt(context);
@@ -142,6 +167,8 @@ class PromptServiceTest {
                 .thenReturn(Optional.of(systemTemplate));
         when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.CONVERSATION))
                 .thenReturn(Optional.of(conversationTemplate));
+        when(healthDataService.getEnrichedHealthData(eq(TEST_USER_ID), any()))
+                .thenReturn(enrichedHealthData);
 
         // When
         String result = promptService.buildConversationPrompt(context, "오늘 날씨 어때요?");

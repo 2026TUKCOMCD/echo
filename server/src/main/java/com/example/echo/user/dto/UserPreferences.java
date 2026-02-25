@@ -24,4 +24,5 @@ public class UserPreferences {
     private String preferredTopics;
     private VoiceSettings voiceSettings;
     private LocalTime conversationTime;
+    private Integer preferredSleepHours;  // 선호 수면 시간 (시간 단위)
 }
