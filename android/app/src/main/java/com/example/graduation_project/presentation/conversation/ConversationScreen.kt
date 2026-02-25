@@ -56,6 +56,7 @@ import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.permission.MicrophonePermissionHandler
 import com.example.graduation_project.presentation.permission.PermissionSettingsDialog
 import com.example.graduation_project.domain.permission.PermissionState
+import com.example.graduation_project.presentation.health.HealthConnectPermissionHandler
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
 /**
@@ -120,38 +121,41 @@ fun ConversationScreen(
     // 설정 다이얼로그 상태
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // 마이크 권한 처리
-    MicrophonePermissionHandler(
-        onPermissionResult = { /* 권한 결과 로깅 등 */ }
-    ) { permissionState, requestPermission, openSettings ->
+    // Health Connect 권한 처리 (graceful degradation)
+    HealthConnectPermissionHandler {
+        // 마이크 권한 처리
+        MicrophonePermissionHandler(
+            onPermissionResult = { /* 권한 결과 로깅 등 */ }
+        ) { permissionState, requestPermission, openSettings ->
 
-        // 권한에 따른 대화 시작 처리
-        val handleStartClick: () -> Unit = {
-            when (permissionState) {
-                PermissionState.Granted -> viewModel.startConversation()
-                PermissionState.NotRequested, PermissionState.Denied -> requestPermission()
-                PermissionState.PermanentlyDenied -> openSettings()
+            // 권한에 따른 대화 시작 처리
+            val handleStartClick: () -> Unit = {
+                when (permissionState) {
+                    PermissionState.Granted -> viewModel.startConversation()
+                    PermissionState.NotRequested, PermissionState.Denied -> requestPermission()
+                    PermissionState.PermanentlyDenied -> openSettings()
+                }
             }
-        }
 
-        // 화면 구성
-        ConversationScreenContent(
-            uiState = uiState,
-            snackbarHostState = snackbarHostState,
-            animationManager = animationManager,
-            onStartClick = handleStartClick,
-            onEndClick = viewModel::onFarewellButtonClicked,
-            onSettingsClick = { showSettingsDialog = true },
-            onRetryClick = viewModel::onUserRetryClicked,
-            onContactSupportClick = { /* TODO: 고객센터 연결 */ }
-        )
-
-        // 권한 영구 거부 시 설정 안내 다이얼로그 표시
-        if (permissionState == PermissionState.PermanentlyDenied) {
-            PermissionSettingsDialog(
-                onOpenSettings = openSettings,
-                onDismiss = { /* 다이얼로그 닫기 */ }
+            // 화면 구성
+            ConversationScreenContent(
+                uiState = uiState,
+                snackbarHostState = snackbarHostState,
+                animationManager = animationManager,
+                onStartClick = handleStartClick,
+                onEndClick = viewModel::onFarewellButtonClicked,
+                onSettingsClick = { showSettingsDialog = true },
+                onRetryClick = viewModel::onUserRetryClicked,
+                onContactSupportClick = { /* TODO: 고객센터 연결 */ }
             )
+
+            // 권한 영구 거부 시 설정 안내 다이얼로그 표시
+            if (permissionState == PermissionState.PermanentlyDenied) {
+                PermissionSettingsDialog(
+                    onOpenSettings = openSettings,
+                    onDismiss = { /* 다이얼로그 닫기 */ }
+                )
+            }
         }
     }
 

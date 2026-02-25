@@ -14,7 +14,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.graduation_project"
-        minSdk = 24
+        minSdk = 28
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -97,6 +97,9 @@ dependencies {
     // Media3 (ExoPlayer) - 캐릭터 애니메이션 영상 재생
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+
+    // Health Connect
+    implementation(libs.health.connect.client)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
