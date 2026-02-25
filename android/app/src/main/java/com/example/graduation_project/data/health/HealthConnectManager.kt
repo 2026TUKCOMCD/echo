@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.StepsRecord
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 
 /**
@@ -18,6 +23,13 @@ class HealthConnectManager(private val context: Context) {
         private const val PLAY_STORE_URI = "market://details?id=$HEALTH_CONNECT_PACKAGE"
         private const val PLAY_STORE_WEB_URI =
             "https://play.google.com/store/apps/details?id=$HEALTH_CONNECT_PACKAGE"
+
+        val REQUIRED_PERMISSIONS = setOf(
+            HealthPermission.getReadPermission(HeartRateRecord::class),
+            HealthPermission.getReadPermission(SleepSessionRecord::class),
+            HealthPermission.getReadPermission(StepsRecord::class),
+            HealthPermission.getReadPermission(ExerciseSessionRecord::class)
+        )
     }
 
     /**
@@ -32,6 +44,15 @@ class HealthConnectManager(private val context: Context) {
             else ->
                 HealthConnectAvailability.NotSupported
         }
+    }
+
+    /**
+     * 현재 부여된 권한이 REQUIRED_PERMISSIONS를 모두 포함하는지 확인.
+     */
+    suspend fun checkGrantedPermissions(): Boolean {
+        val client = HealthConnectClient.getOrCreate(context)
+        val granted = client.permissionController.getGrantedPermissions()
+        return granted.containsAll(REQUIRED_PERMISSIONS)
     }
 
     /**
