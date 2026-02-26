@@ -1,0 +1,100 @@
+name: CI/CD - Build and Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+    paths: ['server/**']
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REGISTRY: 868859238182.dkr.ecr.ap-northeast-2.amazonaws.com
+  ECR_REPOSITORY: echo
+  EC2_INSTANCE_ID: i-056b8283280dc07c1
+
+jobs:
+  deploy:
+    name: Build, Push, Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+          cache: gradle
+
+      - name: Build with Gradle
+        working-directory: server
+        run: |
+          chmod +x ./gradlew
+          ./gradlew clean build -x test
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR
+        working-directory: server
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                     $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to EC2 via SSM
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --region $AWS_REGION \
+            --instance-ids $EC2_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy echo - $IMAGE_TAG" \
+            --parameters commands=["/home/ec2-user/deploy.sh $IMAGE_TAG"] \
+            --query "Command.CommandId" \
+            --output text)
+          echo "SSM Command ID: $COMMAND_ID"
+          echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
+
+      - name: Wait for deployment result
+        run: |
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --region $AWS_REGION \
+              --command-id $COMMAND_ID \
+              --instance-id $EC2_INSTANCE_ID \
+              --query "Status" --output text 2>/dev/null || echo "Pending")
+            echo "[$i/30] Status: $STATUS"
+            if [ "$STATUS" = "Success" ]; then
+              aws ssm get-command-invocation \
+                --region $AWS_REGION \
+                --command-id $COMMAND_ID \
+                --instance-id $EC2_INSTANCE_ID \
+                --query "StandardOutputContent" --output text
+              exit 0
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ]; then
+              aws ssm get-command-invocation \
+                --region $AWS_REGION \
+                --command-id $COMMAND_ID \
+                --instance-id $EC2_INSTANCE_ID \
+                --query "StandardErrorContent" --output text
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "Deployment timed out"
+          exit 1
