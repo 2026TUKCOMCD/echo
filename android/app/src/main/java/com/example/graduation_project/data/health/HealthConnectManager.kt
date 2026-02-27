@@ -79,7 +79,7 @@ class HealthConnectManager(private val context: Context) {
         val response = client.readRecords(
             ReadRecordsRequest(SleepSessionRecord::class, TimeRangeFilter.between(rangeStart, rangeEnd))
         )
-        if (response.records.isEmpty()) return SleepSummary(null, null)
+        if (response.records.isEmpty()) return SleepSummary(null, null, null)
 
         val totalMinutes = response.records.sumOf { record ->
             (record.endTime.toEpochMilli() - record.startTime.toEpochMilli()) / 60_000L
@@ -92,8 +92,12 @@ class HealthConnectManager(private val context: Context) {
             val localTime = it.startTime.atZone(zone).toLocalTime()
             String.format("%02d:%02d", localTime.hour, localTime.minute)
         }
+        val wakeUpTimeStr = mainSession?.let {
+            val localTime = it.endTime.atZone(zone).toLocalTime()
+            String.format("%02d:%02d", localTime.hour, localTime.minute)
+        }
 
-        return SleepSummary(minutes = totalMinutes, startTime = startTimeStr)
+        return SleepSummary(minutes = totalMinutes, startTime = startTimeStr, wakeUpTime = wakeUpTimeStr)
     }
 
     /**

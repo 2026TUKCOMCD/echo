@@ -9,6 +9,8 @@ import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.service.DiaryService;
+import com.example.echo.health.dto.HealthData;
+import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
@@ -30,9 +32,15 @@ public class ConversationService {
     private final AIService aiService;
     private final ContextService contextService;
     private final DiaryService diaryService;
+    private final HealthDataService healthDataService;
 
     @Transactional
-    public ConversationStartResponse startConversation(Long userId) {
+    public ConversationStartResponse startConversation(Long userId, HealthData healthData) {
+        // 0. 건강 데이터 저장 (Android에서 수신한 경우)
+        if (healthData != null) {
+            healthDataService.saveHealthData(userId, healthData);
+        }
+
         // 1. 컨텍스트 초기화
         UserContext context = contextService.initializeContext(userId);
 
