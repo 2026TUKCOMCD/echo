@@ -2,8 +2,8 @@ name: CI/CD - Build and Deploy to EC2
 
 on:
   push:
-    branches: [main]
-    paths: ['server/**']
+    branches: [feature/(CI/CD)-Github-Actions-pipeline]
+    paths: ['server/**', '.github/**']
 
 env:
   AWS_REGION: ap-northeast-2
