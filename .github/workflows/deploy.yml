@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REGISTRY: 868859238182.dkr.ecr.ap-northeast-2.amazonaws.com
-  ECR_REPOSITORY: echo
+  ECR_REPOSITORY: echo-server
   EC2_INSTANCE_ID: i-056b8283280dc07c1
 
 jobs:

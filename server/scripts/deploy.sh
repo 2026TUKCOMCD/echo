@@ -4,7 +4,7 @@ set -e
 AWS_REGION="ap-northeast-2"
 ACCOUNT_ID="868859238182"
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-ECR_REPOSITORY="echo"
+ECR_REPOSITORY="echo-server"
 CONTAINER_NAME="echo-server"
 PORT="8080"
 ENV_FILE="/home/ec2-user/app/.env"
