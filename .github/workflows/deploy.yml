@@ -59,12 +59,14 @@ jobs:
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          SCRIPT_B64=$(base64 -w 0 server/scripts/deploy.sh)
+          COMMAND="printf '%s' '${SCRIPT_B64}' | base64 -d | bash -s -- ${IMAGE_TAG}"
           COMMAND_ID=$(aws ssm send-command \
             --region $AWS_REGION \
             --instance-ids $EC2_INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy echo - $IMAGE_TAG" \
-            --parameters commands=["/home/ec2-user/deploy.sh $IMAGE_TAG"] \
+            --parameters "commands=[\"${COMMAND}\"]" \
             --query "Command.CommandId" \
             --output text)
           echo "SSM Command ID: $COMMAND_ID"
