@@ -7,8 +7,10 @@ package com.example.graduation_project.domain.health
  * @param minutes    총 수면 시간 (분), 데이터 없으면 null
  * @param startTime  주 수면 세션 시작 시각 "HH:mm" (로컬 타임존), 데이터 없으면 null
  *                   서버: startTime < "18:00" → 낮잠, ≥ "18:00" → 야간 수면
+ * @param wakeUpTime 주 수면 세션 종료 시각 "HH:mm" (로컬 타임존), 데이터 없으면 null
  */
 data class SleepSummary(
     val minutes: Int?,
-    val startTime: String?
+    val startTime: String?,
+    val wakeUpTime: String?
 )

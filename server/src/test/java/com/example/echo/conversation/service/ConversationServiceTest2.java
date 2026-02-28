@@ -7,6 +7,7 @@ import com.example.echo.context.service.ContextService;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.diary.service.DiaryService;
+import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
@@ -52,6 +53,9 @@ class ConversationServiceTest2 {
 
     @Mock
     private DiaryService diaryService;
+
+    @Mock
+    private HealthDataService healthDataService;
 
     private Long userId;
     private UserContext mockContext;
@@ -101,7 +105,7 @@ class ConversationServiceTest2 {
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
             // when
-            ConversationStartResponse result = conversationService.startConversation(userId);
+            ConversationStartResponse result = conversationService.startConversation(userId, null);
 
             // then
             assertThat(result).isNotNull();
@@ -123,7 +127,7 @@ class ConversationServiceTest2 {
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
             // when
-            conversationService.startConversation(userId);
+            conversationService.startConversation(userId, null);
 
             // then (순서대로 호출 검증)
             var inOrder = inOrder(contextService, promptService, aiService, voiceService);

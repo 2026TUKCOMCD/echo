@@ -19,15 +19,16 @@ class GetHealthDataUseCase(
         if (repository.getAvailability() !is HealthConnectAvailability.Available) return HealthData()
         if (!runCatching { repository.hasPermissions() }.getOrDefault(false)) return HealthData()
 
-        val sleep = runCatching { repository.readYesterdaySleep() }.getOrDefault(SleepSummary(null, null))
+        val sleep = runCatching { repository.readYesterdaySleep() }.getOrDefault(SleepSummary(null, null, null))
         val steps = runCatching { repository.readTodaySteps() }.getOrNull().sanitizeSteps()
         val exercise = runCatching { repository.readLatestExercise() }.getOrDefault(Pair(null, null))
 
         return HealthData(
-            sleepDuration = sleep.minutes.sanitizeSleep(),
+            sleepDurationMinutes = sleep.minutes.sanitizeSleep(),
             sleepStartTime = sleep.startTime,
+            wakeUpTime = sleep.wakeUpTime,
             steps = steps,
-            exerciseDistance = exercise.first.sanitizeDistance(),
+            exerciseDistanceKm = exercise.first.sanitizeDistance(),
             exerciseActivity = exercise.second
         )
     }
