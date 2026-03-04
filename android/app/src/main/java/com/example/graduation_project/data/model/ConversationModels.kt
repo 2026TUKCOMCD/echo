@@ -34,9 +34,11 @@ data class TtsRetryResponse(
 // 요청 Model(DTO) -> /start에 대한 DTO
 @Serializable
 data class HealthData(
-    val sleepDuration: Int? = null,
-    val sleepStartTime: String? = null,   // "HH:mm" 형식, 서버 낮잠/야간 수면 분류용
+    val sleepDurationMinutes: Int? = null,   // renamed: sleepDuration → sleepDurationMinutes
+    val sleepStartTime: String? = null,      // "HH:mm" 형식, 서버 낮잠/야간 수면 분류용
+    val wakeUpTime: String? = null,          // "HH:mm" 형식, 기상 시각
     val steps: Int? = null,
-    val exerciseDistance: Double? = null,
-    val exerciseActivity: String? = null
+    val exerciseDistanceKm: Double? = null,  // renamed: exerciseDistance → exerciseDistanceKm
+    val exerciseActivity: String? = null,
+    val activityList: String? = null         // 활동 목록 (추후 구현)
 )

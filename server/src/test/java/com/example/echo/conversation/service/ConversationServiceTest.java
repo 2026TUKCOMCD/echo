@@ -7,6 +7,7 @@ import com.example.echo.context.service.ContextService;
 import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.HealthData;
+import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
@@ -43,6 +44,9 @@ class ConversationServiceTest {
     @Mock
     private DiaryService diaryService;
 
+    @Mock
+    private HealthDataService healthDataService;
+
     //@InjectMocks-제거
     private ConversationService conversationService;
 
@@ -57,7 +61,8 @@ class ConversationServiceTest {
                 promptService,
                 aiService,
                 contextService,
-                diaryService
+                diaryService,
+                healthDataService
         );
         mockContext = createMockContext();
     }
@@ -76,7 +81,7 @@ class ConversationServiceTest {
         when(voiceService.textToSpeech(eq(greeting), any(VoiceSettings.class))).thenReturn(audioData);
 
         // When
-        ConversationStartResponse response = conversationService.startConversation(TEST_USER_ID);
+        ConversationStartResponse response = conversationService.startConversation(TEST_USER_ID, null);
 
         // Then
         assertThat(response).isNotNull();
@@ -98,7 +103,7 @@ class ConversationServiceTest {
         when(voiceService.textToSpeech(eq(greeting), any(VoiceSettings.class))).thenReturn(audioData);
 
         // When
-        conversationService.startConversation(TEST_USER_ID);
+        conversationService.startConversation(TEST_USER_ID, null);
 
         // Then - 순서 검증
         InOrder inOrder = inOrder(contextService, promptService, aiService, voiceService);
@@ -118,7 +123,7 @@ class ConversationServiceTest {
         when(voiceService.textToSpeech(any(), any())).thenReturn("audio".getBytes());
 
         // When
-        conversationService.startConversation(TEST_USER_ID);
+        conversationService.startConversation(TEST_USER_ID, null);
 
         // Then
         verify(contextService, times(1)).initializeContext(TEST_USER_ID);
