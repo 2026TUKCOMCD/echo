@@ -3,7 +3,6 @@ name: CI/CD - Build and Deploy to EC2
 on:
   push:
     branches: [main, deploy/manual]
-    paths: ['server/**']
 
 env:
   AWS_REGION: ap-northeast-2
