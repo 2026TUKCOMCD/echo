@@ -118,7 +118,10 @@ public class HealthDataService {
     @Transactional
     public HealthLog saveHealthData(Long userId, LocalDate date, HealthData data) {
         healthLogRepository.findByUserIdAndRecordedDate(userId, date)
-                .ifPresent(healthLogRepository::delete);
+                .ifPresent(existing -> {
+                    healthLogRepository.delete(existing);
+                    healthLogRepository.flush(); // DELETE SQL을 즉시 DB에 반영 후 INSERT
+                });
 
         HealthLog healthLog = HealthLog.fromHealthData(userId, date, data);
         return healthLogRepository.save(healthLog);
