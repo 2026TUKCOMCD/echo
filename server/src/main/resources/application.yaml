@@ -34,10 +34,9 @@ openai:
     temperature: 0.7
     max-tokens: 1024
 
-# Naver Clova Voice API 설정
-clova:
-  api:
-    url: https://naveropenapi.apigw.ntruss.com
-    # client-id, client-secret은 application-local.yaml에서 설정
+# Azure Cognitive Services TTS 설정
+azure:
   tts:
-    speaker: nara  # 기본 음성 (따뜻한 여성)
+    endpoint: https://koreacentral.tts.speech.microsoft.com
+    # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)
+    default-voice: ko-KR-SunHiNeural  # 기본 음성 (친근하고 따뜻한 여성)
