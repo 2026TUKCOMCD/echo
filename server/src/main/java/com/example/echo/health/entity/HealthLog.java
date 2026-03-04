@@ -19,9 +19,14 @@ import java.time.LocalTime;
  * - 7일 평균 계산 및 대화용 건강 정보 조회에 사용
  */
 @Entity
-@Table(name = "health_logs", indexes = {
-        @Index(name = "idx_health_logs_user_date", columnList = "user_id, recorded_date")
-})
+@Table(name = "health_logs",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_health_logs_user_date",
+                columnNames = {"user_id", "recorded_date"}
+        ),
+        indexes = {
+                @Index(name = "idx_health_logs_user_date", columnList = "user_id, recorded_date")
+        })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class HealthLog {
