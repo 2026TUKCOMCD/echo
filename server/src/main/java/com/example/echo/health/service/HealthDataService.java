@@ -5,6 +5,7 @@ import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.entity.HealthLog;
 import com.example.echo.health.repository.HealthLogRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,7 +13,9 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -41,48 +44,57 @@ public class HealthDataService {
     }
 
     /**
-     * 오늘의 Enriched 건강 데이터 조회 (원시 데이터 + 7일 평균 + 평가 결과 + 포맷팅)
+     * EnrichedHealthData 생성 (7일치 한번에 조회 후 서버에서 평균 계산)
      *
+     * DB 접근 최적화: 기존 개별 평균 쿼리 3회 → 7일치 배치 조회 1회
+     *
+     * @param todayData 오늘 건강 데이터 (앱에서 전송받은 데이터)
      * @param userId 사용자 ID
      * @param preferredSleepHours 선호 수면 시간 (시간), null이면 수면 평가 생략
      * @return EnrichedHealthData
      */
-    public EnrichedHealthData getEnrichedHealthData(Long userId, Integer preferredSleepHours) {
-        // 1. 오늘 원시 건강 데이터 조회
-        HealthData healthData = getTodayHealthData(userId);
+    public EnrichedHealthData buildEnrichedHealthData(HealthData todayData, Long userId, Integer preferredSleepHours) {
+        // 1. 7일치 데이터 한번에 조회
+        LocalDate endDate = LocalDate.now().minusDays(1);
+        LocalDate startDate = endDate.minusDays(6);
+        List<HealthLog> weeklyLogs = healthLogRepository
+                .findByUserIdAndRecordedDateBetweenOrderByRecordedDateAsc(userId, startDate, endDate);
 
-        // 2. 7일 평균 조회
-        Double avgSteps = getWeeklyAverageSteps(userId);
-        Double avgSleepHours = getWeeklyAverageSleepHours(userId);
-        LocalTime avgWakeUpTime = getWeeklyAverageWakeTime(userId);
+        log.debug("7일치 건강 데이터 조회 - userId: {}, 조회 기간: {} ~ {}, 데이터 수: {}",
+                userId, startDate, endDate, weeklyLogs.size());
+
+        // 2. 서버에서 평균 계산
+        Double avgSteps = calculateAverageSteps(weeklyLogs);
+        Double avgSleepHours = calculateAverageSleepHours(weeklyLogs);
+        LocalTime avgWakeUpTime = calculateAverageWakeTime(weeklyLogs);
 
         // 3. 평가 계산
         String stepsEvaluation = "";
         String sleepEvaluation = "";
         String wakeTimeEvaluation = "";
 
-        if (healthData.getSteps() != null) {
-            stepsEvaluation = evaluateSteps(healthData.getSteps(), avgSteps);
+        if (todayData != null && todayData.getSteps() != null) {
+            stepsEvaluation = evaluateSteps(todayData.getSteps(), avgSteps);
         }
 
-        if (healthData.getSleepDurationMinutes() != null && preferredSleepHours != null) {
-            sleepEvaluation = evaluateSleep(healthData.getSleepDurationMinutes(), preferredSleepHours);
+        if (todayData != null && todayData.getSleepDurationMinutes() != null && preferredSleepHours != null) {
+            sleepEvaluation = evaluateSleep(todayData.getSleepDurationMinutes(), preferredSleepHours);
         }
 
-        if (healthData.getWakeUpTime() != null) {
-            wakeTimeEvaluation = evaluateWakeTime(healthData.getWakeUpTime(), avgWakeUpTime);
+        if (todayData != null && todayData.getWakeUpTime() != null) {
+            wakeTimeEvaluation = evaluateWakeTime(todayData.getWakeUpTime(), avgWakeUpTime);
         }
 
         // 4. EnrichedHealthData 생성 및 반환
         return EnrichedHealthData.builder()
                 // 원시 데이터
-                .steps(healthData.getSteps())
-                .sleepDurationMinutes(healthData.getSleepDurationMinutes())
-                .sleepStartTime(healthData.getSleepStartTime())
-                .wakeUpTime(healthData.getWakeUpTime())
-                .exerciseDistanceKm(healthData.getExerciseDistanceKm())
-                .exerciseActivity(healthData.getExerciseActivity())
-                .activityList(healthData.getActivityList())
+                .steps(todayData != null ? todayData.getSteps() : null)
+                .sleepDurationMinutes(todayData != null ? todayData.getSleepDurationMinutes() : null)
+                .sleepStartTime(todayData != null ? todayData.getSleepStartTime() : null)
+                .wakeUpTime(todayData != null ? todayData.getWakeUpTime() : null)
+                .exerciseDistanceKm(todayData != null ? todayData.getExerciseDistanceKm() : null)
+                .exerciseActivity(todayData != null ? todayData.getExerciseActivity() : null)
+                .activityList(todayData != null ? todayData.getActivityList() : null)
                 // 7일 평균
                 .avgSteps(avgSteps)
                 .avgSleepHours(avgSleepHours)
@@ -92,14 +104,99 @@ public class HealthDataService {
                 .sleepEvaluation(sleepEvaluation)
                 .wakeTimeEvaluation(wakeTimeEvaluation)
                 // 포맷팅된 문자열
-                .stepsFormatted(formatSteps(healthData.getSteps()))
-                .sleepDurationFormatted(formatSleepDuration(healthData.getSleepDurationMinutes()))
-                .sleepStartTimeFormatted(formatTime(healthData.getSleepStartTime()))
-                .wakeUpTimeFormatted(formatTime(healthData.getWakeUpTime()))
-                .exerciseDistanceFormatted(formatExerciseDistance(healthData.getExerciseDistanceKm()))
+                .stepsFormatted(todayData != null ? formatSteps(todayData.getSteps()) : "")
+                .sleepDurationFormatted(todayData != null ? formatSleepDuration(todayData.getSleepDurationMinutes()) : "")
+                .sleepStartTimeFormatted(todayData != null ? formatTime(todayData.getSleepStartTime()) : "")
+                .wakeUpTimeFormatted(todayData != null ? formatTime(todayData.getWakeUpTime()) : "")
+                .exerciseDistanceFormatted(todayData != null ? formatExerciseDistance(todayData.getExerciseDistanceKm()) : "")
                 // 사용자 선호도
                 .preferredSleepHours(preferredSleepHours)
                 .build();
+    }
+
+    /**
+     * 건강 데이터 저장 또는 업데이트 (UPSERT)
+     *
+     * 같은 날짜에 데이터가 이미 존재하면 업데이트, 없으면 새로 생성
+     * 대화 시작 시 즉시 호출하여 건강 데이터 손실 방지
+     *
+     * @param userId 사용자 ID
+     * @param data 건강 데이터
+     */
+    @Transactional
+    public void saveOrUpdateHealthData(Long userId, HealthData data) {
+        if (data == null) {
+            log.debug("건강 데이터가 null이므로 저장 생략 - userId: {}", userId);
+            return;
+        }
+
+        LocalDate today = LocalDate.now();
+        healthLogRepository.findByUserIdAndRecordedDate(userId, today)
+                .ifPresentOrElse(
+                        existing -> {
+                            log.debug("기존 건강 데이터 업데이트 - userId: {}, date: {}", userId, today);
+                            existing.update(data);
+                        },
+                        () -> {
+                            log.debug("새 건강 데이터 생성 - userId: {}, date: {}", userId, today);
+                            healthLogRepository.save(HealthLog.fromHealthData(userId, today, data));
+                        }
+                );
+    }
+
+    // ========== 서버 측 평균 계산 메서드 ==========
+
+    /**
+     * 7일치 로그에서 평균 걸음 수 계산
+     */
+    private Double calculateAverageSteps(List<HealthLog> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return 0.0;
+        }
+        return logs.stream()
+                .filter(log -> log.getSteps() != null)
+                .mapToInt(HealthLog::getSteps)
+                .average()
+                .orElse(0.0);
+    }
+
+    /**
+     * 7일치 로그에서 평균 수면 시간(시간) 계산
+     */
+    private Double calculateAverageSleepHours(List<HealthLog> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return 0.0;
+        }
+        return logs.stream()
+                .filter(log -> log.getSleepDurationMinutes() != null)
+                .mapToInt(HealthLog::getSleepDurationMinutes)
+                .average()
+                .orElse(0.0) / 60.0;
+    }
+
+    /**
+     * 7일치 로그에서 평균 기상 시간 계산
+     */
+    private LocalTime calculateAverageWakeTime(List<HealthLog> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return null;
+        }
+
+        List<LocalTime> wakeTimes = logs.stream()
+                .map(HealthLog::getWakeUpTime)
+                .filter(time -> time != null)
+                .toList();
+
+        if (wakeTimes.isEmpty()) {
+            return null;
+        }
+
+        long totalSeconds = wakeTimes.stream()
+                .mapToLong(LocalTime::toSecondOfDay)
+                .sum();
+        long avgSeconds = totalSeconds / wakeTimes.size();
+
+        return LocalTime.ofSecondOfDay(avgSeconds);
     }
 
     /**

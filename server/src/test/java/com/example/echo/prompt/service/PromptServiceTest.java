@@ -4,8 +4,6 @@ import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
-import com.example.echo.health.dto.HealthData;
-import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
@@ -25,8 +23,6 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)//Mock 설정(@Mock 필드 Mock 객체 자동 생성 등..)
@@ -34,9 +30,6 @@ class PromptServiceTest {
 
     @Mock
     private PromptTemplateRepository promptTemplateRepository;
-
-    @Mock
-    private HealthDataService healthDataService;
 
     @InjectMocks
     private PromptService promptService;
@@ -53,11 +46,6 @@ class PromptServiceTest {
                 .age(65)
                 .location("서울")
                 .preferredSleepHours(7)
-                .build();
-
-        HealthData healthData = HealthData.builder()
-                .steps(5000)
-                .sleepDurationMinutes(420)
                 .build();
 
         WeatherData weatherData = WeatherData.builder()
@@ -79,10 +67,11 @@ class PromptServiceTest {
                 .wakeTimeEvaluation("")
                 .build();
 
+        // UserContext에 EnrichedHealthData 직접 설정 (DB 접근 없음)
         context = UserContext.builder()
                 .userId(TEST_USER_ID)
                 .preferences(preferences)
-                .todayHealthData(healthData)
+                .enrichedHealthData(enrichedHealthData)
                 .todayWeather(weatherData)
                 .build();
     }
@@ -100,10 +89,8 @@ class PromptServiceTest {
 
         when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
                 .thenReturn(Optional.of(template));
-        when(healthDataService.getEnrichedHealthData(eq(TEST_USER_ID), any()))
-                .thenReturn(enrichedHealthData);
 
-        // When
+        // When (EnrichedHealthData는 이미 Context에 있으므로 DB 조회 없음)
         String result = promptService.buildSystemPrompt(context);
 
         // Then
@@ -153,24 +140,18 @@ class PromptServiceTest {
     @DisplayName("buildConversationPrompt - 정상 케이스: 4개 변수가 모두 치환됨")
     void buildConversationPrompt_success() {
         // Given
-        PromptTemplate systemTemplate = PromptTemplate.builder()
-                .type(PromptType.SYSTEM)
-                .content("시스템: {{userName}}")
-                .build();
-
         PromptTemplate conversationTemplate = PromptTemplate.builder()
                 .type(PromptType.CONVERSATION)
                 .content("[시스템]{{systemPrompt}}\n[컨텍스트]{{todayContext}}\n[히스토리]{{conversationHistory}}\n[메시지]{{userMessage}}")
                 .build();
 
-        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
-                .thenReturn(Optional.of(systemTemplate));
         when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.CONVERSATION))
                 .thenReturn(Optional.of(conversationTemplate));
-        when(healthDataService.getEnrichedHealthData(eq(TEST_USER_ID), any()))
-                .thenReturn(enrichedHealthData);
 
-        // When
+        // Context에 시스템 프롬프트 캐싱 (실제 흐름과 동일)
+        context.setSystemPrompt("시스템: 홍길동");
+
+        // When (EnrichedHealthData는 이미 Context에 있으므로 DB 조회 없음)
         String result = promptService.buildConversationPrompt(context, "오늘 날씨 어때요?");
 
         // Then
@@ -201,7 +182,7 @@ class PromptServiceTest {
         UserContext healthOnlyContext = UserContext.builder()
                 .userId(TEST_USER_ID)
                 .preferences(context.getPreferences())
-                .todayHealthData(context.getTodayHealthData())
+                .enrichedHealthData(context.getEnrichedHealthData())
                 .todayWeather(null)
                 .build();
 
@@ -221,7 +202,7 @@ class PromptServiceTest {
         UserContext weatherOnlyContext = UserContext.builder()
                 .userId(TEST_USER_ID)
                 .preferences(context.getPreferences())
-                .todayHealthData(null)
+                .enrichedHealthData(null)
                 .todayWeather(context.getTodayWeather())
                 .build();
 
