@@ -40,8 +40,8 @@ public class ConversationService {
             healthDataService.saveHealthData(userId, healthData);
         }
 
-        // 1. 컨텍스트 초기화
-        UserContext context = contextService.initializeContext(userId);
+        // 1. 컨텍스트 초기화 (healthData 전달하여 DB 재조회 방지)
+        UserContext context = contextService.initializeContext(userId, healthData);
 
         // 2. 첫 인사 생성
         String systemPrompt = promptService.buildSystemPrompt(context);

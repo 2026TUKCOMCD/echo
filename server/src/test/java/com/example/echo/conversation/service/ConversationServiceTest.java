@@ -75,7 +75,7 @@ class ConversationServiceTest {
         String greeting = "안녕하세요! 오늘 하루는 어떠셨어요?";
         byte[] audioData = "mock-audio-data".getBytes();
 
-        when(contextService.initializeContext(TEST_USER_ID)).thenReturn(mockContext);
+        when(contextService.initializeContext(eq(TEST_USER_ID), any())).thenReturn(mockContext);
         when(promptService.buildSystemPrompt(mockContext)).thenReturn(systemPrompt);
         when(aiService.generateGreeting(systemPrompt, mockContext)).thenReturn(greeting);
         when(voiceService.textToSpeech(eq(greeting), any(VoiceSettings.class))).thenReturn(audioData);
@@ -97,7 +97,7 @@ class ConversationServiceTest {
         String greeting = "안녕하세요!";
         byte[] audioData = "audio".getBytes();
 
-        when(contextService.initializeContext(TEST_USER_ID)).thenReturn(mockContext);
+        when(contextService.initializeContext(eq(TEST_USER_ID), any())).thenReturn(mockContext);
         when(promptService.buildSystemPrompt(mockContext)).thenReturn(systemPrompt);
         when(aiService.generateGreeting(systemPrompt, mockContext)).thenReturn(greeting);
         when(voiceService.textToSpeech(eq(greeting), any(VoiceSettings.class))).thenReturn(audioData);
@@ -107,7 +107,7 @@ class ConversationServiceTest {
 
         // Then - 순서 검증
         InOrder inOrder = inOrder(contextService, promptService, aiService, voiceService);
-        inOrder.verify(contextService).initializeContext(TEST_USER_ID);
+        inOrder.verify(contextService).initializeContext(eq(TEST_USER_ID), any());
         inOrder.verify(promptService).buildSystemPrompt(mockContext);
         inOrder.verify(aiService).generateGreeting(eq(systemPrompt), eq(mockContext));
         inOrder.verify(voiceService).textToSpeech(eq(greeting), any(VoiceSettings.class));
@@ -117,7 +117,7 @@ class ConversationServiceTest {
     @DisplayName("startConversation - 각 의존성이 정확히 1번씩 호출됨")
     void startConversation_verifyEachDependencyCalledOnce() {
         // Given
-        when(contextService.initializeContext(TEST_USER_ID)).thenReturn(mockContext);
+        when(contextService.initializeContext(eq(TEST_USER_ID), any())).thenReturn(mockContext);
         when(promptService.buildSystemPrompt(any())).thenReturn("prompt");
         when(aiService.generateGreeting(any(), any())).thenReturn("greeting");
         when(voiceService.textToSpeech(any(), any())).thenReturn("audio".getBytes());
@@ -126,7 +126,7 @@ class ConversationServiceTest {
         conversationService.startConversation(TEST_USER_ID, null);
 
         // Then
-        verify(contextService, times(1)).initializeContext(TEST_USER_ID);
+        verify(contextService, times(1)).initializeContext(eq(TEST_USER_ID), any());
         verify(promptService, times(1)).buildSystemPrompt(mockContext);
         verify(aiService, times(1)).generateGreeting(any(), any());
         verify(voiceService, times(1)).textToSpeech(any(), any());
