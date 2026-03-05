@@ -103,7 +103,8 @@ public class HealthDataService {
     }
 
     /**
-     * 건강 데이터 저장
+     * 건강 데이터 저장 (upsert)
+     * - 오늘 날짜 데이터가 이미 있으면 삭제 후 재저장
      */
     @Transactional
     public HealthLog saveHealthData(Long userId, HealthData data) {
@@ -111,10 +112,17 @@ public class HealthDataService {
     }
 
     /**
-     * 특정 날짜의 건강 데이터 저장
+     * 특정 날짜의 건강 데이터 저장 (upsert)
+     * - 동일 (userId, date) 데이터가 이미 있으면 삭제 후 재저장
      */
     @Transactional
     public HealthLog saveHealthData(Long userId, LocalDate date, HealthData data) {
+        healthLogRepository.findByUserIdAndRecordedDate(userId, date)
+                .ifPresent(existing -> {
+                    healthLogRepository.delete(existing);
+                    healthLogRepository.flush(); // DELETE SQL을 즉시 DB에 반영 후 INSERT
+                });
+
         HealthLog healthLog = HealthLog.fromHealthData(userId, date, data);
         return healthLogRepository.save(healthLog);
     }
