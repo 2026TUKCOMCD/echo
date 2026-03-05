@@ -118,4 +118,22 @@ public class HealthLog {
                 .activityList(healthData.getActivityList())
                 .build();
     }
+
+    /**
+     * UPSERT용 업데이트 메서드
+     *
+     * 기존 HealthLog 엔티티의 건강 데이터를 새 데이터로 갱신
+     * 같은 날짜에 대해 데이터가 이미 존재할 경우 사용
+     *
+     * @param data 새 건강 데이터
+     */
+    public void update(HealthData data) {
+        this.steps = data.getSteps();
+        this.sleepDurationMinutes = data.getSleepDurationMinutes();
+        this.sleepStartTime = data.getSleepStartTime();
+        this.wakeUpTime = data.getWakeUpTime();
+        this.exerciseDistanceKm = data.getExerciseDistanceKm();
+        this.exerciseActivity = data.getExerciseActivity();
+        this.activityList = data.getActivityList();
+    }
 }
