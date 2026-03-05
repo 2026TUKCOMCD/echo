@@ -21,7 +21,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -78,10 +77,8 @@ public class ConversationService {
         // 5. TTS 변환
         byte[] audioData = voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings());
 
-        // 6. 히스토리 업데이트 (비동기)
-        CompletableFuture.runAsync(() ->
-                contextService.addConversationTurn(userId, userMessage, aiResponse)
-        );
+        // 6. 히스토리 업데이트 (동기)
+        contextService.addConversationTurn(userId, userMessage, aiResponse);
 
         return ConversationResponse.builder()
                 .userMessage(userMessage)
@@ -115,16 +112,14 @@ public class ConversationService {
         UserContext context = contextService.getContext(userId);
         log.info("컨텍스트 조회 완료 - 대화 턴 수: {}", context.getConversationHistory().size());
 
-        // 일기 생성 (비동기) -> MVP는 동기로 가도 됨. 비동기 트랜잭션 문제 발생 -> 해결 추진 예정
-        CompletableFuture.runAsync(() ->{ //중괄호 표시 ( 여러 줄 )
-                log.info("일기 생성 시작 (비동기) - userId: {}", userId);
-                try {
-                         diaryService.generateAndSaveDiary(context);
-                         log.info("일기 생성 완료 (비동기) - userId: {}", userId);
-                } catch (Exception e) {
-                         log.error("일기 생성 실패 - userId: {}", userId, e);
-                }
-             });
+        // 2. 일기 생성 (동기)
+        log.info("일기 생성 시작 - userId: {}", userId);
+        try {
+            diaryService.generateAndSaveDiary(context);
+            log.info("일기 생성 완료 - userId: {}", userId);
+        } catch (Exception e) {
+            log.error("일기 생성 실패 - userId: {}", userId, e);
+        }
 
         // 3. 컨텍스트 정리
         contextService.finalizeContext(userId);
