@@ -21,10 +21,8 @@ openai:
   api:
     key: ${OPENAI_API_KEY}
 
-clova:
-  api:
-    url: https://naveropenapi.apigw.ntruss.com
-    client-id: ${CLOVA_API_ID}
-    client-secret: ${CLOVA_API_KEY}
+azure:
   tts:
-    speaker: nara
+    endpoint: https://koreacentral.tts.speech.microsoft.com
+    api-key: ${AZURE_TTS_API_KEY}
+    default-voice: ko-KR-SunHiNeural
