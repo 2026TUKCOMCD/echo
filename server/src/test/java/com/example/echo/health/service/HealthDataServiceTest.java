@@ -86,8 +86,8 @@ class HealthDataServiceTest {
     class SaveHealthDataTest {
 
         @Test
-        @DisplayName("건강 데이터 저장 성공")
-        void saveHealthData() {
+        @DisplayName("새 건강 데이터 저장 성공")
+        void saveHealthData_new() {
             // Given
             HealthData healthData = HealthData.builder()
                     .steps(6000)
@@ -96,6 +96,8 @@ class HealthDataServiceTest {
                     .exerciseActivity("조깅")
                     .build();
 
+            when(healthLogRepository.findByUserIdAndRecordedDate(eq(TEST_USER_ID), any(LocalDate.class)))
+                    .thenReturn(Optional.empty());
             when(healthLogRepository.save(any(HealthLog.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -106,6 +108,47 @@ class HealthDataServiceTest {
             verify(healthLogRepository).save(any(HealthLog.class));
             assertThat(result.getUserId()).isEqualTo(TEST_USER_ID);
             assertThat(result.getSteps()).isEqualTo(6000);
+        }
+
+        @Test
+        @DisplayName("기존 건강 데이터 업데이트 성공 (UPSERT)")
+        void saveHealthData_update() {
+            // Given
+            HealthLog existingLog = HealthLog.builder()
+                    .userId(TEST_USER_ID)
+                    .recordedDate(LocalDate.now())
+                    .steps(5000)
+                    .sleepDurationMinutes(420)
+                    .build();
+
+            HealthData newHealthData = HealthData.builder()
+                    .steps(8000)
+                    .sleepDurationMinutes(540)
+                    .exerciseDistanceKm(5.0)
+                    .exerciseActivity("달리기")
+                    .build();
+
+            when(healthLogRepository.findByUserIdAndRecordedDate(eq(TEST_USER_ID), any(LocalDate.class)))
+                    .thenReturn(Optional.of(existingLog));
+
+            // When
+            HealthLog result = healthDataService.saveHealthData(TEST_USER_ID, newHealthData);
+
+            // Then
+            assertThat(result).isSameAs(existingLog);
+            assertThat(result.getSteps()).isEqualTo(8000);
+            assertThat(result.getSleepDurationMinutes()).isEqualTo(540);
+            assertThat(result.getExerciseActivity()).isEqualTo("달리기");
+        }
+
+        @Test
+        @DisplayName("null 데이터 저장 시 null 반환")
+        void saveHealthData_null() {
+            // When
+            HealthLog result = healthDataService.saveHealthData(TEST_USER_ID, null);
+
+            // Then
+            assertThat(result).isNull();
         }
     }
 
