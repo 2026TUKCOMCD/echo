@@ -6,6 +6,7 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
 import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.diary.service.DiaryService;
+import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
@@ -159,7 +160,7 @@ class ConversationServiceTest {
         return UserContext.builder()
                 .userId(TEST_USER_ID)
                 .preferences(preferences)
-                .todayHealthData(healthData)
+                .enrichedHealthData(EnrichedHealthData.fromHealthData(healthData))
                 .todayWeather(weatherData)
                 .build();
     }

@@ -114,36 +114,6 @@ public class HealthDataService {
                 .build();
     }
 
-    /**
-     * 건강 데이터 저장 또는 업데이트 (UPSERT)
-     *
-     * 같은 날짜에 데이터가 이미 존재하면 업데이트, 없으면 새로 생성
-     * 대화 시작 시 즉시 호출하여 건강 데이터 손실 방지
-     *
-     * @param userId 사용자 ID
-     * @param data 건강 데이터
-     */
-    @Transactional
-    public void saveOrUpdateHealthData(Long userId, HealthData data) {
-        if (data == null) {
-            log.debug("건강 데이터가 null이므로 저장 생략 - userId: {}", userId);
-            return;
-        }
-
-        LocalDate today = LocalDate.now();
-        healthLogRepository.findByUserIdAndRecordedDate(userId, today)
-                .ifPresentOrElse(
-                        existing -> {
-                            log.debug("기존 건강 데이터 업데이트 - userId: {}, date: {}", userId, today);
-                            existing.update(data);
-                        },
-                        () -> {
-                            log.debug("새 건강 데이터 생성 - userId: {}, date: {}", userId, today);
-                            healthLogRepository.save(HealthLog.fromHealthData(userId, today, data));
-                        }
-                );
-    }
-
     // ========== 서버 측 평균 계산 메서드 ==========
 
     /**
@@ -200,8 +170,8 @@ public class HealthDataService {
     }
 
     /**
-     * 건강 데이터 저장 (upsert)
-     * - 오늘 날짜 데이터가 이미 있으면 삭제 후 재저장
+     * 건강 데이터 저장 또는 업데이트 (UPSERT)
+     * - 오늘 날짜 데이터가 이미 있으면 업데이트, 없으면 새로 생성
      */
     @Transactional
     public HealthLog saveHealthData(Long userId, HealthData data) {
@@ -209,19 +179,27 @@ public class HealthDataService {
     }
 
     /**
-     * 특정 날짜의 건강 데이터 저장 (upsert)
-     * - 동일 (userId, date) 데이터가 이미 있으면 삭제 후 재저장
+     * 특정 날짜의 건강 데이터 저장 또는 업데이트 (UPSERT)
+     * - 동일 (userId, date) 데이터가 이미 있으면 업데이트, 없으면 새로 생성
+     * - 기존 delete + save 방식 대신 update 방식으로 효율성 개선
      */
     @Transactional
     public HealthLog saveHealthData(Long userId, LocalDate date, HealthData data) {
-        healthLogRepository.findByUserIdAndRecordedDate(userId, date)
-                .ifPresent(existing -> {
-                    healthLogRepository.delete(existing);
-                    healthLogRepository.flush(); // DELETE SQL을 즉시 DB에 반영 후 INSERT
-                });
+        if (data == null) {
+            log.debug("건강 데이터가 null이므로 저장 생략 - userId: {}", userId);
+            return null;
+        }
 
-        HealthLog healthLog = HealthLog.fromHealthData(userId, date, data);
-        return healthLogRepository.save(healthLog);
+        return healthLogRepository.findByUserIdAndRecordedDate(userId, date)
+                .map(existing -> {
+                    log.debug("기존 건강 데이터 업데이트 - userId: {}, date: {}", userId, date);
+                    existing.update(data);
+                    return existing;
+                })
+                .orElseGet(() -> {
+                    log.debug("새 건강 데이터 생성 - userId: {}, date: {}", userId, date);
+                    return healthLogRepository.save(HealthLog.fromHealthData(userId, date, data));
+                });
     }
 
     /**
