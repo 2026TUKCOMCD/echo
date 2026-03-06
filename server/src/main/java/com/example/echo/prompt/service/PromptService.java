@@ -1,33 +1,21 @@
 package com.example.echo.prompt.service;
 
 /*
- * [2024-01 merge] develop 브랜치 병합으로 인한 변경사항:
- *
- * 1. import 경로 변경 (develop의 DTO 구조에 맞춤)
- *    - prompt.dto.PromptContext → context.domain.UserContext
- *    - prompt.dto.ConversationTurn → context.domain.ConversationTurn
- *    - 새로 추가: health.dto.HealthData, user.dto.UserPreferences, common.dto.WeatherData
- *
- * 2. 필드 접근 방식 변경 (UserContext 구조에 맞춤)
- *    - context.getUserName() → context.getPreferences().getName()
- *    - context.getSteps() → context.getTodayHealthData().getSteps()
- *    - context.getSleepHours() → sleepDurationMinutes / 60.0 (분→시간 변환)
- *    - context.getWeather() → context.getTodayWeather().getDescription()
- *
- * 3. buildHistory() 직접 포맷팅
- *    - develop의 ConversationTurn에 toString() 없어서 직접 포맷팅
+ * [2024-02 최적화] DB 접근 최소화
+ *    - EnrichedHealthData를 Context에서 직접 사용 (DB 재조회 X)
+ *    - 프롬프트 템플릿에 @Cacheable 적용
  */
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
-import com.example.echo.health.dto.HealthData;
-import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -38,8 +26,8 @@ import java.util.Map;
  * 프롬프트 서비스
  *
  * 역할: 대화용 프롬프트 생성
- * - DB에서 프롬프트 템플릿 조회
- * - UserContext에서 필요한 데이터 추출
+ * - DB에서 프롬프트 템플릿 조회 (캐싱 적용)
+ * - UserContext에서 필요한 데이터 추출 (DB 재조회 없음)
  * - 템플릿 변수 치환 후 최종 프롬프트 반환
  *
  * 일기 프롬프트는 DiaryService에서 담당 (단일 책임 원칙)
@@ -49,13 +37,14 @@ import java.util.Map;
 public class PromptService {
 
     private final PromptTemplateRepository promptTemplateRepository;
-    private final HealthDataService healthDataService;
 
     /**
      * 시스템 프롬프트 생성
      *
      * AI의 페르소나와 대화 규칙을 정의하는 프롬프트
      * 모든 대화의 기본이 되며, 대화 시작 시 1회 생성
+     *
+     * [최적화] Context에서 EnrichedHealthData 직접 사용 - DB 재조회 없음
      *
      * 템플릿 변수 (v5):
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
@@ -70,22 +59,16 @@ public class PromptService {
      * @throws IllegalStateException 활성화된 SYSTEM 템플릿이 없을 경우
      */
     public String buildSystemPrompt(UserContext context) {
-        // 1. DB에서 활성화된 SYSTEM 템플릿 조회
-        PromptTemplate template = promptTemplateRepository
-                .findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM)
-                .orElseThrow(() -> new IllegalStateException(
-                        "활성화된 SYSTEM 프롬프트 템플릿이 없습니다."));
+        // 1. 템플릿 조회 (캐싱 적용)
+        PromptTemplate template = getActiveTemplate(PromptType.SYSTEM);
 
-        // 2. UserContext에서 데이터 추출
+        // 2. UserContext에서 데이터 추출 (DB 접근 없음)
         UserPreferences preferences = context.getPreferences();
         WeatherData weatherData = context.getTodayWeather();
 
-        // 3. EnrichedHealthData 조회 (원시 데이터 + 평균 + 평가 + 포맷팅 포함)
-        Long userId = preferences != null ? preferences.getUserId() : null;
+        // 3. Context에서 EnrichedHealthData 직접 사용 (DB 재조회 없음)
+        EnrichedHealthData healthData = context.getEnrichedHealthData();
         Integer preferredSleepHours = preferences != null ? preferences.getPreferredSleepHours() : null;
-        EnrichedHealthData healthData = (userId != null)
-                ? healthDataService.getEnrichedHealthData(userId, preferredSleepHours)
-                : null;
 
         Map<String, Object> variables = new HashMap<>();
 
@@ -130,10 +113,37 @@ public class PromptService {
     }
 
     /**
+     * 활성화된 프롬프트 템플릿 조회 (캐싱 적용)
+     *
+     * @param type 프롬프트 타입 (SYSTEM, CONVERSATION, DIARY)
+     * @return 활성화된 프롬프트 템플릿
+     * @throws IllegalStateException 활성화된 템플릿이 없을 경우
+     */
+    @Cacheable(value = "promptTemplates", key = "#type")
+    public PromptTemplate getActiveTemplate(PromptType type) {
+        return promptTemplateRepository
+                .findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(type)
+                .orElseThrow(() -> new IllegalStateException(
+                        "활성화된 " + type + " 프롬프트 템플릿이 없습니다."));
+    }
+
+    /**
+     * 프롬프트 템플릿 캐시 삭제
+     *
+     * 템플릿 수정/추가 시 호출하여 캐시 갱신
+     */
+    @CacheEvict(value = "promptTemplates", allEntries = true)
+    public void evictTemplateCache() {
+        // 캐시 삭제만 수행
+    }
+
+    /**
      * 대화 프롬프트 생성
      *
      * 사용자 발화에 대한 AI 응답 생성을 위한 프롬프트
      * 시스템 프롬프트 + 오늘의 컨텍스트 + 대화 히스토리 + 사용자 메시지 조합
+     *
+     * [최적화] 시스템 프롬프트는 Context에서 캐싱된 것 사용 (재생성 X)
      *
      * 템플릿 변수: {{systemPrompt}}, {{todayContext}}, {{conversationHistory}}, {{userMessage}}
      *
@@ -143,25 +153,24 @@ public class PromptService {
      * @throws IllegalStateException 활성화된 CONVERSATION 템플릿이 없을 경우
      */
     public String buildConversationPrompt(UserContext context, String userMessage) {
-        // 1. DB에서 활성화된 CONVERSATION 템플릿 조회
-        PromptTemplate template = promptTemplateRepository
-                .findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.CONVERSATION)
-                .orElseThrow(() -> new IllegalStateException(
-                        "활성화된 CONVERSATION 프롬프트 템플릿이 없습니다."));
+        // 1. 템플릿 조회 (캐싱 적용)
+        PromptTemplate template = getActiveTemplate(PromptType.CONVERSATION);
 
-        // 2. 각 구성 요소 빌드
-        String systemPrompt = buildSystemPrompt(context);
+        // 2. 시스템 프롬프트는 Context에서 캐싱된 것 사용 (재생성 X)
+        String systemPrompt = context.getSystemPrompt();
+
+        // 3. 나머지 구성 요소 빌드
         String todayContext = buildTodayContext(context);
         String conversationHistory = buildHistory(context);
 
-        // 3. 템플릿 변수 매핑
+        // 4. 템플릿 변수 매핑
         Map<String, Object> variables = new HashMap<>();
         variables.put("systemPrompt", systemPrompt);
         variables.put("todayContext", todayContext);
         variables.put("conversationHistory", conversationHistory);
         variables.put("userMessage", userMessage);
 
-        // 4. 템플릿 컴파일 (변수 치환) 후 반환
+        // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
     }
 
@@ -170,6 +179,8 @@ public class PromptService {
      *
      * 사용자의 오늘 건강 데이터와 날씨 정보를 자연어 문장으로 포맷팅
      * AI가 맥락을 이해하고 관련 대화를 할 수 있도록 정보 제공
+     *
+     * [최적화] Context의 EnrichedHealthData 사용 - DB 재조회 없음
      *
      * @param context UserContext
      * @return 포맷팅된 오늘의 컨텍스트 문자열
@@ -182,8 +193,8 @@ public class PromptService {
         String userName = (preferences != null && preferences.getName() != null)
                 ? preferences.getName() : "사용자";
 
-        // 1. 건강 데이터 포맷팅
-        HealthData healthData = context.getTodayHealthData();
+        // 1. 건강 데이터 포맷팅 (EnrichedHealthData 사용)
+        EnrichedHealthData healthData = context.getEnrichedHealthData();
         if (healthData != null) {
             Integer steps = healthData.getSteps();
             // sleepDurationMinutes를 시간으로 변환
