@@ -45,7 +45,8 @@ fun HealthConnectPermissionHandler(
     }
 
     // 앱 시작 시 자동 다이얼로그 표시
-    LaunchedEffect(uiState.availability, uiState.permissionState) {
+    LaunchedEffect(uiState.availability, uiState.permissionState, uiState.isLoading) {
+        if (uiState.isLoading) return@LaunchedEffect
         when {
             uiState.availability is HealthConnectAvailability.NotInstalled ->
                 showNotInstalled = true

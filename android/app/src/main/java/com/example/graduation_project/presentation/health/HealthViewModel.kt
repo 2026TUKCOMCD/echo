@@ -60,7 +60,6 @@ class HealthViewModel(
                 } catch (e: Exception) {
                     _uiState.update {
                         it.copy(
-                            availability = availability,
                             errorMessage = "건강 데이터 권한을 확인할 수 없습니다"
                         )
                     }
