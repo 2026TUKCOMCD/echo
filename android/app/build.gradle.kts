@@ -7,13 +7,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.graduation_project"
+    namespace = "com.tukcomcd.echo"
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId = "com.example.graduation_project"
+        applicationId = "com.tukcomcd.echo"
         minSdk = 28
         targetSdk = 36
         versionCode = 1

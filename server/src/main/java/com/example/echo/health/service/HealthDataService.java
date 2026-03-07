@@ -30,7 +30,7 @@ public class HealthDataService {
         return healthLogRepository
                 .findByUserIdAndRecordedDate(userId, LocalDate.now())
                 .map(HealthLog::toHealthData)
-                .orElse(createDefaultHealthData());
+                .orElse(null);
     }
 
     /**
@@ -127,6 +127,11 @@ public class HealthDataService {
     public void saveOrUpdateHealthData(Long userId, HealthData data) {
         if (data == null) {
             log.debug("건강 데이터가 null이므로 저장 생략 - userId: {}", userId);
+            return;
+        }
+
+        if (isAllFieldsNull(data)) {
+            log.debug("건강 데이터 모든 필드가 null이므로 저장 생략 - userId: {}", userId);
             return;
         }
 
@@ -321,18 +326,16 @@ public class HealthDataService {
     }
 
     /**
-     * 기본 건강 데이터 생성 (데이터 없을 때)
+     * 건강 데이터의 모든 필드가 null인지 확인
      */
-    private HealthData createDefaultHealthData() {
-        return HealthData.builder()
-                .steps(null)
-                .sleepDurationMinutes(null)
-                .sleepStartTime(null)
-                .wakeUpTime(null)
-                .exerciseDistanceKm(null)
-                .exerciseActivity(null)
-                .activityList(null)
-                .build();
+    private boolean isAllFieldsNull(HealthData data) {
+        return data.getSteps() == null
+                && data.getSleepDurationMinutes() == null
+                && data.getSleepStartTime() == null
+                && data.getWakeUpTime() == null
+                && data.getExerciseDistanceKm() == null
+                && data.getExerciseActivity() == null
+                && data.getActivityList() == null;
     }
 
     // ========== 포맷팅 헬퍼 메서드 ==========
