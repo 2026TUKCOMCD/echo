@@ -154,14 +154,17 @@ class ConversationServiceTest2 {
             );
 
             String userMessage = "오늘 날씨가 좋아서 산책했어요";
-            String conversationPrompt = "대화 프롬프트";
+            String systemPrompt = "시스템 프롬프트";
             String aiResponse = "산책하셨군요! 어디를 다녀오셨나요?";
             byte[] responseAudio = "response audio".getBytes();
 
+            // Context에 systemPrompt 설정
+            mockContext.setSystemPrompt(systemPrompt);
+
             given(contextService.getContext(userId)).willReturn(mockContext);
             given(voiceService.speechToText(audioFile)).willReturn(userMessage);
-            given(promptService.buildConversationPrompt(mockContext, userMessage)).willReturn(conversationPrompt);
-            given(aiService.generateResponse(conversationPrompt)).willReturn(aiResponse);
+            // OpenAI 권장 방식: messages 배열로 직접 전달
+            given(aiService.generateResponse(eq(systemPrompt), any(), eq(userMessage))).willReturn(aiResponse);
             given(voiceService.textToSpeech(aiResponse, mockVoiceSettings)).willReturn(responseAudio);
 
             // when
@@ -175,7 +178,7 @@ class ConversationServiceTest2 {
         }
 
         @Test
-        @DisplayName("성공: STT → AI → TTS 순서로 처리된다")
+        @DisplayName("성공: STT → AI → TTS 순서로 처리된다 (messages 배열 방식)")
         void success_processesInCorrectOrder() {
             // given
             MultipartFile audioFile = new MockMultipartFile(
@@ -183,25 +186,25 @@ class ConversationServiceTest2 {
             );
 
             String userMessage = "테스트 메시지";
-            String prompt = "프롬프트";
+            String systemPrompt = "시스템 프롬프트";
             String aiResponse = "AI 응답";
             byte[] audio = "audio".getBytes();
 
+            mockContext.setSystemPrompt(systemPrompt);
+
             given(contextService.getContext(userId)).willReturn(mockContext);
             given(voiceService.speechToText(audioFile)).willReturn(userMessage);
-            given(promptService.buildConversationPrompt(mockContext, userMessage)).willReturn(prompt);
-            given(aiService.generateResponse(prompt)).willReturn(aiResponse);
+            given(aiService.generateResponse(eq(systemPrompt), any(), eq(userMessage))).willReturn(aiResponse);
             given(voiceService.textToSpeech(aiResponse, mockVoiceSettings)).willReturn(audio);
 
             // when
             conversationService.processUserMessage(userId, audioFile);
 
-            // then
-            var inOrder = inOrder(contextService, voiceService, promptService, aiService);
+            // then (PromptService.buildConversationPrompt 호출 제거됨)
+            var inOrder = inOrder(contextService, voiceService, aiService);
             inOrder.verify(contextService).getContext(userId);
             inOrder.verify(voiceService).speechToText(audioFile);
-            inOrder.verify(promptService).buildConversationPrompt(mockContext, userMessage);
-            inOrder.verify(aiService).generateResponse(prompt);
+            inOrder.verify(aiService).generateResponse(eq(systemPrompt), any(), eq(userMessage));
             inOrder.verify(voiceService).textToSpeech(aiResponse, mockVoiceSettings);
         }
 
