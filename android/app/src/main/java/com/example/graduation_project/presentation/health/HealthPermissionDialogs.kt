@@ -324,6 +324,7 @@ fun openHealthConnectSettings(context: Context) {
     val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         Intent("android.intent.action.MANAGE_HEALTH_PERMISSIONS")
             .setPackage("com.google.android.apps.healthdata")
+            .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
     } else {
         Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS")
             .setPackage("com.google.android.apps.healthdata")

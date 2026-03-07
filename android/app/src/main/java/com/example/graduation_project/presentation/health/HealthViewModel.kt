@@ -48,9 +48,25 @@ class HealthViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             val availability = healthConnectManager.checkAvailability()
-            _uiState.update { it.copy(availability = availability) }
             if (availability is HealthConnectAvailability.Available) {
-                checkPermissions()
+                try {
+                    val allGranted = healthConnectManager.checkGrantedPermissions()
+                    _uiState.update {
+                        it.copy(
+                            availability = availability,
+                            permissionState = if (allGranted) PermissionState.Granted else PermissionState.NotRequested
+                        )
+                    }
+                } catch (e: Exception) {
+                    _uiState.update {
+                        it.copy(
+                            availability = availability,
+                            errorMessage = "건강 데이터 권한을 확인할 수 없습니다"
+                        )
+                    }
+                }
+            } else {
+                _uiState.update { it.copy(availability = availability) }
             }
             _uiState.update { it.copy(isLoading = false) }
         }
@@ -59,8 +75,8 @@ class HealthViewModel(
     private suspend fun checkPermissions() {
         try {
             val allGranted = healthConnectManager.checkGrantedPermissions()
-            if (allGranted) {
-                _uiState.update { it.copy(permissionState = PermissionState.Granted) }
+            _uiState.update {
+                it.copy(permissionState = if (allGranted) PermissionState.Granted else PermissionState.NotRequested)
             }
         } catch (e: Exception) {
             _uiState.update { it.copy(errorMessage = "건강 데이터 권한을 확인할 수 없습니다") }
