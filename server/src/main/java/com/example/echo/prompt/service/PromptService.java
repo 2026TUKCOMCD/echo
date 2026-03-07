@@ -141,11 +141,12 @@ public class PromptService {
      * 대화 프롬프트 생성
      *
      * 사용자 발화에 대한 AI 응답 생성을 위한 프롬프트
-     * 시스템 프롬프트 + 오늘의 컨텍스트 + 대화 히스토리 + 사용자 메시지 조합
+     * 시스템 프롬프트 + 대화 히스토리 + 사용자 메시지 조합
      *
      * [최적화] 시스템 프롬프트는 Context에서 캐싱된 것 사용 (재생성 X)
+     * [리팩토링] todayContext 제거 - 시스템 프롬프트에 건강/날씨 데이터 포함되어 중복
      *
-     * 템플릿 변수: {{systemPrompt}}, {{todayContext}}, {{conversationHistory}}, {{userMessage}}
+     * 템플릿 변수: {{systemPrompt}}, {{conversationHistory}}, {{userMessage}}
      *
      * @param context ContextService에서 전달받은 UserContext
      * @param userMessage 현재 사용자 발화 (STT 변환 결과)
@@ -159,84 +160,17 @@ public class PromptService {
         // 2. 시스템 프롬프트는 Context에서 캐싱된 것 사용 (재생성 X)
         String systemPrompt = context.getSystemPrompt();
 
-        // 3. 나머지 구성 요소 빌드
-        String todayContext = buildTodayContext(context);
+        // 3. 대화 히스토리 빌드
         String conversationHistory = buildHistory(context);
 
         // 4. 템플릿 변수 매핑
         Map<String, Object> variables = new HashMap<>();
         variables.put("systemPrompt", systemPrompt);
-        variables.put("todayContext", todayContext);
         variables.put("conversationHistory", conversationHistory);
         variables.put("userMessage", userMessage);
 
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
-    }
-
-    /**
-     * 오늘의 컨텍스트 빌드 (건강 데이터 + 날씨)
-     *
-     * 사용자의 오늘 건강 데이터와 날씨 정보를 자연어 문장으로 포맷팅
-     * AI가 맥락을 이해하고 관련 대화를 할 수 있도록 정보 제공
-     *
-     * [최적화] Context의 EnrichedHealthData 사용 - DB 재조회 없음
-     *
-     * @param context UserContext
-     * @return 포맷팅된 오늘의 컨텍스트 문자열
-     */
-    String buildTodayContext(UserContext context) {
-        StringBuilder sb = new StringBuilder();
-
-        // 사용자 이름 추출
-        UserPreferences preferences = context.getPreferences();
-        String userName = (preferences != null && preferences.getName() != null)
-                ? preferences.getName() : "사용자";
-
-        // 1. 건강 데이터 포맷팅 (EnrichedHealthData 사용)
-        EnrichedHealthData healthData = context.getEnrichedHealthData();
-        if (healthData != null) {
-            Integer steps = healthData.getSteps();
-            // sleepDurationMinutes를 시간으로 변환
-            Integer sleepMinutes = healthData.getSleepDurationMinutes();
-            Double sleepHours = (sleepMinutes != null) ? sleepMinutes / 60.0 : null;
-
-            if (steps != null || sleepHours != null) {
-                sb.append(String.format("오늘 %s님은 ", userName));
-
-                if (steps != null) {
-                    sb.append(String.format("%,d보 걸으셨고", steps));
-                }
-
-                if (sleepHours != null) {
-                    if (steps != null) {
-                        sb.append(", ");
-                    }
-                    sb.append(String.format("%.1f시간 주무셨습니다.", sleepHours));
-                } else if (steps != null) {
-                    sb.append(".");
-                }
-            }
-        }
-
-        // 2. 날씨 데이터 포맷팅
-        WeatherData weatherData = context.getTodayWeather();
-        if (weatherData != null && weatherData.getDescription() != null) {
-            if (sb.length() > 0) {
-                sb.append(" ");
-            }
-
-            String weatherDesc = weatherData.getDescription();
-            Integer temperature = weatherData.getTemperature();
-
-            if (temperature != null) {
-                sb.append(String.format("오늘 날씨는 %s이고 기온은 %d도입니다.", weatherDesc, temperature));
-            } else {
-                sb.append(String.format("오늘 날씨는 %s입니다.", weatherDesc));
-            }
-        }
-
-        return sb.toString();
     }
 
     /**

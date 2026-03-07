@@ -137,12 +137,12 @@ class PromptServiceTest {
     // ===== buildConversationPrompt 테스트 =====
 
     @Test
-    @DisplayName("buildConversationPrompt - 정상 케이스: 4개 변수가 모두 치환됨")
+    @DisplayName("buildConversationPrompt - 정상 케이스: 3개 변수가 모두 치환됨")
     void buildConversationPrompt_success() {
         // Given
         PromptTemplate conversationTemplate = PromptTemplate.builder()
                 .type(PromptType.CONVERSATION)
-                .content("[시스템]{{systemPrompt}}\n[컨텍스트]{{todayContext}}\n[히스토리]{{conversationHistory}}\n[메시지]{{userMessage}}")
+                .content("[시스템]{{systemPrompt}}\n[히스토리]{{conversationHistory}}\n[메시지]{{userMessage}}")
                 .build();
 
         when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.CONVERSATION))
@@ -151,68 +151,12 @@ class PromptServiceTest {
         // Context에 시스템 프롬프트 캐싱 (실제 흐름과 동일)
         context.setSystemPrompt("시스템: 홍길동");
 
-        // When (EnrichedHealthData는 이미 Context에 있으므로 DB 조회 없음)
+        // When
         String result = promptService.buildConversationPrompt(context, "오늘 날씨 어때요?");
 
         // Then
         assertThat(result).contains("시스템: 홍길동");
-        assertThat(result).contains("5,000보 걸으셨고");
         assertThat(result).contains("오늘 날씨 어때요?");
-    }
-
-    // ===== buildTodayContext 테스트 =====
-
-    @Test
-    @DisplayName("buildTodayContext - 건강+날씨 모두 있음: 건강 정보와 날씨 정보가 함께 포맷팅")
-    void buildTodayContext_healthAndWeather() {
-        // When
-        String result = promptService.buildTodayContext(context);
-
-        // Then
-        assertThat(result).contains("홍길동님은");
-        assertThat(result).contains("5,000보 걸으셨고");
-        assertThat(result).contains("7.0시간 주무셨습니다.");
-        assertThat(result).contains("오늘 날씨는 맑음이고 기온은 20도입니다.");
-    }
-
-    @Test
-    @DisplayName("buildTodayContext - 건강 데이터만 있음: 날씨 없이 건강 정보만 출력")
-    void buildTodayContext_healthOnly() {
-        // Given
-        UserContext healthOnlyContext = UserContext.builder()
-                .userId(TEST_USER_ID)
-                .preferences(context.getPreferences())
-                .enrichedHealthData(context.getEnrichedHealthData())
-                .todayWeather(null)
-                .build();
-
-        // When
-        String result = promptService.buildTodayContext(healthOnlyContext);
-
-        // Then
-        assertThat(result).contains("5,000보 걸으셨고");
-        assertThat(result).contains("7.0시간 주무셨습니다.");
-        assertThat(result).doesNotContain("날씨");
-    }
-
-    @Test
-    @DisplayName("buildTodayContext - 날씨만 있음: 건강 없이 날씨 정보만 출력")
-    void buildTodayContext_weatherOnly() {
-        // Given
-        UserContext weatherOnlyContext = UserContext.builder()
-                .userId(TEST_USER_ID)
-                .preferences(context.getPreferences())
-                .enrichedHealthData(null)
-                .todayWeather(context.getTodayWeather())
-                .build();
-
-        // When
-        String result = promptService.buildTodayContext(weatherOnlyContext);
-
-        // Then
-        assertThat(result).doesNotContain("걸으셨고");
-        assertThat(result).doesNotContain("주무셨습니다");
-        assertThat(result).contains("오늘 날씨는 맑음이고 기온은 20도입니다.");
     }
 
     // ===== buildHistory 테스트 =====
@@ -261,6 +205,72 @@ class PromptServiceTest {
 
         // When
         String result = promptService.buildHistory(emptyHistoryContext);
+
+        // Then
+        assertThat(result).isEmpty();
+    }
+
+    // ===== buildSystemPrompt 건강 데이터 테스트 =====
+
+    @Test
+    @DisplayName("buildSystemPrompt - 건강 데이터 변수 치환 확인")
+    void buildSystemPrompt_healthDataVariables() {
+        // Given
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("걸음: {{steps}}, 수면: {{sleepInfo}}, 걸음평가: {{stepsEvaluation}}, 수면평가: {{sleepEvaluation}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(context);
+
+        // Then
+        assertThat(result).contains("걸음: 5,000보");
+        assertThat(result).contains("수면: 7시간");
+        assertThat(result).contains("걸음평가: 평소와 비슷");
+        assertThat(result).contains("수면평가: 적당");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 건강 데이터 null: 빈 문자열로 치환")
+    void buildSystemPrompt_nullHealthData() {
+        // Given
+        UserContext noHealthContext = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .enrichedHealthData(null)
+                .todayWeather(null)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("걸음: [{{steps}}], 수면평가: [{{sleepEvaluation}}]")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(noHealthContext);
+
+        // Then
+        assertThat(result).isEqualTo("걸음: [], 수면평가: []");
+    }
+
+    @Test
+    @DisplayName("buildHistory - null 히스토리: 빈 문자열 반환")
+    void buildHistory_nullHistory() {
+        // Given
+        UserContext nullHistoryContext = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .conversationHistory(null)
+                .build();
+
+        // When
+        String result = promptService.buildHistory(nullHistoryContext);
 
         // Then
         assertThat(result).isEmpty();

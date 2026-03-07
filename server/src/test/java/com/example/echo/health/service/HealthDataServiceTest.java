@@ -1,5 +1,6 @@
 package com.example.echo.health.service;
 
+import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.entity.HealthLog;
 import com.example.echo.health.repository.HealthLogRepository;
@@ -13,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -149,76 +152,6 @@ class HealthDataServiceTest {
 
             // Then
             assertThat(result).isNull();
-        }
-    }
-
-    @Nested
-    @DisplayName("getWeeklyAverageSteps 테스트")
-    class GetWeeklyAverageStepsTest {
-
-        @Test
-        @DisplayName("7일 평균 걸음 수 반환")
-        void getWeeklyAverageSteps() {
-            // Given
-            when(healthLogRepository.findAverageStepsByUserIdAndDateRange(
-                    eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
-                    .thenReturn(5000.0);
-
-            // When
-            Double result = healthDataService.getWeeklyAverageSteps(TEST_USER_ID);
-
-            // Then
-            assertThat(result).isEqualTo(5000.0);
-        }
-
-        @Test
-        @DisplayName("데이터 없으면 0.0 반환")
-        void getWeeklyAverageSteps_noData() {
-            // Given
-            when(healthLogRepository.findAverageStepsByUserIdAndDateRange(
-                    eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
-                    .thenReturn(null);
-
-            // When
-            Double result = healthDataService.getWeeklyAverageSteps(TEST_USER_ID);
-
-            // Then
-            assertThat(result).isEqualTo(0.0);
-        }
-    }
-
-    @Nested
-    @DisplayName("getWeeklyAverageSleepHours 테스트")
-    class GetWeeklyAverageSleepHoursTest {
-
-        @Test
-        @DisplayName("7일 평균 수면 시간(시간) 반환")
-        void getWeeklyAverageSleepHours() {
-            // Given
-            when(healthLogRepository.findAverageSleepMinutesByUserIdAndDateRange(
-                    eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
-                    .thenReturn(420.0);
-
-            // When
-            Double result = healthDataService.getWeeklyAverageSleepHours(TEST_USER_ID);
-
-            // Then
-            assertThat(result).isEqualTo(7.0);
-        }
-
-        @Test
-        @DisplayName("데이터 없으면 0.0 반환")
-        void getWeeklyAverageSleepHours_noData() {
-            // Given
-            when(healthLogRepository.findAverageSleepMinutesByUserIdAndDateRange(
-                    eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
-                    .thenReturn(null);
-
-            // When
-            Double result = healthDataService.getWeeklyAverageSleepHours(TEST_USER_ID);
-
-            // Then
-            assertThat(result).isEqualTo(0.0);
         }
     }
 
@@ -364,4 +297,182 @@ class HealthDataServiceTest {
                     .isEqualTo("평소보다 늦게");
         }
     }
+
+    @Nested
+    @DisplayName("getHealthDataByDate 테스트")
+    class GetHealthDataByDateTest {
+
+        @Test
+        @DisplayName("특정 날짜 데이터 존재 시 HealthData 반환")
+        void getHealthDataByDate_found() {
+            // Given
+            LocalDate targetDate = LocalDate.of(2026, 3, 1);
+            HealthLog healthLog = HealthLog.builder()
+                    .userId(TEST_USER_ID)
+                    .recordedDate(targetDate)
+                    .steps(8000)
+                    .sleepDurationMinutes(480)
+                    .wakeUpTime(LocalTime.of(6, 30))
+                    .exerciseActivity("등산")
+                    .build();
+
+            when(healthLogRepository.findByUserIdAndRecordedDate(TEST_USER_ID, targetDate))
+                    .thenReturn(Optional.of(healthLog));
+
+            // When
+            HealthData result = healthDataService.getHealthDataByDate(TEST_USER_ID, targetDate);
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getSteps()).isEqualTo(8000);
+            assertThat(result.getSleepDurationMinutes()).isEqualTo(480);
+            assertThat(result.getExerciseActivity()).isEqualTo("등산");
+        }
+
+        @Test
+        @DisplayName("특정 날짜 데이터 없으면 null 반환")
+        void getHealthDataByDate_notFound() {
+            // Given
+            LocalDate targetDate = LocalDate.of(2026, 3, 1);
+            when(healthLogRepository.findByUserIdAndRecordedDate(TEST_USER_ID, targetDate))
+                    .thenReturn(Optional.empty());
+
+            // When
+            HealthData result = healthDataService.getHealthDataByDate(TEST_USER_ID, targetDate);
+
+            // Then
+            assertThat(result).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("buildEnrichedHealthData 테스트")
+    class BuildEnrichedHealthDataTest {
+
+        @Test
+        @DisplayName("정상 케이스: 7일 평균과 평가 결과 포함")
+        void buildEnrichedHealthData_success() {
+            // Given
+            HealthData todayData = HealthData.builder()
+                    .steps(6500) // 5000 * 1.3 = 6500 (130%, "평소보다 많음" 조건: > 120%)
+                    .sleepDurationMinutes(420)
+                    .wakeUpTime(LocalTime.of(7, 0))
+                    .sleepStartTime(LocalTime.of(23, 0))
+                    .exerciseDistanceKm(2.5)
+                    .exerciseActivity("산책")
+                    .build();
+
+            List<HealthLog> weeklyLogs = List.of(
+                    createHealthLog(5000, 400, LocalTime.of(7, 10)),
+                    createHealthLog(5500, 420, LocalTime.of(7, 0)),
+                    createHealthLog(4500, 380, LocalTime.of(6, 50))
+            );
+
+            when(healthLogRepository.findByUserIdAndRecordedDateBetweenOrderByRecordedDateAsc(
+                    eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                    .thenReturn(weeklyLogs);
+
+            // When
+            EnrichedHealthData result = healthDataService.buildEnrichedHealthData(
+                    todayData, TEST_USER_ID, 7);
+
+            // Then
+            // 원시 데이터 확인
+            assertThat(result.getSteps()).isEqualTo(6500);
+            assertThat(result.getSleepDurationMinutes()).isEqualTo(420);
+            assertThat(result.getWakeUpTime()).isEqualTo(LocalTime.of(7, 0));
+            assertThat(result.getExerciseActivity()).isEqualTo("산책");
+
+            // 7일 평균 확인
+            assertThat(result.getAvgSteps()).isEqualTo(5000.0);
+            assertThat(result.getAvgSleepHours()).isCloseTo(6.67, org.assertj.core.api.Assertions.within(0.01));
+            assertThat(result.getAvgWakeUpTime()).isNotNull();
+
+            // 평가 결과 확인
+            assertThat(result.getStepsEvaluation()).isEqualTo("평소보다 많음"); // 6500/5000 = 1.3 > 1.2
+            assertThat(result.getSleepEvaluation()).isEqualTo("적당"); // 420분 vs 7시간(420분)
+            assertThat(result.getWakeTimeEvaluation()).isNotEmpty();
+
+            // 포맷팅 확인
+            assertThat(result.getStepsFormatted()).isEqualTo("6,500보");
+            assertThat(result.getSleepDurationFormatted()).isEqualTo("7시간");
+            assertThat(result.getExerciseDistanceFormatted()).isEqualTo("2.5km");
+        }
+
+        @Test
+        @DisplayName("todayData가 null: 빈 EnrichedHealthData 반환")
+        void buildEnrichedHealthData_nullTodayData() {
+            // Given
+            when(healthLogRepository.findByUserIdAndRecordedDateBetweenOrderByRecordedDateAsc(
+                    eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                    .thenReturn(Collections.emptyList());
+
+            // When
+            EnrichedHealthData result = healthDataService.buildEnrichedHealthData(
+                    null, TEST_USER_ID, 7);
+
+            // Then
+            assertThat(result.getSteps()).isNull();
+            assertThat(result.getSleepDurationMinutes()).isNull();
+            assertThat(result.getStepsEvaluation()).isEmpty();
+            assertThat(result.getSleepEvaluation()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("7일 데이터 없음: 평균 0.0, 평가는 '데이터 없음'")
+        void buildEnrichedHealthData_noWeeklyData() {
+            // Given
+            HealthData todayData = HealthData.builder()
+                    .steps(5000)
+                    .wakeUpTime(LocalTime.of(7, 0))
+                    .build();
+
+            when(healthLogRepository.findByUserIdAndRecordedDateBetweenOrderByRecordedDateAsc(
+                    eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                    .thenReturn(Collections.emptyList());
+
+            // When
+            EnrichedHealthData result = healthDataService.buildEnrichedHealthData(
+                    todayData, TEST_USER_ID, null);
+
+            // Then
+            assertThat(result.getAvgSteps()).isEqualTo(0.0);
+            assertThat(result.getAvgSleepHours()).isEqualTo(0.0);
+            assertThat(result.getAvgWakeUpTime()).isNull();
+            assertThat(result.getStepsEvaluation()).isEqualTo("데이터 없음");
+            assertThat(result.getWakeTimeEvaluation()).isEqualTo("데이터 없음");
+        }
+
+        @Test
+        @DisplayName("preferredSleepHours가 null: 수면 평가 생략")
+        void buildEnrichedHealthData_nullPreferredSleepHours() {
+            // Given
+            HealthData todayData = HealthData.builder()
+                    .sleepDurationMinutes(420)
+                    .build();
+
+            when(healthLogRepository.findByUserIdAndRecordedDateBetweenOrderByRecordedDateAsc(
+                    eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                    .thenReturn(Collections.emptyList());
+
+            // When
+            EnrichedHealthData result = healthDataService.buildEnrichedHealthData(
+                    todayData, TEST_USER_ID, null);
+
+            // Then
+            assertThat(result.getSleepEvaluation()).isEmpty();
+            assertThat(result.getPreferredSleepHours()).isNull();
+        }
+
+        private HealthLog createHealthLog(Integer steps, Integer sleepMinutes, LocalTime wakeUpTime) {
+            return HealthLog.builder()
+                    .userId(TEST_USER_ID)
+                    .recordedDate(LocalDate.now().minusDays(1))
+                    .steps(steps)
+                    .sleepDurationMinutes(sleepMinutes)
+                    .wakeUpTime(wakeUpTime)
+                    .build();
+        }
+    }
+
 }

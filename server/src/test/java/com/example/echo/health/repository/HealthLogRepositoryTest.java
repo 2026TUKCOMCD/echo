@@ -97,51 +97,6 @@ class HealthLogRepositoryTest {
     }
 
     @Test
-    @DisplayName("findAverageStepsByUserIdAndDateRange - 평균 걸음 수 계산")
-    void findAverageStepsByUserIdAndDateRange() {
-        // Given
-        LocalDate startDate = TODAY.minusDays(6);
-        healthLogRepository.save(createHealthLog(TEST_USER_ID, startDate, 4000, 400));
-        healthLogRepository.save(createHealthLog(TEST_USER_ID, startDate.plusDays(1), 6000, 420));
-        healthLogRepository.save(createHealthLog(TEST_USER_ID, startDate.plusDays(2), 5000, 440));
-
-        // When
-        Double avgSteps = healthLogRepository.findAverageStepsByUserIdAndDateRange(
-                TEST_USER_ID, startDate, TODAY);
-
-        // Then
-        assertThat(avgSteps).isEqualTo(5000.0);
-    }
-
-    @Test
-    @DisplayName("findAverageStepsByUserIdAndDateRange - 데이터 없으면 null 반환")
-    void findAverageStepsByUserIdAndDateRange_noData() {
-        // When
-        Double avgSteps = healthLogRepository.findAverageStepsByUserIdAndDateRange(
-                TEST_USER_ID, TODAY.minusDays(7), TODAY);
-
-        // Then
-        assertThat(avgSteps).isNull();
-    }
-
-    @Test
-    @DisplayName("findAverageSleepMinutesByUserIdAndDateRange - 평균 수면 시간 계산")
-    void findAverageSleepMinutesByUserIdAndDateRange() {
-        // Given
-        LocalDate startDate = TODAY.minusDays(6);
-        healthLogRepository.save(createHealthLog(TEST_USER_ID, startDate, 4000, 360));
-        healthLogRepository.save(createHealthLog(TEST_USER_ID, startDate.plusDays(1), 5000, 420));
-        healthLogRepository.save(createHealthLog(TEST_USER_ID, startDate.plusDays(2), 6000, 480));
-
-        // When
-        Double avgSleepMinutes = healthLogRepository.findAverageSleepMinutesByUserIdAndDateRange(
-                TEST_USER_ID, startDate, TODAY);
-
-        // Then
-        assertThat(avgSleepMinutes).isEqualTo(420.0);
-    }
-
-    @Test
     @DisplayName("existsByUserIdAndRecordedDate - 데이터 존재 확인")
     void existsByUserIdAndRecordedDate() {
         // Given
