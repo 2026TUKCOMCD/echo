@@ -4,6 +4,7 @@ import com.example.echo.ai.client.OpenAIClient;
 import com.example.echo.ai.dto.ChatCompletionRequest;
 import com.example.echo.ai.dto.ChatCompletionResponse;
 import com.example.echo.ai.exception.AIException;
+import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -99,37 +102,52 @@ class AIServiceTest {
     // ===== generateResponse 테스트 =====
 
     @Test
-    @DisplayName("generateResponse - 정상 케이스: conversationPrompt가 system 메시지로 전달")
+    @DisplayName("generateResponse - 정상 케이스: system/user/assistant role로 messages 배열 구성")
     void generateResponse_success() {
         // Given
-        String conversationPrompt = "시스템 프롬프트 + 컨텍스트 + 히스토리 + 사용자 메시지";
+        String systemPrompt = "당신은 친근한 대화 상대입니다.";
+        List<ConversationTurn> history = new ArrayList<>();
+        history.add(ConversationTurn.builder()
+                .userMessage("안녕하세요")
+                .aiResponse("안녕하세요! 오늘 기분이 어떠세요?")
+                .timestamp(LocalDateTime.now())
+                .build());
+        String userMessage = "오늘 날씨가 좋네요";
+
         ChatCompletionResponse response = createMockResponse("좋은 질문이네요!");
 
         when(openAIClient.createChatCompletion(any(ChatCompletionRequest.class)))
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse(conversationPrompt);
+        String result = aiService.generateResponse(systemPrompt, history, userMessage);
 
         // Then
         assertThat(result).isEqualTo("좋은 질문이네요!");
 
-        // 메시지 구조 검증
+        // 메시지 구조 검증: system(1) + history(user+assistant)(2) + current user(1) = 4
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
         when(openAIClient.createChatCompletion(captor.capture())).thenReturn(response);
-        aiService.generateResponse(conversationPrompt);
+        aiService.generateResponse(systemPrompt, history, userMessage);
 
         ChatCompletionRequest capturedRequest = captor.getValue();
-        assertThat(capturedRequest.getMessages()).hasSize(1);
+        assertThat(capturedRequest.getMessages()).hasSize(4);
         assertThat(capturedRequest.getMessages().get(0).getRole()).isEqualTo("system");
-        assertThat(capturedRequest.getMessages().get(0).getContent()).isEqualTo(conversationPrompt);
+        assertThat(capturedRequest.getMessages().get(0).getContent()).isEqualTo(systemPrompt);
+        assertThat(capturedRequest.getMessages().get(1).getRole()).isEqualTo("user");
+        assertThat(capturedRequest.getMessages().get(2).getRole()).isEqualTo("assistant");
+        assertThat(capturedRequest.getMessages().get(3).getRole()).isEqualTo("user");
+        assertThat(capturedRequest.getMessages().get(3).getContent()).isEqualTo(userMessage);
     }
 
     @Test
     @DisplayName("generateResponse - API 실패: FeignException → AIException 변환")
     void generateResponse_apiFailure() {
         // Given
-        String conversationPrompt = "대화 프롬프트";
+        String systemPrompt = "시스템 프롬프트";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "오늘 날씨 어때요?";
+
         FeignException feignException = mock(FeignException.class);
         when(feignException.status()).thenReturn(429);
         when(feignException.getMessage()).thenReturn("Rate Limit Exceeded");
@@ -138,7 +156,7 @@ class AIServiceTest {
                 .thenThrow(feignException);
 
         // When & Then
-        assertThatThrownBy(() -> aiService.generateResponse(conversationPrompt))
+        assertThatThrownBy(() -> aiService.generateResponse(systemPrompt, history, userMessage))
                 .isInstanceOf(AIException.class)
                 .hasMessageContaining("AI 응답 생성 실패")
                 .hasCause(feignException);
@@ -150,6 +168,10 @@ class AIServiceTest {
     @DisplayName("extractContent - 빈 응답: response가 null이거나 choices가 비어있을 때 빈 문자열 반환")
     void extractContent_emptyResponse() {
         // Given - null choices
+        String systemPrompt = "시스템 프롬프트";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "테스트 메시지";
+
         ChatCompletionResponse nullChoicesResponse = mock(ChatCompletionResponse.class);
         when(nullChoicesResponse.getChoices()).thenReturn(null);
 
@@ -157,7 +179,7 @@ class AIServiceTest {
                 .thenReturn(nullChoicesResponse);
 
         // When
-        String result1 = aiService.generateResponse("프롬프트");
+        String result1 = aiService.generateResponse(systemPrompt, history, userMessage);
 
         // Then
         assertThat(result1).isEmpty();
@@ -170,7 +192,7 @@ class AIServiceTest {
                 .thenReturn(emptyChoicesResponse);
 
         // When
-        String result2 = aiService.generateResponse("프롬프트");
+        String result2 = aiService.generateResponse(systemPrompt, history, userMessage);
 
         // Then
         assertThat(result2).isEmpty();

@@ -1,7 +1,6 @@
 package com.example.echo.prompt.service;
 
 import com.example.echo.common.dto.WeatherData;
-import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.prompt.entity.PromptTemplate;
@@ -16,9 +15,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -134,82 +130,6 @@ class PromptServiceTest {
         assertThat(result).isEqualTo("안녕하세요 사용자님");
     }
 
-    // ===== buildConversationPrompt 테스트 =====
-
-    @Test
-    @DisplayName("buildConversationPrompt - 정상 케이스: 3개 변수가 모두 치환됨")
-    void buildConversationPrompt_success() {
-        // Given
-        PromptTemplate conversationTemplate = PromptTemplate.builder()
-                .type(PromptType.CONVERSATION)
-                .content("[시스템]{{systemPrompt}}\n[히스토리]{{conversationHistory}}\n[메시지]{{userMessage}}")
-                .build();
-
-        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.CONVERSATION))
-                .thenReturn(Optional.of(conversationTemplate));
-
-        // Context에 시스템 프롬프트 캐싱 (실제 흐름과 동일)
-        context.setSystemPrompt("시스템: 홍길동");
-
-        // When
-        String result = promptService.buildConversationPrompt(context, "오늘 날씨 어때요?");
-
-        // Then
-        assertThat(result).contains("시스템: 홍길동");
-        assertThat(result).contains("오늘 날씨 어때요?");
-    }
-
-    // ===== buildHistory 테스트 =====
-
-    @Test
-    @DisplayName("buildHistory - 대화 히스토리 존재: 턴별로 포맷팅")
-    void buildHistory_withHistory() {
-        // Given
-        List<ConversationTurn> history = new ArrayList<>();
-        history.add(ConversationTurn.builder()
-                .userMessage("안녕하세요")
-                .aiResponse("안녕하세요! 오늘 기분이 어떠세요?")
-                .timestamp(LocalDateTime.now())
-                .build());
-        history.add(ConversationTurn.builder()
-                .userMessage("좋아요")
-                .aiResponse("다행이네요!")
-                .timestamp(LocalDateTime.now())
-                .build());
-
-        UserContext contextWithHistory = UserContext.builder()
-                .userId(TEST_USER_ID)
-                .conversationHistory(history)
-                .build();
-
-        // When
-        String result = promptService.buildHistory(contextWithHistory);
-
-        // Then
-        assertThat(result).contains("[턴 1]");
-        assertThat(result).contains("사용자: 안녕하세요");
-        assertThat(result).contains("AI: 안녕하세요! 오늘 기분이 어떠세요?");
-        assertThat(result).contains("[턴 2]");
-        assertThat(result).contains("사용자: 좋아요");
-        assertThat(result).contains("AI: 다행이네요!");
-    }
-
-    @Test
-    @DisplayName("buildHistory - 히스토리 비어있음: 빈 문자열 반환")
-    void buildHistory_emptyHistory() {
-        // Given
-        UserContext emptyHistoryContext = UserContext.builder()
-                .userId(TEST_USER_ID)
-                .conversationHistory(new ArrayList<>())
-                .build();
-
-        // When
-        String result = promptService.buildHistory(emptyHistoryContext);
-
-        // Then
-        assertThat(result).isEmpty();
-    }
-
     // ===== buildSystemPrompt 건강 데이터 테스트 =====
 
     @Test
@@ -258,21 +178,5 @@ class PromptServiceTest {
 
         // Then
         assertThat(result).isEqualTo("걸음: [], 수면평가: []");
-    }
-
-    @Test
-    @DisplayName("buildHistory - null 히스토리: 빈 문자열 반환")
-    void buildHistory_nullHistory() {
-        // Given
-        UserContext nullHistoryContext = UserContext.builder()
-                .userId(TEST_USER_ID)
-                .conversationHistory(null)
-                .build();
-
-        // When
-        String result = promptService.buildHistory(nullHistoryContext);
-
-        // Then
-        assertThat(result).isEmpty();
     }
 }

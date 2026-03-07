@@ -43,14 +43,17 @@ public class ConversationService {
         // 1. 컨텍스트 초기화 (healthData 전달하여 DB 재조회 방지)
         UserContext context = contextService.initializeContext(userId, healthData);
 
-        // 2. 첫 인사 생성
+        // 2. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
         String systemPrompt = promptService.buildSystemPrompt(context);
+        context.setSystemPrompt(systemPrompt);
+
+        // 3. 첫 인사 생성
         String firstMessage = aiService.generateGreeting(systemPrompt, context);
 
-        // 3. TTS 변환
+        // 4. TTS 변환
         byte[] audioData = voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings());
 
-        // 4. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
+        // 5. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
         contextService.addConversationTurn(userId, null, firstMessage);
 
         return ConversationStartResponse.builder()
@@ -68,16 +71,15 @@ public class ConversationService {
         // 2. STT 변환
         String userMessage = voiceService.speechToText(audioFile);
 
-        // 3. 프롬프트 생성
-        String conversationPrompt = promptService.buildConversationPrompt(context, userMessage);
+        // 3. AI 응답 생성 (OpenAI 권장 방식: messages 배열)
+        String systemPrompt = context.getSystemPrompt();
+        List<ConversationTurn> history = context.getConversationHistory();
+        String aiResponse = aiService.generateResponse(systemPrompt, history, userMessage);
 
-        // 4. AI 응답 생성
-        String aiResponse = aiService.generateResponse(conversationPrompt);
-
-        // 5. TTS 변환
+        // 4. TTS 변환
         byte[] audioData = voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings());
 
-        // 6. 히스토리 업데이트 (동기)
+        // 5. 히스토리 업데이트 (동기)
         contextService.addConversationTurn(userId, userMessage, aiResponse);
 
         return ConversationResponse.builder()

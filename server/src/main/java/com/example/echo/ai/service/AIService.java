@@ -21,6 +21,7 @@ import com.example.echo.ai.client.OpenAIClient;
 import com.example.echo.ai.dto.ChatCompletionRequest;
 import com.example.echo.ai.dto.ChatCompletionResponse;
 import com.example.echo.ai.exception.AIException;
+import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
@@ -94,19 +95,51 @@ public class AIService {
     /**
      * 대화 응답 생성
      *
-     * @param conversationPrompt 시스템프롬프트 + 컨텍스트 + 히스토리 + 사용자메시지
+     * OpenAI 권장 방식: messages 배열에 role별로 분리하여 전송
+     * - system: 시스템 프롬프트 (AI 페르소나, 규칙)
+     * - user/assistant: 대화 히스토리
+     * - user: 현재 사용자 메시지
+     *
+     * @param systemPrompt 시스템 프롬프트 (캐싱된 것 사용)
+     * @param history 대화 히스토리 (ConversationTurn 리스트)
+     * @param userMessage 현재 사용자 메시지
      * @return AI가 생성한 응답 메시지
      * @throws AIException API 호출 실패 시
      */
-    public String generateResponse(String conversationPrompt) {
-        log.debug("Generating response with conversation prompt");
+    public String generateResponse(String systemPrompt, List<ConversationTurn> history, String userMessage) {
+        log.debug("Generating response - history size: {}, userMessage: {}",
+                history != null ? history.size() : 0, userMessage);
 
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
 
-        // 대화 프롬프트를 시스템 메시지로 전달 (컨텍스트 + 대화 히스토리 포함)
+        // 1. 시스템 프롬프트
         messages.add(ChatCompletionRequest.Message.builder()
                 .role("system")
-                .content(conversationPrompt)
+                .content(systemPrompt)
+                .build());
+
+        // 2. 대화 히스토리 (user/assistant role로 분리)
+        if (history != null) {
+            for (ConversationTurn turn : history) {
+                // 사용자 메시지가 있으면 추가 (첫 인사는 userMessage가 null일 수 있음)
+                if (turn.getUserMessage() != null) {
+                    messages.add(ChatCompletionRequest.Message.builder()
+                            .role("user")
+                            .content(turn.getUserMessage())
+                            .build());
+                }
+                // AI 응답 추가
+                messages.add(ChatCompletionRequest.Message.builder()
+                        .role("assistant")
+                        .content(turn.getAiResponse())
+                        .build());
+            }
+        }
+
+        // 3. 현재 사용자 메시지
+        messages.add(ChatCompletionRequest.Message.builder()
+                .role("user")
+                .content(userMessage)
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
