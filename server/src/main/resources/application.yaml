@@ -40,3 +40,4 @@ azure:
     endpoint: https://koreacentral.tts.speech.microsoft.com
     # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)
     default-voice: ko-KR-SunHiNeural  # 기본 음성 (친근하고 따뜻한 여성)
+
