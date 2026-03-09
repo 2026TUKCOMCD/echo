@@ -128,12 +128,12 @@ public class HealthLog {
      * @param data 새 건강 데이터
      */
     public void update(HealthData data) {
-        this.steps = data.getSteps();
-        this.sleepDurationMinutes = data.getSleepDurationMinutes();
-        this.sleepStartTime = data.getSleepStartTime();
-        this.wakeUpTime = data.getWakeUpTime();
-        this.exerciseDistanceKm = data.getExerciseDistanceKm();
-        this.exerciseActivity = data.getExerciseActivity();
-        this.activityList = data.getActivityList();
+        if (data.getSteps() != null) this.steps = data.getSteps();
+        if (data.getSleepDurationMinutes() != null) this.sleepDurationMinutes = data.getSleepDurationMinutes();
+        if (data.getSleepStartTime() != null) this.sleepStartTime = data.getSleepStartTime();
+        if (data.getWakeUpTime() != null) this.wakeUpTime = data.getWakeUpTime();
+        if (data.getExerciseDistanceKm() != null) this.exerciseDistanceKm = data.getExerciseDistanceKm();
+        if (data.getExerciseActivity() != null) this.exerciseActivity = data.getExerciseActivity();
+        if (data.getActivityList() != null) this.activityList = data.getActivityList();
     }
 }

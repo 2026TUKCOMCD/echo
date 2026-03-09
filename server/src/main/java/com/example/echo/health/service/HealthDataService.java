@@ -192,8 +192,7 @@ public class HealthDataService {
 
         return healthLogRepository.findByUserIdAndRecordedDate(userId, date)
                 .map(existing -> {
-                    log.debug("기존 건강 데이터 업데이트 - userId: {}, date: {}", userId, date);
-                    existing.update(data);
+                    log.debug("기존 건강 데이터 존재 - 저장 무시 userId: {}, date: {}", userId, date);
                     return existing;
                 })
                 .orElseGet(() -> {
