@@ -74,8 +74,13 @@ class HealthViewModel(
     private suspend fun checkPermissions() {
         try {
             val allGranted = healthConnectManager.checkGrantedPermissions()
-            _uiState.update {
-                it.copy(permissionState = if (allGranted) PermissionState.Granted else PermissionState.NotRequested)
+            _uiState.update { current ->
+                val newState = when {
+                    allGranted -> PermissionState.Granted
+                    current.permissionState is PermissionState.Denied -> PermissionState.Denied
+                    else -> PermissionState.NotRequested
+                }
+                current.copy(permissionState = newState)
             }
         } catch (e: Exception) {
             _uiState.update { it.copy(errorMessage = "건강 데이터 권한을 확인할 수 없습니다") }
