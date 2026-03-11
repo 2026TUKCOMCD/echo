@@ -43,7 +43,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **HTTP 클라이언트**: Spring Cloud OpenFeign 2025.0.0
 - **캐싱**: Caffeine (프롬프트 템플릿 캐싱)
 - **외부 API**: OpenAI (GPT-4o-mini, Whisper:STT), Azure Cognitive Services TTS
-- **API 문서**: springdoc-openapi 2.3.0 (의존성 추가됨, 어노테이션 미적용)
+- **API 문서**: springdoc-openapi 2.3.0 (Swagger UI 적용, http://localhost:8080/swagger-ui.html)
 
 ## 아키텍처
 
