@@ -21,4 +21,6 @@ class HealthConnectRepositoryImpl(
     override suspend fun readTodaySteps(): Int? = manager.readTodaySteps()
 
     override suspend fun readLatestExercise(): Pair<Double?, String?> = manager.readLatestExercise()
+
+    override suspend fun readTodayActivityList(): String? = manager.readTodayActivityList()
 }

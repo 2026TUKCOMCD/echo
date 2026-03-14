@@ -156,6 +156,27 @@ class HealthConnectManager(private val context: Context) {
         return if (totalKm > 0.0) totalKm else null
     }
 
+    /**
+     * 오늘 자정(00:00) → 현재 범위의 모든 운동 활동 목록.
+     * 중복 제거 후 쉼표 구분 한국어 문자열 반환. 레코드 없으면 null.
+     */
+    suspend fun readTodayActivityList(): String? {
+        val client = HealthConnectClient.getOrCreate(context)
+        val zone = ZoneId.systemDefault()
+        val startTime = LocalDate.now(zone).atStartOfDay(zone).toInstant()
+        val endTime = Instant.now()
+
+        val response = client.readRecords(
+            ReadRecordsRequest(ExerciseSessionRecord::class, TimeRangeFilter.between(startTime, endTime))
+        )
+        if (response.records.isEmpty()) return null
+
+        return response.records
+            .map { exerciseTypeToKorean(it.exerciseType) }
+            .distinct()
+            .joinToString(",")
+    }
+
     private fun exerciseTypeToKorean(type: Int): String = when (type) {
         ExerciseSessionRecord.EXERCISE_TYPE_WALKING -> "걷기"
         ExerciseSessionRecord.EXERCISE_TYPE_RUNNING -> "달리기"

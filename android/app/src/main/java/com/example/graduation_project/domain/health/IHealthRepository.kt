@@ -29,4 +29,10 @@ interface IHealthRepository {
      * @return Pair(거리km, 운동종류한국어), 데이터 없으면 Pair(null, null)
      */
     suspend fun readLatestExercise(): Pair<Double?, String?>
+
+    /**
+     * 오늘 자정(00:00) → 현재 범위의 모든 운동 활동 목록.
+     * @return 쉼표 구분 한국어 활동명 (예: "걷기,달리기"), 데이터 없으면 null
+     */
+    suspend fun readTodayActivityList(): String?
 }
