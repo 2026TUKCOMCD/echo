@@ -48,13 +48,16 @@ public class PromptService {
      *
      * [최적화] Context에서 EnrichedHealthData 직접 사용 - DB 재조회 없음
      *
-     * 템플릿 변수 (v5):
+     * 템플릿 변수 (v6):
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
      * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}, {{preferredSleepHours}}
      * - 날씨: {{weather}}, {{temperature}}
-     * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{sleepInfo}}
-     * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}, {{activityList}}
+     * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{activityList}}
+     * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}
      * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
+     *
+     * 참고: v5 대비 제거된 변수 — {{sleepInfo}} (sleepDuration과 중복)
+     * (PromptService는 여전히 map에 sleepInfo를 추가하나 v6 템플릿에서 사용하지 않으므로 무해하게 무시됨)
      *
      * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
