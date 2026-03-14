@@ -22,6 +22,7 @@ class GetHealthDataUseCase(
         val sleep = runCatching { repository.readYesterdaySleep() }.getOrDefault(SleepSummary(null, null, null))
         val steps = runCatching { repository.readTodaySteps() }.getOrNull().sanitizeSteps()
         val exercise = runCatching { repository.readLatestExercise() }.getOrDefault(Pair(null, null))
+        val activityList = runCatching { repository.readTodayActivityList() }.getOrNull()
 
         return HealthData(
             sleepDurationMinutes = sleep.minutes.sanitizeSleep(),
@@ -29,7 +30,8 @@ class GetHealthDataUseCase(
             wakeUpTime = sleep.wakeUpTime,
             steps = steps,
             exerciseDistanceKm = exercise.first.sanitizeDistance(),
-            exerciseActivity = exercise.second
+            exerciseActivity = exercise.second,
+            activityList = activityList
         )
     }
 
