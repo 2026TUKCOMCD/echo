@@ -11,10 +11,9 @@ import java.time.LocalTime;
 public class UserService {
 
     public UserPreferences getPreferences(Long userId) {
-        // TODO: 실제 DB 연동 시 Repository 사용
         return UserPreferences.builder()
                 .userId(userId)
-                .name("김영호")
+                .name("이형석")
                 .age(68)
                 .birthday(LocalDate.of(1957, 3, 15))
                 .location("서울시 서초구")
