@@ -6,11 +6,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.health.HealthConnectManager
+import com.example.graduation_project.data.health.HealthConnectRepositoryImpl
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.MessageEntity
-import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
+import com.example.graduation_project.domain.usecase.GetHealthDataUseCase
 import com.example.graduation_project.data.voice.AudioPlayerManager
 import com.example.graduation_project.data.voice.AudioRecordManager
 import com.example.graduation_project.domain.voice.AudioPlayException
@@ -61,7 +63,10 @@ class ConversationViewModel(
     application: Application,
     private val repository: ConversationRepository = ConversationRepository(),
     private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao(),
-    private val audioRecordManager: AudioRecordManager = AudioRecordManager(application)
+    private val audioRecordManager: AudioRecordManager = AudioRecordManager(application),
+    private val getHealthDataUseCase: GetHealthDataUseCase = GetHealthDataUseCase(
+        HealthConnectRepositoryImpl(HealthConnectManager(application))
+    )
 ) : AndroidViewModel(application) {
 
     // 내부에서만 수정 가능한 상태
@@ -296,7 +301,8 @@ class ConversationViewModel(
             // PROCESSING 타이머 시작
             startProcessingTimer()
 
-            val result = repository.startConversation(getDummyHealthData())
+            val healthData = getHealthDataUseCase()
+            val result = repository.startConversation(healthData)
 
             // PROCESSING 타이머 중지
             stopProcessingTimer()
@@ -677,14 +683,6 @@ class ConversationViewModel(
         audioRecordManager.stop()
         _uiState.update { it.copy(isSpeechDetected = false) }
     }
-
-    // 임시 건강 데이터 (추후 Health Connect 연동)
-    private fun getDummyHealthData() = HealthData(
-        sleepDuration = 420,      // 7시간 (분 단위)
-        steps = 5000,             // 5000보
-        exerciseDistance = 3.5,   // 3.5km
-        exerciseActivity = "걷기"
-    )
 
     // ═══════════════════════════════════════════════════════════════════
     // PROCESSING 타이머

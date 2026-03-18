@@ -21,8 +21,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 @Slf4j
@@ -39,15 +37,15 @@ public class VoiceServiceImpl implements VoiceService {
     @Value("${openai.whisper.language:ko}")
     private String defaultLanguage;
 
-    @Value("${clova.tts.speaker:nara}")
-    private String defaultSpeaker;
+    @Value("${azure.tts.default-voice:ko-KR-SunHiNeural}")
+    private String defaultVoice;
 
-    // voiceTone → Clova speaker 매핑
-    private static final Map<String, String> TONE_TO_SPEAKER = Map.of(
-        "warm", "nara",       // 따뜻한 여성 음성
-        "calm", "vyuna",      // 차분한 여성 음성
-        "bright", "vdain",    // 밝은 여성 음성
-        "gentle", "nminyoung" // 부드러운 여성 음성
+    // voiceTone → Azure Neural Voice 매핑
+    private static final Map<String, String> TONE_TO_VOICE = Map.of(
+        "warm",   "ko-KR-SunHiNeural",   // 친근하고 따뜻한 여성
+        "calm",   "ko-KR-InJoonNeural",  // 차분한 남성
+        "bright", "ko-KR-JiMinNeural",   // 밝고 활기찬 여성
+        "gentle", "ko-KR-YuJinNeural"    // 부드러운 여성
     );
 
     /*
@@ -99,12 +97,12 @@ public class VoiceServiceImpl implements VoiceService {
      *
      * [메인 흐름]
      * 1. 입력: String text, VoiceSettings voiceSettings
-     * 2. 검증: validateText() - 빈값/글자수 확인
+     * 2. 검증: validateText() - 빈값/글자수 확인 (800자 제한)
      * 3. 전처리:
-     *    - resolveSpeaker(): voiceTone → Clova speaker 변환
-     *    - convertSpeed(): voiceSpeed → Clova speed 변환
-     *    - buildFormData(): API 요청 형식으로 조합
-     * 4. API 호출: ttsClient.synthesize() → Clova TTS API
+     *    - resolveVoice(): voiceTone → Azure Neural Voice 이름 변환
+     *    - convertSpeedToRate(): voiceSpeed → SSML prosody rate 변환
+     *    - buildSsml(): SSML XML 문자열 생성
+     * 4. API 호출: ttsClient.synthesize() → Azure TTS API
      * 5. 응답: byte[] (MP3 바이너리)
      * 6. 출력: byte[] (음성 파일)
      */
@@ -114,20 +112,20 @@ public class VoiceServiceImpl implements VoiceService {
         validateText(text);
 
         try {
-            // 2. 전처리 - 사용자 설정을 Clova API 형식으로 변환
-            String speaker = resolveSpeaker(voiceSettings);
-            int speed = convertSpeed(voiceSettings);
-            String formData = buildFormData(text, speaker, speed);
+            // 2. 전처리 - 사용자 설정을 Azure SSML 형식으로 변환
+            String voiceName = resolveVoice(voiceSettings);
+            String rate = convertSpeedToRate(voiceSettings);
+            String ssml = buildSsml(text, voiceName, rate);
 
-            log.info("TTS 변환 시작: speaker={}, speed={}, text_length={}",
-                    speaker, speed, text.length());
+            log.info("TTS 변환 시작: voice={}, rate={}, text_length={}",
+                    voiceName, rate, text.length());
 
             // 3. API 호출
-            byte[] audioData = ttsClient.synthesize(formData);
+            byte[] audioData = ttsClient.synthesize(ssml);
 
             // 4. 응답 확인
             if (audioData == null || audioData.length == 0) {
-                throw new VoiceProcessingException("Clova TTS API 응답이 비어있습니다.");
+                throw new VoiceProcessingException("Azure TTS API 응답이 비어있습니다.");
             }
 
             log.info("TTS 변환 완료: {} chars -> {} bytes",
@@ -147,36 +145,38 @@ public class VoiceServiceImpl implements VoiceService {
         if (text == null || text.isBlank()) {
             throw new VoiceProcessingException("변환할 텍스트가 비어있습니다.");
         }
-        // Clova TTS 최대 글자수: 약 2000자
-        if (text.length() > 2000) {
-            throw new VoiceProcessingException("텍스트가 2000자를 초과합니다.");
+        // Azure SSML 제한: 800자 (한글 3바이트/자 고려)
+        if (text.length() > 800) {
+            throw new VoiceProcessingException("텍스트가 800자를 초과합니다.");
         }
     }
 
-    private String resolveSpeaker(VoiceSettings voiceSettings) {
-        if (voiceSettings == null || voiceSettings.getVoiceTone() == null) {
-            return defaultSpeaker;
-        }
-        return TONE_TO_SPEAKER.getOrDefault(
-            voiceSettings.getVoiceTone().toLowerCase(),
-            defaultSpeaker
+    private String resolveVoice(VoiceSettings voiceSettings) {
+        if (voiceSettings == null || voiceSettings.getVoiceTone() == null) return defaultVoice;
+        return TONE_TO_VOICE.getOrDefault(voiceSettings.getVoiceTone().toLowerCase(), defaultVoice);
+    }
+
+    private String convertSpeedToRate(VoiceSettings voiceSettings) {
+        if (voiceSettings == null || voiceSettings.getVoiceSpeed() == null) return "+0%";
+        // voiceSpeed: 0.5 ~ 2.0 (기본 1.0) → SSML rate: -50% ~ +100% (기본 +0%)
+        int ratePercent = (int) Math.round((voiceSettings.getVoiceSpeed() - 1.0) * 100);
+        ratePercent = Math.max(-50, Math.min(100, ratePercent));
+        return (ratePercent >= 0 ? "+" : "") + ratePercent + "%";
+    }
+
+    private String buildSsml(String text, String voiceName, String rate) {
+        // XML 특수문자 이스케이프 (SSML 파싱 오류 방지)
+        String escaped = text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&apos;");
+        return String.format(
+            "<speak version='1.0' xml:lang='ko-KR'><voice xml:lang='ko-KR' name='%s'>" +
+            "<prosody rate='%s'>%s</prosody></voice></speak>",
+            voiceName, rate, escaped
         );
-    }
-
-    private int convertSpeed(VoiceSettings voiceSettings) {
-        if (voiceSettings == null || voiceSettings.getVoiceSpeed() == null) {
-            return 0; // Clova 기본값
-        }
-        // voiceSpeed: 0.5 ~ 2.0 (기본 1.0) → Clova speed: -5 ~ 5 (기본 0)
-        double speed = voiceSettings.getVoiceSpeed();
-        int clovaSpeed = (int) Math.round((speed - 1.0) * 10);
-        return Math.max(-5, Math.min(5, clovaSpeed));
-    }
-
-    private String buildFormData(String text, String speaker, int speed) {
-        String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8);
-        return String.format("speaker=%s&speed=%d&volume=0&pitch=0&format=mp3&text=%s",
-                speaker, speed, encodedText);
     }
 
     private void validateAudioFile(MultipartFile audioFile) {

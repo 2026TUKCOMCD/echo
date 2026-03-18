@@ -3,6 +3,7 @@ package com.example.echo.context.service;
 import com.example.echo.common.client.WeatherClient;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.UserContext;
+import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.user.dto.UserPreferences;
@@ -21,6 +22,8 @@ import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.BDDMockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ContextService 테스트")
@@ -41,6 +44,7 @@ class ContextServiceTest {
     private Long userId;
     private UserPreferences mockPreferences;
     private HealthData mockHealthData;
+    private EnrichedHealthData mockEnrichedHealthData;
     private WeatherData mockWeatherData;
 
     @BeforeEach
@@ -53,6 +57,7 @@ class ContextServiceTest {
                 .age(70)
                 .location("서울시 강남구")
                 .voiceSettings(VoiceSettings.builder().build())
+                .preferredSleepHours(7)
                 .build();
 
         mockHealthData = HealthData.builder()
@@ -60,6 +65,15 @@ class ContextServiceTest {
                 .sleepDurationMinutes(390)
                 .exerciseDistanceKm(1.8)
                 .exerciseActivity("아침 산책")
+                .build();
+
+        mockEnrichedHealthData = EnrichedHealthData.builder()
+                .steps(4200)
+                .sleepDurationMinutes(390)
+                .exerciseDistanceKm(1.8)
+                .exerciseActivity("아침 산책")
+                .stepsFormatted("4,200보")
+                .sleepDurationFormatted("6시간 30분")
                 .build();
 
         mockWeatherData = WeatherData.builder()
@@ -73,11 +87,13 @@ class ContextServiceTest {
     class InitializeContext {
 
         @Test
-        @DisplayName("성공: 새로운 UserContext를 생성하고 저장한다")
-        void success_createsAndStoresContext() {
+        @DisplayName("성공: 새로운 UserContext를 생성하고 저장한다 (healthData 없이)")
+        void success_createsAndStoresContext_withoutHealthData() {
             // given
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
             given(healthDataService.getTodayHealthData(userId)).willReturn(mockHealthData);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
             given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
 
             // when
@@ -88,7 +104,7 @@ class ContextServiceTest {
             assertThat(result.getUserId()).isEqualTo(userId);
             assertThat(result.getDate()).isEqualTo(LocalDate.now());
             assertThat(result.getPreferences()).isEqualTo(mockPreferences);
-            assertThat(result.getTodayHealthData()).isEqualTo(mockHealthData);
+            assertThat(result.getEnrichedHealthData()).isEqualTo(mockEnrichedHealthData);
             assertThat(result.getTodayWeather()).isEqualTo(mockWeatherData);
             assertThat(result.isActive()).isTrue();
             assertThat(result.getConversationHistory()).isEmpty();
@@ -99,19 +115,65 @@ class ContextServiceTest {
         }
 
         @Test
-        @DisplayName("성공: 외부 서비스들이 올바르게 호출된다")
-        void success_callsExternalServices() {
+        @DisplayName("성공: healthData와 함께 UserContext를 생성하고 저장한다")
+        void success_createsAndStoresContext_withHealthData() {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+
+            // when
+            UserContext result = contextService.initializeContext(userId, mockHealthData);
+
+            // then
+            assertThat(result).isNotNull();
+            assertThat(result.getUserId()).isEqualTo(userId);
+            assertThat(result.getDate()).isEqualTo(LocalDate.now());
+            assertThat(result.getPreferences()).isEqualTo(mockPreferences);
+            assertThat(result.getEnrichedHealthData()).isEqualTo(mockEnrichedHealthData);
+            assertThat(result.getTodayWeather()).isEqualTo(mockWeatherData);
+            assertThat(result.isActive()).isTrue();
+            assertThat(result.getConversationHistory()).isEmpty();
+
+            // ContextService는 더 이상 건강 데이터 저장을 담당하지 않음 (ConversationService에서 처리)
+        }
+
+        @Test
+        @DisplayName("성공: 외부 서비스들이 올바르게 호출된다 (healthData 제공 시)")
+        void success_callsExternalServices_withHealthData() {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+
+            // when
+            contextService.initializeContext(userId, mockHealthData);
+
+            // then (건강 데이터 저장은 ConversationService에서 담당)
+            then(userService).should(times(1)).getPreferences(userId);
+            then(healthDataService).should(times(1)).buildEnrichedHealthData(eq(mockHealthData), eq(userId), any());
+            then(weatherClient).should(times(1)).getCurrentWeather();
+        }
+
+        @Test
+        @DisplayName("성공: 외부 서비스들이 올바르게 호출된다 (healthData null)")
+        void success_callsExternalServices_withoutHealthData() {
             // given
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
             given(healthDataService.getTodayHealthData(userId)).willReturn(mockHealthData);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
             given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
 
             // when
             contextService.initializeContext(userId);
 
-            // then
+            // then (건강 데이터 저장은 ConversationService에서 담당)
             then(userService).should(times(1)).getPreferences(userId);
             then(healthDataService).should(times(1)).getTodayHealthData(userId);
+            then(healthDataService).should(times(1)).buildEnrichedHealthData(eq(mockHealthData), eq(userId), any());
             then(weatherClient).should(times(1)).getCurrentWeather();
         }
     }
@@ -125,10 +187,11 @@ class ContextServiceTest {
         void success_returnsStoredContext() {
             // given
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
-            given(healthDataService.getTodayHealthData(userId)).willReturn(mockHealthData);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
             given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
 
-            contextService.initializeContext(userId);
+            contextService.initializeContext(userId, mockHealthData);
 
             // when
             UserContext result = contextService.getContext(userId);
@@ -160,10 +223,11 @@ class ContextServiceTest {
         void success_addsConversationTurn() {
             // given
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
-            given(healthDataService.getTodayHealthData(userId)).willReturn(mockHealthData);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
             given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
 
-            contextService.initializeContext(userId);
+            contextService.initializeContext(userId, mockHealthData);
 
             String userMessage = "오늘 날씨가 좋네요";
             String aiResponse = "네, 정말 좋은 날씨예요!";
@@ -184,10 +248,11 @@ class ContextServiceTest {
         void success_addsMultipleConversationTurns() {
             // given
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
-            given(healthDataService.getTodayHealthData(userId)).willReturn(mockHealthData);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
             given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
 
-            contextService.initializeContext(userId);
+            contextService.initializeContext(userId, mockHealthData);
 
             // when
             contextService.addConversationTurn(userId, "첫 번째 메시지", "첫 번째 응답");
@@ -211,10 +276,11 @@ class ContextServiceTest {
         void success_removesContext() {
             // given
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
-            given(healthDataService.getTodayHealthData(userId)).willReturn(mockHealthData);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
             given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
 
-            contextService.initializeContext(userId);
+            contextService.initializeContext(userId, mockHealthData);
 
             // when
             contextService.finalizeContext(userId);

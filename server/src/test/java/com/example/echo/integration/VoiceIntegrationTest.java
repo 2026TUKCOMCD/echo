@@ -33,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * 실제 외부 API 호출:
  * - STT: OpenAI Whisper API
- * - TTS: Naver Clova Voice API
+ * - TTS: Azure Cognitive Services TTS API
  *
  * 주의: 테스트 실행 시 실제 API 비용이 발생합니다.
  */
@@ -90,7 +90,7 @@ class VoiceIntegrationTest {
     class TtsIntegrationTest {
 
         @Test
-        @DisplayName("한국어 텍스트 -> Clova TTS API -> MP3 음성 데이터")
+        @DisplayName("한국어 텍스트 -> Azure TTS API -> MP3 음성 데이터")
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         void tts_withKoreanText_shouldReturnMp3Audio() throws Exception {
             // Given
