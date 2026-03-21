@@ -21,6 +21,10 @@ openai:
   api:
     key: ${OPENAI_API_KEY}
 
+kakao:
+  api:
+    key: ${KAKAO_API_KEY}
+
 azure:
   tts:
     endpoint: https://koreacentral.tts.speech.microsoft.com
