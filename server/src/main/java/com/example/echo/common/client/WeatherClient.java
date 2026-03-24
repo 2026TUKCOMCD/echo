@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
  * OpenWeatherMap API를 사용하여 현재 날씨 정보 조회
  * - 한국어 날씨 설명 지원
  * - 섭씨 온도 반환
+ * - 위치 정보가 없으면 조회하지 않음 (null 반환)
  */
 @Slf4j
 @Component
@@ -24,27 +25,20 @@ public class WeatherClient {
     @Value("${weather.api.key}")
     private String apiKey;
 
-    // 기본 위치: 서울 (위치 파라미터는 #234에서 추가 예정)
-    private static final Double DEFAULT_LATITUDE = 37.5665;
-    private static final Double DEFAULT_LONGITUDE = 126.9780;
-
     /**
-     * 현재 날씨 조회 (기본 위치: 서울)
+     * 현재 날씨 조회
      *
-     * @return 날씨 정보 (description, temperature)
+     * @param latitude 위도 (null이면 조회하지 않음)
+     * @param longitude 경도 (null이면 조회하지 않음)
+     * @return 날씨 정보 (description, temperature), 위치 정보가 없으면 null
      */
-    public WeatherData getCurrentWeather() {
-        return getWeatherByLocation(DEFAULT_LATITUDE, DEFAULT_LONGITUDE);
-    }
+    public WeatherData getCurrentWeather(Double latitude, Double longitude) {
+        // 위치 정보가 없으면 조회하지 않음
+        if (latitude == null || longitude == null) {
+            log.debug("위치 정보가 없어 날씨 조회를 건너뜁니다");
+            return null;
+        }
 
-    /**
-     * 특정 위치의 현재 날씨 조회
-     *
-     * @param latitude 위도
-     * @param longitude 경도
-     * @return 날씨 정보 (description, temperature)
-     */
-    public WeatherData getWeatherByLocation(Double latitude, Double longitude) {
         try {
             log.debug("날씨 조회 요청 - 위도: {}, 경도: {}", latitude, longitude);
 
@@ -63,11 +57,7 @@ public class WeatherClient {
 
         } catch (Exception e) {
             log.error("날씨 조회 실패 - 위도: {}, 경도: {}, 오류: {}", latitude, longitude, e.getMessage());
-            // 실패 시 기본값 반환
-            return WeatherData.builder()
-                    .description("알 수 없음")
-                    .temperature(null)
-                    .build();
+            return null;
         }
     }
 }

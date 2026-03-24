@@ -66,7 +66,7 @@ public class ContextService {
                 .conversationHistory(new ArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
                 .preferences(preferences)
-                .todayWeather(weatherClient.getCurrentWeather())
+                .todayWeather(weatherClient.getCurrentWeather(null, null))  // TODO: 위치 데이터 연동 시 수정 (#239)
                 .lastAccessTime(LocalDateTime.now())
                 .isActive(true)
                 .build();

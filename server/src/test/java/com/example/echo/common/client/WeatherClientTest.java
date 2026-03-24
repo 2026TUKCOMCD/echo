@@ -17,31 +17,25 @@ class WeatherClientTest {
     private WeatherClient weatherClient;
 
     @Test
-    @DisplayName("기본 위치(서울) 날씨 조회 성공")
-    void getCurrentWeather_success() {
-        // when
-        WeatherData weatherData = weatherClient.getCurrentWeather();
+    @DisplayName("위치 파라미터 null일 때 날씨 조회하지 않고 null 반환")
+    void getCurrentWeather_withNullLocation_returnsNull() {
+        // when - null 전달 시 조회하지 않음
+        WeatherData weatherData = weatherClient.getCurrentWeather(null, null);
 
         // then
-        System.out.println("=== 날씨 조회 결과 ===");
-        System.out.println("WeatherData: " + weatherData);
-        System.out.println("날씨: " + (weatherData != null ? weatherData.getDescription() : "null"));
-        System.out.println("온도: " + (weatherData != null ? weatherData.getTemperature() : "null"));
-
-        assertThat(weatherData).isNotNull();
-        assertThat(weatherData.getDescription()).isNotNull();
-        assertThat(weatherData.getTemperature()).isNotNull();
+        assertThat(weatherData).isNull();
+        System.out.println("=== 위치 정보 없음 - 날씨 조회 건너뜀 ===");
     }
 
     @Test
     @DisplayName("특정 위치(부산) 날씨 조회 성공")
-    void getWeatherByLocation_success() {
+    void getCurrentWeather_withLocation_success() {
         // given - 부산 좌표
         Double latitude = 35.1796;
         Double longitude = 129.0756;
 
         // when
-        WeatherData weatherData = weatherClient.getWeatherByLocation(latitude, longitude);
+        WeatherData weatherData = weatherClient.getCurrentWeather(latitude, longitude);
 
         // then
         assertThat(weatherData).isNotNull();
