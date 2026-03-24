@@ -1,6 +1,8 @@
 package com.example.echo.conversation.dto;
 
 import com.example.echo.health.dto.HealthData;
+import com.example.echo.location.dto.RawLocationData;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -8,9 +10,10 @@ import lombok.NoArgsConstructor;
 /**
  * 대화 시작 요청 DTO
  *
- * 앱에서 전송하는 오늘 건강 데이터를 수신
+ * 앱에서 전송하는 오늘 건강 데이터와 위치 데이터를 수신
  * 대화 시작 시 건강 데이터를 즉시 저장하여 손실 방지
  */
+@Schema(description = "대화 시작 요청")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -21,5 +24,14 @@ public class ConversationStartRequest {
      * - Health Connect에서 수집된 데이터
      * - null인 경우 DB에서 기존 데이터 조회
      */
+    @Schema(description = "오늘 건강 데이터 (Health Connect에서 수집)")
     private HealthData healthData;
+
+    /**
+     * 앱에서 전송하는 위치 데이터
+     * - 현재 위치, 방문 장소, 이동 거리 등
+     * - null인 경우 위치 기반 대화 주제 생성 불가
+     */
+    @Schema(description = "위치 데이터 (현재 위치, 방문 장소 등)")
+    private RawLocationData locationData;
 }
