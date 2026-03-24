@@ -34,6 +34,12 @@ openai:
     temperature: 0.7
     max-tokens: 1024
 
+# OpenWeatherMap API 설정
+weather:
+  api:
+    url: https://api.openweathermap.org
+    # api-key는 application-local.yaml에서 설정
+
 # Azure Cognitive Services TTS 설정
 azure:
   tts:
