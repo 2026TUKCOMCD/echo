@@ -6,7 +6,6 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
-import com.example.echo.location.service.LocationService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.user.service.UserService;
@@ -41,9 +40,6 @@ class ContextServiceTest {
 
     @Mock
     private WeatherClient weatherClient;
-
-    @Mock
-    private LocationService locationService;
 
     private Long userId;
     private UserPreferences mockPreferences;
