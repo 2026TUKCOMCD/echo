@@ -1,6 +1,7 @@
 package com.example.echo.location.service;
 
 import com.example.echo.location.client.GeocodingClient;
+import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.dto.KakaoGeocodingResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,69 +25,88 @@ class GeocodingServiceTest {
     @InjectMocks
     private GeocodingService geocodingService;
 
-    @Test
-    @DisplayName("빌딩명이 있으면 빌딩명을 반환한다")
-    void reverseGeocode_returnsBuildingName() {
-        // Given
-        double lat = 37.5665, lon = 126.9780;
+    // ===== getCityName 테스트 =====
 
+    @Test
+    @DisplayName("getCityName - 도로명주소가 있으면 도로명주소를 반환한다")
+    void getCityName_returnsRoadAddress() {
+        double lat = 37.5665, lon = 126.9780;
         KakaoGeocodingResponse response = buildResponse("강남파이낸스센터", "서울 강남구 테헤란로 152", "서울 강남구 역삼동 737");
         when(geocodingClient.reverseGeocode(lon, lat, "WGS84")).thenReturn(response);
 
-        // When
-        String result = geocodingService.reverseGeocode(lat, lon);
+        String result = geocodingService.getCityName(lat, lon);
 
-        // Then
-        assertThat(result).isEqualTo("강남파이낸스센터");
-    }
-
-    @Test
-    @DisplayName("빌딩명 없으면 도로명주소를 반환한다")
-    void reverseGeocode_returnsRoadAddressWhenNoBuildingName() {
-        // Given
-        double lat = 37.5665, lon = 126.9780;
-
-        KakaoGeocodingResponse response = buildResponse(null, "서울 강남구 테헤란로 152", "서울 강남구 역삼동 737");
-        when(geocodingClient.reverseGeocode(lon, lat, "WGS84")).thenReturn(response);
-
-        // When
-        String result = geocodingService.reverseGeocode(lat, lon);
-
-        // Then
+        // 빌딩명이 아닌 도로명주소 반환
         assertThat(result).isEqualTo("서울 강남구 테헤란로 152");
     }
 
     @Test
-    @DisplayName("documents가 비어있으면 '알 수 없는 위치'를 반환한다")
-    void reverseGeocode_returnsUnknownWhenDocumentsEmpty() {
-        // Given
+    @DisplayName("getCityName - API 실패 시 null을 반환한다")
+    void getCityName_returnsNullOnApiFailure() {
         double lat = 37.5665, lon = 126.9780;
+        when(geocodingClient.reverseGeocode(lon, lat, "WGS84"))
+                .thenThrow(new RuntimeException("Connection refused"));
 
+        String result = geocodingService.getCityName(lat, lon);
+
+        assertThat(result).isNull();
+    }
+
+    // ===== reverseGeocode 테스트 =====
+
+    @Test
+    @DisplayName("reverseGeocode - 빌딩명이 있으면 placeName에 빌딩명, address에 도로명주소를 반환한다")
+    void reverseGeocode_returnsBuildingNameAsPlaceName() {
+        double lat = 37.5665, lon = 126.9780;
+        KakaoGeocodingResponse response = buildResponse("강남파이낸스센터", "서울 강남구 테헤란로 152", "서울 강남구 역삼동 737");
+        when(geocodingClient.reverseGeocode(lon, lat, "WGS84")).thenReturn(response);
+
+        GeocodingResult result = geocodingService.reverseGeocode(lat, lon);
+
+        assertThat(result.getPlaceName()).isEqualTo("강남파이낸스센터");
+        assertThat(result.getAddress()).isEqualTo("서울 강남구 테헤란로 152");
+    }
+
+    @Test
+    @DisplayName("reverseGeocode - 빌딩명 없으면 placeName에 도로명주소를 반환한다")
+    void reverseGeocode_returnsRoadAddressAsPlaceNameWhenNoBuildingName() {
+        double lat = 37.5665, lon = 126.9780;
+        KakaoGeocodingResponse response = buildResponse(null, "서울 강남구 테헤란로 152", "서울 강남구 역삼동 737");
+        when(geocodingClient.reverseGeocode(lon, lat, "WGS84")).thenReturn(response);
+
+        GeocodingResult result = geocodingService.reverseGeocode(lat, lon);
+
+        assertThat(result.getPlaceName()).isEqualTo("서울 강남구 테헤란로 152");
+        assertThat(result.getAddress()).isEqualTo("서울 강남구 테헤란로 152");
+    }
+
+    @Test
+    @DisplayName("reverseGeocode - documents가 비어있으면 placeName과 address가 null인 빈 결과를 반환한다")
+    void reverseGeocode_returnsEmptyResultWhenDocumentsEmpty() {
+        double lat = 37.5665, lon = 126.9780;
         KakaoGeocodingResponse response = new KakaoGeocodingResponse();
         response.setDocuments(Collections.emptyList());
         when(geocodingClient.reverseGeocode(lon, lat, "WGS84")).thenReturn(response);
 
-        // When
-        String result = geocodingService.reverseGeocode(lat, lon);
+        GeocodingResult result = geocodingService.reverseGeocode(lat, lon);
 
-        // Then
-        assertThat(result).isEqualTo("알 수 없는 위치");
+        assertThat(result).isNotNull();
+        assertThat(result.getPlaceName()).isNull();
+        assertThat(result.getAddress()).isNull();
     }
 
     @Test
-    @DisplayName("API 호출 실패 시 예외를 던지지 않고 null을 반환한다")
-    void reverseGeocode_returnsNullOnApiFailure() {
-        // Given
+    @DisplayName("reverseGeocode - API 실패 시 예외를 던지지 않고 빈 결과를 반환한다")
+    void reverseGeocode_returnsEmptyResultOnApiFailure() {
         double lat = 37.5665, lon = 126.9780;
-
         when(geocodingClient.reverseGeocode(lon, lat, "WGS84"))
                 .thenThrow(new RuntimeException("Connection refused"));
 
-        // When
-        String result = geocodingService.reverseGeocode(lat, lon);
+        GeocodingResult result = geocodingService.reverseGeocode(lat, lon);
 
-        // Then
-        assertThat(result).isNull();
+        assertThat(result).isNotNull();
+        assertThat(result.getPlaceName()).isNull();
+        assertThat(result.getAddress()).isNull();
     }
 
     // ===== 헬퍼 메서드 =====
