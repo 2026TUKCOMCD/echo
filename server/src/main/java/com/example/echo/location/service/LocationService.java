@@ -1,5 +1,6 @@
 package com.example.echo.location.service;
 
+import com.example.echo.location.client.GeocodingClient;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.RawLocationData;
@@ -15,25 +16,22 @@ import java.util.List;
 /**
  * 원시 위치 데이터(RawLocationData) → 보강된 위치 데이터(LocationData) 변환
  *
- * GeocodingService를 통해 좌표를 장소명/주소로 변환한다.
+ * GeocodingClient를 통해 좌표를 장소명/주소로 변환한다.
  * 변환 결과는 ContextService에서 UserContext에 저장되어 대화 세션 동안 재사용된다.
- *
- * 담당: yuripiece (S9)
- * 수정: GeocodingClient 직접 주입 → GeocodingService 주입으로 변경
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LocationService {
 
-    private final GeocodingService geocodingService;
+    private final GeocodingClient geocodingClient;
 
     public LocationData enrichLocationData(RawLocationData raw) {
         if (raw == null) {
             return null;
         }
 
-        String currentCity = geocodingService.getCityName(
+        String currentCity = geocodingClient.getCityName(
                 raw.getCurrentLatitude(),
                 raw.getCurrentLongitude()
         );
@@ -53,7 +51,7 @@ public class LocationService {
     }
 
     private VisitedPlace enrichVisitedPlace(RawVisitedPlace raw) {
-        GeocodingResult result = geocodingService.reverseGeocode(
+        GeocodingResult result = geocodingClient.reverseGeocode(
                 raw.getLatitude(),
                 raw.getLongitude()
         );

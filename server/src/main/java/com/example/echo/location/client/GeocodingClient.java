@@ -1,29 +1,59 @@
 package com.example.echo.location.client;
 
+import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.dto.KakaoGeocodingResponse;
-import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
- * Kakao 역지오코딩 Feign 클라이언트
+ * 역지오코딩 클라이언트
  *
- * 좌표(위도/경도) → 주소명 변환
+ * GeocodingFeignClient(Kakao API)의 래퍼.
+ * LocationService에서 사용하는 비즈니스 메서드를 제공한다.
  *
  * 주의: Kakao API는 x=경도(lon), y=위도(lat) 순서
- *       GPS의 lat/lon과 반대이므로 호출 시 반드시 확인
+ *       GPS의 lat/lon과 반대이므로 내부에서 처리한다.
  */
-@FeignClient(
-        name = "kakao-geocoding",
-        url = "${kakao.api.url}",
-        configuration = KakaoFeignConfig.class
-)
-public interface GeocodingClient {
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class GeocodingClient {
 
-    @GetMapping("/v2/local/geo/coord2address.json")
-    KakaoGeocodingResponse reverseGeocode(
-            @RequestParam("x") double lon,
-            @RequestParam("y") double lat,
-            @RequestParam("input_coord") String inputCoord
-    );
+    private final GeocodingFeignClient geocodingFeignClient;
+
+    public String getCityName(double lat, double lon) {
+        try {
+            KakaoGeocodingResponse response = geocodingFeignClient.reverseGeocode(lon, lat, "WGS84");
+            return extractAddress(response);
+        } catch (Exception e) {
+            log.warn("현재 위치 역지오코딩 실패 - lat:{}, lon:{}, 이유:{}", lat, lon, e.getMessage());
+            return null;
+        }
+    }
+
+    public GeocodingResult reverseGeocode(double lat, double lon) {
+        try {
+            KakaoGeocodingResponse response = geocodingFeignClient.reverseGeocode(lon, lat, "WGS84");
+            return GeocodingResult.builder()
+                    .placeName(response.getBestPlaceName())
+                    .address(extractAddress(response))
+                    .build();
+        } catch (Exception e) {
+            log.warn("방문 장소 역지오코딩 실패 - lat:{}, lon:{}, 이유:{}", lat, lon, e.getMessage());
+            return GeocodingResult.builder().build();
+        }
+    }
+
+    private String extractAddress(KakaoGeocodingResponse response) {
+        if (response.getDocuments() == null || response.getDocuments().isEmpty()) return null;
+        KakaoGeocodingResponse.Document doc = response.getDocuments().get(0);
+        if (doc.getRoadAddress() != null && doc.getRoadAddress().getAddressName() != null) {
+            return doc.getRoadAddress().getAddressName();
+        }
+        if (doc.getAddress() != null) {
+            return doc.getAddress().getAddressName();
+        }
+        return null;
+    }
 }
