@@ -12,6 +12,8 @@ package com.example.echo.prompt.service;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
+import com.example.echo.location.dto.LocationData;
+import com.example.echo.location.dto.VisitedPlace;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
@@ -22,6 +24,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -48,16 +51,14 @@ public class PromptService {
      *
      * [최적화] Context에서 EnrichedHealthData 직접 사용 - DB 재조회 없음
      *
-     * 템플릿 변수 (v6):
+     * 템플릿 변수 (v7):
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
      * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}, {{preferredSleepHours}}
      * - 날씨: {{weather}}, {{temperature}}
+     * - 위치: {{currentCity}}, {{visitedPlacesText}}, {{hasVisitedPlaces}}
      * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{activityList}}
      * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}
      * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
-     *
-     * 참고: v5 대비 제거된 변수 — {{sleepInfo}} (sleepDuration과 중복)
-     * (PromptService는 여전히 map에 sleepInfo를 추가하나 v6 템플릿에서 사용하지 않으므로 무해하게 무시됨)
      *
      * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
@@ -113,8 +114,40 @@ public class PromptService {
         variables.put("stepsEvaluation", healthData != null ? healthData.getStepsEvaluation() : "");
         variables.put("wakeTimeEvaluation", healthData != null ? healthData.getWakeTimeEvaluation() : "");
 
+        // 4-7. 위치 정보
+        LocationData locationData = context.getLocationData();
+        if (locationData != null) {
+            variables.put("currentCity", locationData.getCurrentCity() != null ? locationData.getCurrentCity() : "");
+            variables.put("visitedPlacesText", buildVisitedPlacesText(locationData.getVisitedPlaces()));
+            variables.put("hasVisitedPlaces", locationData.getVisitedPlaces() != null && !locationData.getVisitedPlaces().isEmpty());
+        } else {
+            variables.put("currentCity", "");
+            variables.put("visitedPlacesText", "오늘 방문한 장소가 없습니다.");
+            variables.put("hasVisitedPlaces", false);
+        }
+
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
+    }
+
+    /**
+     * 방문 장소 목록을 텍스트로 변환
+     *
+     * @param places 방문 장소 목록
+     * @return 포맷팅된 방문 장소 텍스트
+     */
+    private String buildVisitedPlacesText(List<VisitedPlace> places) {
+        if (places == null || places.isEmpty()) {
+            return "오늘 방문한 장소가 없습니다.";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (VisitedPlace place : places) {
+            sb.append(String.format("- %s (%d분 체류)\n",
+                    place.getPlaceName(),
+                    place.getStayDurationMinutes()));
+        }
+        return sb.toString().trim();
     }
 
     /**

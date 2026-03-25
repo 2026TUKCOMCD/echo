@@ -1,11 +1,15 @@
 package com.example.echo.context.service;
 
 import com.example.echo.common.client.WeatherClient;
+import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
+import com.example.echo.location.dto.LocationData;
+import com.example.echo.location.dto.RawLocationData;
+import com.example.echo.location.service.LocationService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +31,7 @@ public class ContextService {
     private final UserService userService;
     private final HealthDataService healthDataService;
     private final WeatherClient weatherClient;
+    private final LocationService locationService;
 
     /**
      * 컨텍스트 초기화
@@ -35,13 +40,16 @@ public class ContextService {
      *
      * 1. 사용자 선호도 조회 (DB 읽기 1회)
      * 2. EnrichedHealthData 생성 (7일치 배치 조회 1회 + 서버 평균 계산)
-     * 3. 컨텍스트 생성 및 저장
+     * 3. 위치 데이터 변환 (RawLocationData → LocationData)
+     * 4. 위치 기반 날씨 조회
+     * 5. 컨텍스트 생성 및 저장
      *
      * @param userId 사용자 ID
      * @param healthData 오늘 건강 데이터 (null이면 DB에서 조회)
+     * @param rawLocationData 원시 위치 데이터 (null 허용)
      * @return 초기화된 UserContext
      */
-    public UserContext initializeContext(Long userId, HealthData healthData) {
+    public UserContext initializeContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         log.info("컨텍스트 초기화 시작 - userId: {}", userId);
 
         // 1. 사용자 선호도 조회
@@ -59,14 +67,23 @@ public class ContextService {
         EnrichedHealthData enrichedHealthData = healthDataService.buildEnrichedHealthData(
                 effectiveHealthData, userId, preferredSleepHours);
 
-        // 4. 컨텍스트 생성
+        // 4. 위치 데이터 변환 (RawLocationData → LocationData)
+        LocationData locationData = locationService.enrichLocationData(rawLocationData);
+
+        // 5. 위치 기반 날씨 조회
+        Double latitude = rawLocationData != null ? rawLocationData.getCurrentLatitude() : null;
+        Double longitude = rawLocationData != null ? rawLocationData.getCurrentLongitude() : null;
+        WeatherData weatherData = weatherClient.getCurrentWeather(latitude, longitude);
+
+        // 6. 컨텍스트 생성
         UserContext context = UserContext.builder()
                 .userId(userId)
                 .date(LocalDate.now())
                 .conversationHistory(new ArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
                 .preferences(preferences)
-                .todayWeather(weatherClient.getCurrentWeather(null, null))  // TODO: 위치 데이터 연동 시 수정 (#239)
+                .todayWeather(weatherData)
+                .locationData(locationData)
                 .lastAccessTime(LocalDateTime.now())
                 .isActive(true)
                 .build();
@@ -77,7 +94,18 @@ public class ContextService {
     }
 
     /**
-     * 컨텍스트 초기화 (건강 데이터 없이)
+     * 컨텍스트 초기화 (위치 데이터 없이)
+     *
+     * @param userId 사용자 ID
+     * @param healthData 오늘 건강 데이터 (null이면 DB에서 조회)
+     * @return 초기화된 UserContext
+     */
+    public UserContext initializeContext(Long userId, HealthData healthData) {
+        return initializeContext(userId, healthData, null);
+    }
+
+    /**
+     * 컨텍스트 초기화 (건강 및 위치 데이터 없이)
      *
      * DB에서 오늘 건강 데이터를 조회하여 사용
      *
@@ -85,7 +113,7 @@ public class ContextService {
      * @return 초기화된 UserContext
      */
     public UserContext initializeContext(Long userId) {
-        return initializeContext(userId, null);
+        return initializeContext(userId, null, null);
     }
 
     public UserContext getContext(Long userId) {
