@@ -8,10 +8,7 @@ import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.RawLocationData;
-import com.example.echo.location.dto.RawVisitedPlace;
-import com.example.echo.location.dto.VisitedPlace;
-import com.example.echo.location.dto.GeocodingResult;
-import com.example.echo.location.service.GeocodingService;
+import com.example.echo.location.service.LocationService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +18,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -34,7 +30,7 @@ public class ContextService {
     private final UserService userService;
     private final HealthDataService healthDataService;
     private final WeatherClient weatherClient;
-    private final GeocodingService geocodingService;
+    private final LocationService locationService;
 
     /**
      * 컨텍스트 초기화 (위치 데이터 포함)
@@ -42,7 +38,7 @@ public class ContextService {
      * HealthConnect 데이터 캐싱 패턴과 동일하게:
      * 1. 사용자 선호도 조회
      * 2. EnrichedHealthData 생성
-     * 3. RawLocationData → GeocodingService 호출 → LocationData 변환
+     * 3. RawLocationData → LocationService → LocationData 변환
      * 4. UserContext 생성 후 contextStore에 저장 (세션 동안 재사용)
      *
      * @param userId          사용자 ID
@@ -68,8 +64,9 @@ public class ContextService {
         EnrichedHealthData enrichedHealthData = healthDataService.buildEnrichedHealthData(
                 effectiveHealthData, userId, preferredSleepHours);
 
-        // 4. 위치 데이터 변환: 좌표 → 장소명 (역지오코딩 1회 호출 후 contextStore에 캐싱)
-        LocationData locationData = buildLocationData(rawLocationData);
+        // 4. 위치 데이터 변환: RawLocationData → LocationService → LocationData
+        //    변환 결과는 contextStore에 저장되어 세션 동안 재사용 (API 재호출 없음)
+        LocationData locationData = locationService.enrichLocationData(rawLocationData);
 
         // 5. 컨텍스트 생성 및 저장
         UserContext context = UserContext.builder()
@@ -134,45 +131,5 @@ public class ContextService {
         } else {
             log.warn("컨텍스트 정리 실패 - 이미 제거됨 또는 존재하지 않음 - userId: {}", userId);
         }
-    }
-
-    /**
-     * RawLocationData → LocationData 변환
-     *
-     * GeocodingService로 좌표를 장소명으로 변환한다.
-     * 변환 결과는 contextStore의 UserContext에 저장되어 세션 동안 재사용된다.
-     */
-    private LocationData buildLocationData(RawLocationData raw) {
-        if (raw == null) return null;
-
-        String currentCity = geocodingService.getCityName(
-                raw.getCurrentLatitude(),
-                raw.getCurrentLongitude()
-        );
-
-        List<VisitedPlace> visitedPlaces = new ArrayList<>();
-        if (raw.getVisitedPlaces() != null) {
-            for (RawVisitedPlace rawPlace : raw.getVisitedPlaces()) {
-                GeocodingResult result = geocodingService.reverseGeocode(
-                        rawPlace.getLatitude(),
-                        rawPlace.getLongitude()
-                );
-                visitedPlaces.add(VisitedPlace.builder()
-                        .placeName(result.getPlaceName())
-                        .address(result.getAddress())
-                        .latitude(rawPlace.getLatitude())
-                        .longitude(rawPlace.getLongitude())
-                        .visitStartTime(rawPlace.getVisitStartTime())
-                        .visitEndTime(rawPlace.getVisitEndTime())
-                        .stayDurationMinutes(rawPlace.getStayDurationMinutes())
-                        .build());
-            }
-        }
-
-        return LocationData.builder()
-                .currentCity(currentCity)
-                .visitedPlaces(visitedPlaces)
-                .totalDistanceKm(raw.getTotalDistanceKm())
-                .build();
     }
 }
