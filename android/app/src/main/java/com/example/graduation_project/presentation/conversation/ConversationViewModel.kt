@@ -8,6 +8,8 @@ import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.health.HealthConnectRepositoryImpl
+import com.example.graduation_project.data.model.RawLocationData
+import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.MessageEntity
@@ -64,10 +66,11 @@ class ConversationViewModel(
     private val repository: ConversationRepository = ConversationRepository(),
     private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao(),
     private val audioRecordManager: AudioRecordManager = AudioRecordManager(application),
-    private val getHealthDataUseCase: GetHealthDataUseCase = GetHealthDataUseCase(
+    private val healthRepository: IHealthRepository =
         HealthConnectRepositoryImpl(HealthConnectManager(application))
-    )
 ) : AndroidViewModel(application) {
+
+    private val getHealthDataUseCase = GetHealthDataUseCase(healthRepository)
 
     // 내부에서만 수정 가능한 상태
     // TODO: 실제 사용자 정보는 DataStore/SharedPreferences에서 가져오기
@@ -298,11 +301,24 @@ class ConversationViewModel(
             if (!transitionTo(ConversationState.Sending)) return@launch
             _uiState.update { it.copy(errorMessage = null, currentError = null) }
 
+            // [A11] 위치 데이터 수집 중 메시지
+            _uiState.update { it.copy(processingMessage = "위치 데이터 수집 중") }
+
+            // [A10] ExerciseRoute 수집 → locationData 조립
+            val routes = healthRepository.readTodayExerciseRoutes()
+
             // PROCESSING 타이머 시작
+            _uiState.update { it.copy(processingMessage = null) }
             startProcessingTimer()
 
             val healthData = getHealthDataUseCase()
-            val result = repository.startConversation(healthData)
+            val locationData = RawLocationData(
+                currentLatitude = null,   // yuripiece A2 연동 후 채워짐
+                currentLongitude = null,  // yuripiece A2 연동 후 채워짐
+                visitedPlaces = routes,
+                totalDistanceKm = healthData.exerciseDistanceKm
+            )
+            val result = repository.startConversation(healthData, locationData)
 
             // PROCESSING 타이머 중지
             stopProcessingTimer()
