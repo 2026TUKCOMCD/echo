@@ -1,6 +1,5 @@
 package com.example.echo.location.service;
 
-import com.example.echo.location.client.GeocodingClient;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.RawLocationData;
@@ -24,14 +23,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class LocationService {
 
-    private final GeocodingClient geocodingClient;
+    private final GeocodingService geocodingService;
 
     public LocationData enrichLocationData(RawLocationData raw) {
         if (raw == null) {
             return null;
         }
 
-        String currentCity = geocodingClient.getCityName(
+        String currentCity = geocodingService.getCityName(
                 raw.getCurrentLatitude(),
                 raw.getCurrentLongitude()
         );
@@ -51,7 +50,7 @@ public class LocationService {
     }
 
     private VisitedPlace enrichVisitedPlace(RawVisitedPlace raw) {
-        GeocodingResult result = geocodingClient.reverseGeocode(
+        GeocodingResult result = geocodingService.reverseGeocode(
                 raw.getLatitude(),
                 raw.getLongitude()
         );
