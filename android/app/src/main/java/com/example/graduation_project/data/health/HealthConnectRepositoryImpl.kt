@@ -4,6 +4,7 @@ import com.example.graduation_project.data.model.RawVisitedPlace
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.domain.health.SleepSummary
+import com.example.graduation_project.domain.model.LocationPoint
 
 /**
  * IHealthRepository 구현체.
@@ -27,4 +28,7 @@ class HealthConnectRepositoryImpl(
 
     override suspend fun readTodayExerciseRoutes(): List<RawVisitedPlace> =
         manager.readTodayExerciseRoutes()
+
+    override suspend fun readExerciseSessionLocations(): List<List<LocationPoint>> =
+        manager.readExerciseSessionLocations()
 }

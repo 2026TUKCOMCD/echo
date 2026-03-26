@@ -16,6 +16,7 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import com.example.graduation_project.data.model.RawVisitedPlace
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.SleepSummary
+import com.example.graduation_project.domain.model.LocationPoint
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -238,6 +239,39 @@ class HealthConnectManager(private val context: Context) {
             )
         }
         return result
+    }
+
+    /**
+     * 오늘 자정(00:00) → 현재 범위의 운동 세션에서 GPS 좌표 전체를 세션별로 추출.
+     * - route가 없거나 좌표가 2개 미만인 세션은 제외 (StayPointDetector 처리 불가)
+     * - 데이터 없으면 빈 리스트 반환
+     */
+    suspend fun readExerciseSessionLocations(): List<List<LocationPoint>> {
+        val client = HealthConnectClient.getOrCreate(context)
+        val zone = ZoneId.systemDefault()
+        val startTime = LocalDate.now(zone).atStartOfDay(zone).toInstant()
+        val endTime = Instant.now()
+
+        val sessions = client.readRecords(
+            ReadRecordsRequest(
+                recordType = ExerciseSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+        ).records
+
+        return sessions.mapNotNull { session ->
+            val routeResult = session.exerciseRouteResult
+            if (routeResult !is ExerciseRouteResult.Data) return@mapNotNull null
+            val locations = routeResult.exerciseRoute.route
+            if (locations.size < 2) return@mapNotNull null
+            locations.map { location ->
+                LocationPoint(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    timestamp = location.time
+                )
+            }
+        }
     }
 
     /**
