@@ -55,7 +55,7 @@ public class PromptService {
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
      * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}, {{preferredSleepHours}}
      * - 날씨: {{weather}}, {{temperature}}
-     * - 위치: {{currentCity}}, {{visitedPlacesText}}, {{hasVisitedPlaces}}
+     * - 위치: {{currentCity}}, {{visitedPlacesText}}
      * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{activityList}}
      * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}
      * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
@@ -101,7 +101,6 @@ public class PromptService {
         variables.put("steps", healthData != null ? healthData.getStepsFormatted() : "");
         variables.put("exerciseDistance", healthData != null ? healthData.getExerciseDistanceFormatted() : "");
         variables.put("exerciseActivity", healthData != null ? healthData.getExerciseActivity() : "");
-        variables.put("sleepInfo", healthData != null ? healthData.getSleepDurationFormatted() : "");
         variables.put("activityList", healthData != null ? healthData.getActivityList() : "");
 
         // 4-5. 수면 상세 데이터 (EnrichedHealthData에서 포맷팅된 값 사용)
@@ -119,11 +118,9 @@ public class PromptService {
         if (locationData != null) {
             variables.put("currentCity", locationData.getCurrentCity() != null ? locationData.getCurrentCity() : "");
             variables.put("visitedPlacesText", buildVisitedPlacesText(locationData.getVisitedPlaces()));
-            variables.put("hasVisitedPlaces", locationData.getVisitedPlaces() != null && !locationData.getVisitedPlaces().isEmpty());
         } else {
             variables.put("currentCity", "");
             variables.put("visitedPlacesText", "오늘 방문한 장소가 없습니다.");
-            variables.put("hasVisitedPlaces", false);
         }
 
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
@@ -133,8 +130,11 @@ public class PromptService {
     /**
      * 방문 장소 목록을 텍스트로 변환
      *
+     * 체류 시간이 긴 장소부터 정렬하여 대화 주제 우선순위 결정
+     * 체류 시간은 명시하지 않음 (자연스러운 대화 유도)
+     *
      * @param places 방문 장소 목록
-     * @return 포맷팅된 방문 장소 텍스트
+     * @return 포맷팅된 방문 장소 텍스트 (체류 시간 내림차순 정렬)
      */
     private String buildVisitedPlacesText(List<VisitedPlace> places) {
         if (places == null || places.isEmpty()) {
@@ -142,11 +142,11 @@ public class PromptService {
         }
 
         StringBuilder sb = new StringBuilder();
-        for (VisitedPlace place : places) {
-            sb.append(String.format("- %s (%d분 체류)\n",
-                    place.getPlaceName(),
-                    place.getStayDurationMinutes()));
-        }
+        places.stream()
+                .sorted((a, b) -> Integer.compare(
+                        b.getStayDurationMinutes() != null ? b.getStayDurationMinutes() : 0,
+                        a.getStayDurationMinutes() != null ? a.getStayDurationMinutes() : 0))
+                .forEach(place -> sb.append(String.format("- %s\n", place.getPlaceName())));
         return sb.toString().trim();
     }
 

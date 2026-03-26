@@ -648,10 +648,8 @@ INSERT INTO prompt_templates (template_type, template_content, version, is_activ
 현재 위치: {{currentCity}}
 날씨: {{weather}}, {{temperature}}
 
-{{#hasVisitedPlaces}}
 [오늘 방문한 장소]
 {{visitedPlacesText}}
-{{/hasVisitedPlaces}}
 
 ────────────────────────────
 [오늘의 건강 데이터]
@@ -693,15 +691,11 @@ INSERT INTO prompt_templates (template_type, template_content, version, is_activ
   - {{sleepEvaluation}}을 참고해 오늘 컨디션을 가볍게 묻는다.
 
 ▶ [방문 장소 회상 또는 날씨 기반 대화] (진입점 결정)
-  {{#hasVisitedPlaces}}
-  - 방문 장소가 있으면: "오늘 [장소명]에 다녀오셨네요!" 로 시작
-  - 방문 장소에 대한 경험, 감정, 추억을 물어보세요.
-  - 체류 시간이 긴 장소부터 우선적으로 대화 주제로 활용합니다.
-  {{/hasVisitedPlaces}}
-  {{^hasVisitedPlaces}}
-  - 방문 장소가 없으면: "오늘 {{currentCity}} 날씨가 {{weather}}네요." 로 시작
-  - 날씨를 바탕으로 오늘 하루 활동이나 기분을 자연스럽게 묻습니다.
-  {{/hasVisitedPlaces}}
+  - [오늘 방문한 장소]에 장소가 있으면: "오늘 [장소명]에 다녀오셨네요!" 로 시작
+    · 방문 장소에 대한 경험, 감정, 추억을 물어보세요.
+    · 목록 상단의 장소부터 우선적으로 대화 주제로 활용합니다.
+  - [오늘 방문한 장소]가 비어있으면: "오늘 {{currentCity}} 날씨가 {{weather}}네요." 로 시작
+    · 날씨를 바탕으로 오늘 하루 활동이나 기분을 자연스럽게 묻습니다.
 
 ▶ [활동/수면 회상] (2~3턴)
   - {{activityList}}에 활동이 있으면 해당 활동에 대해 자연스럽게 질문합니다.
