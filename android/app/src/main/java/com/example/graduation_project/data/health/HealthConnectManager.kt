@@ -6,14 +6,17 @@ import android.net.Uri
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.example.graduation_project.data.model.RawVisitedPlace
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.SleepSummary
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -195,6 +198,46 @@ class HealthConnectManager(private val context: Context) {
         ExerciseSessionRecord.EXERCISE_TYPE_TENNIS -> "테니스"
         ExerciseSessionRecord.EXERCISE_TYPE_BADMINTON -> "배드민턴"
         else -> "운동"
+    }
+
+    /**
+     * 오늘 자정(00:00) → 현재 범위의 운동 세션에서 ExerciseRoute 중간점을 추출.
+     * SDK 1.1.0+: session.exerciseRoute로 직접 접근 (getExerciseRouteRequest 불필요).
+     * route가 없는 세션은 건너뜀. 데이터 없으면 빈 리스트 반환.
+     */
+    suspend fun readTodayExerciseRoutes(): List<RawVisitedPlace> {
+        val client = HealthConnectClient.getOrCreate(context)
+        val zone = ZoneId.systemDefault()
+        val startTime = LocalDate.now(zone).atStartOfDay(zone).toInstant()
+        val endTime = Instant.now()
+
+        val sessions = client.readRecords(
+            ReadRecordsRequest(
+                recordType = ExerciseSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+        ).records
+
+        val result = mutableListOf<RawVisitedPlace>()
+        for (session in sessions) {
+            val routeResult = session.exerciseRouteResult
+            if (routeResult !is ExerciseRouteResult.Data) continue
+            val locations = routeResult.exerciseRoute.route
+            if (locations.isEmpty()) continue
+            val midPoint = locations[locations.size / 2]
+            val durationMin = Duration.between(session.startTime, session.endTime)
+                .toMinutes().toInt()
+            result.add(
+                RawVisitedPlace(
+                    latitude = midPoint.latitude,
+                    longitude = midPoint.longitude,
+                    visitStartTime = session.startTime.toString(),
+                    visitEndTime = session.endTime.toString(),
+                    stayDurationMinutes = durationMin
+                )
+            )
+        }
+        return result
     }
 
     /**
