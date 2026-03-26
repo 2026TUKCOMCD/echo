@@ -30,3 +30,17 @@ sealed class MicrophonePermissionEvent {
     /** 권한 상태 변경 */
     data class PermissionResult(val isGranted: Boolean) : MicrophonePermissionEvent()
 }
+
+/**
+ * 위치 권한 관련 이벤트
+ */
+sealed class LocationPermissionEvent {
+    /** 권한 요청 */
+    data object RequestPermission : LocationPermissionEvent()
+
+    /** 설정 화면으로 이동 */
+    data object OpenSettings : LocationPermissionEvent()
+
+    /** 권한 상태 변경 */
+    data class PermissionResult(val isGranted: Boolean) : LocationPermissionEvent()
+}
