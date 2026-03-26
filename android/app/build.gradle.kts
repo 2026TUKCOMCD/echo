@@ -88,6 +88,9 @@ dependencies {
     // VAD (Voice Activity Detection)
     implementation(libs.android.vad.silero)
 
+    // Location
+    implementation(libs.play.services.location)
+
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
