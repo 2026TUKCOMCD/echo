@@ -1,39 +1,34 @@
 /*
- * Clova Voice API TTS 클라이언트
- * - 텍스트를 음성(MP3)으로 변환
- */
-
-/*
- * Clova Voice API TTS 클라이언트
+ * Azure Cognitive Services TTS 클라이언트
+ * - SSML(XML) 형식의 텍스트를 음성(MP3)으로 변환
  *
- * @FeignClient: 기본 URL 설정 (https://naveropenapi.apigw.ntruss.com)
+ * @FeignClient: 기본 URL 설정 (https://koreacentral.tts.speech.microsoft.com)
  * @PostMapping:
- *   - value: API 경로 → 기본 URL + "/tts-premium/v1/tts"
- *   - consumes: 요청 형식 (APPLICATION_FORM_URLENCODED - 텍스트 폼 데이터)
+ *   - value: API 경로 → /cognitiveservices/v1
+ *   - consumes: 요청 형식 (application/ssml+xml)
  *   - produces: 응답 형식 (audio/mpeg - MP3 바이너리)
  *
- * @RequestBody: 폼 데이터를 하나의 문자열로 전송
- *   예: "speaker=nara&speed=0&text=안녕하세요"
+ * @RequestBody: SSML XML 문자열로 전송
+ *   예: <speak version='1.0' xml:lang='ko-KR'><voice name='ko-KR-SunHiNeural'>안녕하세요</voice></speak>
  */
 package com.example.echo.voice.client;
 
-import com.example.echo.voice.config.ClovaFeignConfig;
+import com.example.echo.voice.config.AzureTtsFeignConfig;
 import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
 @FeignClient(
     name = "tts-client",
-    url = "${clova.api.url}",
-    configuration = ClovaFeignConfig.class
+    url = "${azure.tts.endpoint}",
+    configuration = AzureTtsFeignConfig.class
 )
 public interface TTSClient {
 
     @PostMapping(
-        value = "/tts-premium/v1/tts",
-        consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
+        value = "/cognitiveservices/v1",
+        consumes = "application/ssml+xml",
         produces = "audio/mpeg"
     )
-    byte[] synthesize(@RequestBody String formData);
+    byte[] synthesize(@RequestBody String ssmlBody);
 }

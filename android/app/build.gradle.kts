@@ -14,7 +14,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.graduation_project"
-        minSdk = 24
+        minSdk = 28
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -26,6 +26,7 @@ android {
     productFlavors {
         create("local") {
             dimension = "server"
+            // 로컬 네트워크 서버 연결
             buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080\"")
         }
         create("prod") {
@@ -95,6 +96,13 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
+
+    // Media3 (ExoPlayer) - 캐릭터 애니메이션 영상 재생
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+
+    // Health Connect
+    implementation(libs.health.connect.client)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

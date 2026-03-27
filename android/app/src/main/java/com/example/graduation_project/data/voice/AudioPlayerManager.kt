@@ -44,6 +44,9 @@ class AudioPlayerManager {
     private val maxRetries: Int = 3                  // 최대 재시도 횟수
     private val retryDelays = listOf(100L, 300L, 900L)  // Exponential backoff (ms)
 
+    // [TEST ONLY] true로 설정하면 play() 호출 시 강제로 DecodeError 발생 → 서버 TTS 재요청 흐름 테스트
+    var forceDecodeErrorForTest = false
+
     /**
      * AudioPlayListener 설정
      */
@@ -87,6 +90,11 @@ class AudioPlayerManager {
         // Base64 디코딩 (한 번만 수행)
         scope?.launch(Dispatchers.IO) {
             try {
+                // [TEST ONLY] 강제 DecodeError 발생
+                if (forceDecodeErrorForTest) {
+                    throw AudioPlayException.DecodeError(message = "[테스트] 강제 DecodeError 발생")
+                }
+
                 val audioBytes = try {
                     Base64.decode(base64AudioData, Base64.DEFAULT)
                 } catch (e: IllegalArgumentException) {
@@ -251,7 +259,7 @@ class AudioPlayerManager {
      *
      * [T2.3-3] 재생 에러 처리 및 재시도 로직
      */
-    private fun isRetryableError(exception: AudioPlayException): Boolean {
+    internal fun isRetryableError(exception: AudioPlayException): Boolean {
         return when (exception) {
             is AudioPlayException.DecodeError -> {
                 // Base64 디코딩 실패 → 같은 데이터로 재시도해도 실패

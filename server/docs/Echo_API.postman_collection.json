@@ -1,0 +1,281 @@
+{
+  "info": {
+    "name": "Echo API",
+    "description": "경도인지장애 분들의 치매 예방을 위한 AI 음성 대화 시스템 API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Conversation",
+      "description": "AI 음성 대화 API",
+      "item": [
+        {
+          "name": "1. 대화 시작 (건강 데이터 포함)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"steps\": 5000,\n  \"sleepDurationMinutes\": 420,\n  \"sleepStartTime\": \"23:00:00\",\n  \"wakeUpTime\": \"07:00:00\",\n  \"exerciseDistanceKm\": 2.5,\n  \"exerciseActivity\": \"산책\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/conversations/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "conversations", "start"]
+            },
+            "description": "AI가 먼저 인사하며 대화를 시작합니다.\n\n**요청 본문**: 건강 데이터 (선택)\n- steps: 오늘 걸음 수\n- sleepDurationMinutes: 수면 시간 (분)\n- sleepStartTime: 취침 시간\n- wakeUpTime: 기상 시간\n- exerciseDistanceKm: 운동 거리\n- exerciseActivity: 운동 활동명\n\n**응답**:\n- message: AI 첫 인사\n- audioData: TTS 음성 (Base64)\n- timestamp: 응답 시간"
+          },
+          "response": []
+        },
+        {
+          "name": "1-1. 대화 시작 (건강 데이터 없음)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/conversations/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "conversations", "start"]
+            },
+            "description": "건강 데이터 없이 대화를 시작합니다.\nDB에 저장된 기존 건강 데이터를 사용합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "2. 음성 메시지 전송",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "audio",
+                  "type": "file",
+                  "src": "",
+                  "description": "음성 파일 (WAV, MP3, M4A 지원)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/conversations/message",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "conversations", "message"]
+            },
+            "description": "사용자 음성 파일을 전송합니다.\n\n**처리 흐름**: STT → AI 응답 → TTS\n\n**요청**: multipart/form-data\n- audio: 음성 파일 (필수)\n\n**응답**:\n- userMessage: STT 변환 결과\n- aiResponse: AI 응답 텍스트\n- audioData: TTS 음성 (Base64)\n- timestamp: 응답 시간"
+          },
+          "response": []
+        },
+        {
+          "name": "3. TTS 재시도",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/conversations/tts-retry",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "conversations", "tts-retry"]
+            },
+            "description": "마지막 AI 응답의 TTS를 재생성합니다.\n\n네트워크 오류 등으로 음성을 받지 못한 경우 사용합니다.\n\n**응답**:\n- audioData: TTS 음성 (Base64)"
+          },
+          "response": []
+        },
+        {
+          "name": "4. 대화 종료",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/conversations/end",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "conversations", "end"]
+            },
+            "description": "대화를 종료하고 일기를 생성합니다.\n\n**처리 내용**:\n1. 대화 내용 기반 일기 생성 (비동기)\n2. 컨텍스트 정리\n\n**응답**:\n- endedAt: 종료 시간"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Test Scenarios",
+      "description": "테스트 시나리오",
+      "item": [
+        {
+          "name": "시나리오 1: 정상 대화 흐름",
+          "item": [
+            {
+              "name": "Step 1: 대화 시작",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"steps\": 6000,\n  \"sleepDurationMinutes\": 480,\n  \"wakeUpTime\": \"06:30:00\",\n  \"exerciseActivity\": \"아침 산책\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/conversations/start",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "conversations", "start"]
+                },
+                "description": "건강 데이터와 함께 대화 시작"
+              },
+              "response": []
+            },
+            {
+              "name": "Step 2: 사용자 음성 응답",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "audio",
+                      "type": "file",
+                      "src": "",
+                      "description": "테스트 음성 파일"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/conversations/message",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "conversations", "message"]
+                },
+                "description": "사용자 음성 메시지 전송"
+              },
+              "response": []
+            },
+            {
+              "name": "Step 3: 대화 종료",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/conversations/end",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "conversations", "end"]
+                },
+                "description": "대화 종료 및 일기 생성"
+              },
+              "response": []
+            }
+          ],
+          "description": "정상적인 대화 흐름 테스트:\n1. 대화 시작 (건강 데이터 포함)\n2. 음성 메시지 전송\n3. 대화 종료"
+        },
+        {
+          "name": "시나리오 2: TTS 재시도",
+          "item": [
+            {
+              "name": "Step 1: 대화 시작",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/conversations/start",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "conversations", "start"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Step 2: TTS 재시도 요청",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/conversations/tts-retry",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "conversations", "tts-retry"]
+                },
+                "description": "음성을 다시 받아야 하는 경우"
+              },
+              "response": []
+            }
+          ],
+          "description": "TTS 재시도 테스트:\n1. 대화 시작\n2. TTS 재시도 요청"
+        },
+        {
+          "name": "시나리오 3: 에러 케이스",
+          "item": [
+            {
+              "name": "컨텍스트 없이 메시지 전송 (에러)",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "audio",
+                      "type": "file",
+                      "src": ""
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/conversations/message",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "conversations", "message"]
+                },
+                "description": "대화 시작 없이 메시지 전송 시 에러 발생 확인"
+              },
+              "response": []
+            },
+            {
+              "name": "컨텍스트 없이 TTS 재시도 (에러)",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/conversations/tts-retry",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "conversations", "tts-retry"]
+                },
+                "description": "대화 기록 없이 TTS 재시도 시 에러 발생 확인"
+              },
+              "response": []
+            }
+          ],
+          "description": "에러 케이스 테스트:\n- 컨텍스트 없이 API 호출 시 적절한 에러 응답 확인"
+        }
+      ]
+    }
+  ]
+}

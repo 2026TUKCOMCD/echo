@@ -37,7 +37,7 @@ class VoiceServiceImplTest {
         voiceService = new VoiceServiceImpl(sttClient, ttsClient);
         ReflectionTestUtils.setField(voiceService, "whisperModel", "whisper-1");
         ReflectionTestUtils.setField(voiceService, "defaultLanguage", "ko");
-        ReflectionTestUtils.setField(voiceService, "defaultSpeaker", "nara");
+        ReflectionTestUtils.setField(voiceService, "defaultVoice", "ko-KR-SunHiNeural");
     }
 
     // ========== STT 테스트 ==========
@@ -258,19 +258,19 @@ class VoiceServiceImplTest {
         }
 
         @Test
-        @DisplayName("텍스트가 2000자 초과이면 VoiceProcessingException 발생")
+        @DisplayName("텍스트가 800자 초과이면 VoiceProcessingException 발생")
         void textExceedsMaxLength_throwsException() {
-            String longText = "가".repeat(2001);
+            String longText = "가".repeat(801);
 
             assertThatThrownBy(() -> voiceService.textToSpeech(longText, null))
                     .isInstanceOf(VoiceProcessingException.class)
-                    .hasMessage("텍스트가 2000자를 초과합니다.");
+                    .hasMessage("텍스트가 800자를 초과합니다.");
         }
 
         @Test
-        @DisplayName("텍스트가 정확히 2000자이면 정상 처리")
-        void textExactly2000chars_success() {
-            String maxText = "가".repeat(2000);
+        @DisplayName("텍스트가 정확히 800자이면 정상 처리")
+        void textExactly800chars_success() {
+            String maxText = "가".repeat(800);
             byte[] expectedAudio = "audio".getBytes();
 
             when(ttsClient.synthesize(any())).thenReturn(expectedAudio);
@@ -281,7 +281,7 @@ class VoiceServiceImplTest {
         }
 
         @Test
-        @DisplayName("VoiceSettings가 null이면 기본값(nara, speed=0) 사용")
+        @DisplayName("VoiceSettings가 null이면 기본값(ko-KR-SunHiNeural, rate=+0%) 사용")
         void nullVoiceSettings_usesDefaults() {
             byte[] expectedAudio = "audio".getBytes();
 
@@ -290,156 +290,156 @@ class VoiceServiceImplTest {
             byte[] result = voiceService.textToSpeech("테스트", null);
 
             assertThat(result).isEqualTo(expectedAudio);
-            verify(ttsClient).synthesize(contains("speaker=nara"));
-            verify(ttsClient).synthesize(contains("speed=0"));
+            verify(ttsClient).synthesize(contains("ko-KR-SunHiNeural"));
+            verify(ttsClient).synthesize(contains("rate='+0%'"));
         }
 
         @Test
-        @DisplayName("voiceTone=warm → speaker=nara")
-        void warmTone_resolvesToNara() {
+        @DisplayName("voiceTone=warm → voice=ko-KR-SunHiNeural")
+        void warmTone_resolvesToSunHi() {
             VoiceSettings settings = VoiceSettings.builder().voiceTone("warm").build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speaker=nara"));
+            verify(ttsClient).synthesize(contains("ko-KR-SunHiNeural"));
         }
 
         @Test
-        @DisplayName("voiceTone=calm → speaker=vyuna")
-        void calmTone_resolvesToVyuna() {
+        @DisplayName("voiceTone=calm → voice=ko-KR-InJoonNeural")
+        void calmTone_resolvesToInJoon() {
             VoiceSettings settings = VoiceSettings.builder().voiceTone("calm").build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speaker=vyuna"));
+            verify(ttsClient).synthesize(contains("ko-KR-InJoonNeural"));
         }
 
         @Test
-        @DisplayName("voiceTone=bright → speaker=vdain")
-        void brightTone_resolvesToVdain() {
+        @DisplayName("voiceTone=bright → voice=ko-KR-JiMinNeural")
+        void brightTone_resolvesToJiMin() {
             VoiceSettings settings = VoiceSettings.builder().voiceTone("bright").build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speaker=vdain"));
+            verify(ttsClient).synthesize(contains("ko-KR-JiMinNeural"));
         }
 
         @Test
-        @DisplayName("voiceTone=gentle → speaker=nminyoung")
-        void gentleTone_resolvesToNminyoung() {
+        @DisplayName("voiceTone=gentle → voice=ko-KR-YuJinNeural")
+        void gentleTone_resolvesToYuJin() {
             VoiceSettings settings = VoiceSettings.builder().voiceTone("gentle").build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speaker=nminyoung"));
+            verify(ttsClient).synthesize(contains("ko-KR-YuJinNeural"));
         }
 
         @Test
-        @DisplayName("알 수 없는 voiceTone → 기본 speaker(nara) 사용")
-        void unknownTone_usesDefaultSpeaker() {
+        @DisplayName("알 수 없는 voiceTone → 기본 voice(ko-KR-SunHiNeural) 사용")
+        void unknownTone_usesDefaultVoice() {
             VoiceSettings settings = VoiceSettings.builder().voiceTone("unknown").build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speaker=nara"));
+            verify(ttsClient).synthesize(contains("ko-KR-SunHiNeural"));
         }
 
         @Test
-        @DisplayName("voiceTone이 null이면 기본 speaker 사용")
-        void nullTone_usesDefaultSpeaker() {
+        @DisplayName("voiceTone이 null이면 기본 voice 사용")
+        void nullTone_usesDefaultVoice() {
             VoiceSettings settings = VoiceSettings.builder().voiceTone(null).build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speaker=nara"));
+            verify(ttsClient).synthesize(contains("ko-KR-SunHiNeural"));
         }
 
         @Test
-        @DisplayName("voiceSpeed=0.5 → clovaSpeed=-5")
-        void speed05_convertsToMinus5() {
+        @DisplayName("voiceSpeed=0.5 → rate='-50%'")
+        void speed05_convertsToMinus50Percent() {
             VoiceSettings settings = VoiceSettings.builder().voiceSpeed(0.5).build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speed=-5"));
+            verify(ttsClient).synthesize(contains("rate='-50%'"));
         }
 
         @Test
-        @DisplayName("voiceSpeed=1.0 → clovaSpeed=0")
-        void speed10_convertsTo0() {
+        @DisplayName("voiceSpeed=1.0 → rate='+0%'")
+        void speed10_convertsToPlus0Percent() {
             VoiceSettings settings = VoiceSettings.builder().voiceSpeed(1.0).build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speed=0"));
+            verify(ttsClient).synthesize(contains("rate='+0%'"));
         }
 
         @Test
-        @DisplayName("voiceSpeed=1.5 → clovaSpeed=5")
-        void speed15_convertsTo5() {
+        @DisplayName("voiceSpeed=1.5 → rate='+50%'")
+        void speed15_convertsToPlus50Percent() {
             VoiceSettings settings = VoiceSettings.builder().voiceSpeed(1.5).build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speed=5"));
+            verify(ttsClient).synthesize(contains("rate='+50%'"));
         }
 
         @Test
-        @DisplayName("voiceSpeed=2.0 → clovaSpeed=5 (최댓값 제한)")
-        void speed20_clampedTo5() {
+        @DisplayName("voiceSpeed=2.0 → rate='+100%' (최댓값 제한)")
+        void speed20_clampedToPlus100Percent() {
             VoiceSettings settings = VoiceSettings.builder().voiceSpeed(2.0).build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speed=5"));
+            verify(ttsClient).synthesize(contains("rate='+100%'"));
         }
 
         @Test
-        @DisplayName("voiceSpeed가 null이면 clovaSpeed=0 사용")
-        void nullSpeed_convertsTo0() {
+        @DisplayName("voiceSpeed가 null이면 rate='+0%' 사용")
+        void nullSpeed_convertsToPlus0Percent() {
             VoiceSettings settings = VoiceSettings.builder().voiceSpeed(null).build();
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", settings);
 
-            verify(ttsClient).synthesize(contains("speed=0"));
+            verify(ttsClient).synthesize(contains("rate='+0%'"));
         }
 
         @Test
-        @DisplayName("Clova TTS API 응답이 null이면 VoiceProcessingException 발생")
+        @DisplayName("Azure TTS API 응답이 null이면 VoiceProcessingException 발생")
         void nullApiResponse_throwsException() {
             when(ttsClient.synthesize(any())).thenReturn(null);
 
             assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
                     .isInstanceOf(VoiceProcessingException.class)
-                    .hasMessage("Clova TTS API 응답이 비어있습니다.");
+                    .hasMessage("Azure TTS API 응답이 비어있습니다.");
         }
 
         @Test
-        @DisplayName("Clova TTS API 응답이 빈 배열이면 VoiceProcessingException 발생")
+        @DisplayName("Azure TTS API 응답이 빈 배열이면 VoiceProcessingException 발생")
         void emptyApiResponse_throwsException() {
             when(ttsClient.synthesize(any())).thenReturn(new byte[0]);
 
             assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
                     .isInstanceOf(VoiceProcessingException.class)
-                    .hasMessage("Clova TTS API 응답이 비어있습니다.");
+                    .hasMessage("Azure TTS API 응답이 비어있습니다.");
         }
 
         @Test
         @DisplayName("TTS 클라이언트에서 예외 발생 시 VoiceProcessingException으로 래핑")
         void clientException_wrappedAsVoiceProcessingException() {
             when(ttsClient.synthesize(any()))
-                    .thenThrow(new RuntimeException("Clova API 연결 실패"));
+                    .thenThrow(new RuntimeException("Azure API 연결 실패"));
 
             assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
                     .isInstanceOf(VoiceProcessingException.class)
@@ -448,26 +448,55 @@ class VoiceServiceImplTest {
         }
 
         @Test
-        @DisplayName("formData에 한글 텍스트가 URL 인코딩되어 전달됨")
-        void koreanText_urlEncoded() {
+        @DisplayName("SSML에 텍스트가 포함되어 전달됨")
+        void ssml_containsText() {
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("안녕", null);
 
-            // URL 인코딩된 한글이 포함된 formData로 호출되어야 함
-            verify(ttsClient).synthesize(argThat(formData ->
-                    formData.contains("text=") && !formData.contains("text=안녕")
-            ));
+            verify(ttsClient).synthesize(contains("안녕"));
         }
 
         @Test
-        @DisplayName("formData에 format=mp3 포함")
-        void formData_containsFormatMp3() {
+        @DisplayName("SSML에 speak 태그와 voice 태그가 포함됨")
+        void ssml_containsSpeakAndVoiceTag() {
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
             voiceService.textToSpeech("테스트", null);
 
-            verify(ttsClient).synthesize(contains("format=mp3"));
+            verify(ttsClient).synthesize(argThat(ssml ->
+                ssml.contains("<speak") && ssml.contains("<voice") && ssml.contains("<prosody")
+            ));
+        }
+
+        @Test
+        @DisplayName("텍스트에 XML 특수문자(&)가 있으면 &amp;로 이스케이프")
+        void xmlSpecialChar_ampersand_escaped() {
+            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
+
+            voiceService.textToSpeech("A&B", null);
+
+            verify(ttsClient).synthesize(contains("A&amp;B"));
+        }
+
+        @Test
+        @DisplayName("텍스트에 XML 특수문자(<)가 있으면 &lt;로 이스케이프")
+        void xmlSpecialChar_lessThan_escaped() {
+            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
+
+            voiceService.textToSpeech("A<B", null);
+
+            verify(ttsClient).synthesize(contains("A&lt;B"));
+        }
+
+        @Test
+        @DisplayName("텍스트에 XML 특수문자(>)가 있으면 &gt;로 이스케이프")
+        void xmlSpecialChar_greaterThan_escaped() {
+            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
+
+            voiceService.textToSpeech("A>B", null);
+
+            verify(ttsClient).synthesize(contains("A&gt;B"));
         }
     }
 }

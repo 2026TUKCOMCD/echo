@@ -5,7 +5,12 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
+import com.example.echo.context.domain.ConversationTurn;
+import com.example.echo.conversation.dto.TtsRetryResponse;
+import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.service.DiaryService;
+import com.example.echo.health.dto.HealthData;
+import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
-import java.util.concurrent.CompletableFuture;
+import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -26,23 +31,30 @@ public class ConversationService {
     private final AIService aiService;
     private final ContextService contextService;
     private final DiaryService diaryService;
+    private final HealthDataService healthDataService;
 
     @Transactional
-    public ConversationStartResponse startConversation(Long userId) {
-        // 1. 컨텍스트 초기화
-        UserContext context = contextService.initializeContext(userId);
+    public ConversationStartResponse startConversation(Long userId, HealthData healthData) {
+        // 0. 건강 데이터 저장 (Android에서 수신한 경우)
+        if (healthData != null) {
+            healthDataService.saveHealthData(userId, healthData);
+        }
 
-        // 2. 첫 인사 생성
+        // 1. 컨텍스트 초기화 (healthData 전달하여 DB 재조회 방지)
+        UserContext context = contextService.initializeContext(userId, healthData);
+
+        // 2. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
         String systemPrompt = promptService.buildSystemPrompt(context);
+        context.setSystemPrompt(systemPrompt);
+
+        // 3. 첫 인사 생성
         String firstMessage = aiService.generateGreeting(systemPrompt, context);
 
-        // 3. TTS 변환
+        // 4. TTS 변환
         byte[] audioData = voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings());
 
-        // 4. 히스토리 추가 (비동기)
-        CompletableFuture.runAsync(() ->
-                contextService.addConversationTurn(userId, null, firstMessage)
-        );
+        // 5. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
+        contextService.addConversationTurn(userId, null, firstMessage);
 
         return ConversationStartResponse.builder()
                 .message(firstMessage)
@@ -59,25 +71,38 @@ public class ConversationService {
         // 2. STT 변환
         String userMessage = voiceService.speechToText(audioFile);
 
-        // 3. 프롬프트 생성
-        String conversationPrompt = promptService.buildConversationPrompt(context, userMessage);
+        // 3. AI 응답 생성 (OpenAI 권장 방식: messages 배열)
+        String systemPrompt = context.getSystemPrompt();
+        List<ConversationTurn> history = context.getConversationHistory();
+        String aiResponse = aiService.generateResponse(systemPrompt, history, userMessage);
 
-        // 4. AI 응답 생성
-        String aiResponse = aiService.generateResponse(conversationPrompt);
-
-        // 5. TTS 변환
+        // 4. TTS 변환
         byte[] audioData = voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings());
 
-        // 6. 히스토리 업데이트 (비동기)
-        CompletableFuture.runAsync(() ->
-                contextService.addConversationTurn(userId, userMessage, aiResponse)
-        );
+        // 5. 히스토리 업데이트 (동기)
+        contextService.addConversationTurn(userId, userMessage, aiResponse);
 
         return ConversationResponse.builder()
                 .userMessage(userMessage)
                 .aiResponse(aiResponse)
                 .audioData(audioData)
                 .timestamp(LocalDateTime.now())
+                .build();
+    }
+
+    public TtsRetryResponse retryTts(Long userId) {
+        UserContext context = contextService.getContext(userId);
+
+        List<ConversationTurn> history = context.getConversationHistory();
+        if (history.isEmpty()) {
+            throw new ConversationNotFoundException("재시도할 대화 기록이 없습니다.");
+        }
+
+        String lastAiResponse = history.get(history.size() - 1).getAiResponse();
+        byte[] audioData = voiceService.textToSpeech(lastAiResponse, context.getPreferences().getVoiceSettings());
+
+        return TtsRetryResponse.builder()
+                .audioData(audioData)
                 .build();
     }
 
@@ -89,16 +114,14 @@ public class ConversationService {
         UserContext context = contextService.getContext(userId);
         log.info("컨텍스트 조회 완료 - 대화 턴 수: {}", context.getConversationHistory().size());
 
-        // 일기 생성 (비동기) -> MVP는 동기로 가도 됨. 비동기 트랜잭션 문제 발생 -> 해결 추진 예정
-        CompletableFuture.runAsync(() ->{ //중괄호 표시 ( 여러 줄 )
-                log.info("일기 생성 시작 (비동기) - userId: {}", userId);
-                try {
-                         diaryService.generateAndSaveDiary(context);
-                         log.info("일기 생성 완료 (비동기) - userId: {}", userId);
-                } catch (Exception e) {
-                         log.error("일기 생성 실패 - userId: {}", userId, e);
-                }
-             });
+        // 2. 일기 생성 (동기)
+        log.info("일기 생성 시작 - userId: {}", userId);
+        try {
+            diaryService.generateAndSaveDiary(context);
+            log.info("일기 생성 완료 - userId: {}", userId);
+        } catch (Exception e) {
+            log.error("일기 생성 실패 - userId: {}", userId, e);
+        }
 
         // 3. 컨텍스트 정리
         contextService.finalizeContext(userId);

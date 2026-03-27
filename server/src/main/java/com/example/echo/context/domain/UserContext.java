@@ -1,7 +1,7 @@
 package com.example.echo.context.domain;
 
 import com.example.echo.common.dto.WeatherData;
-import com.example.echo.health.dto.HealthData;
+import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,9 +24,16 @@ public class UserContext {
     @Builder.Default
     private List<ConversationTurn> conversationHistory = new ArrayList<>();
 
-    private HealthData todayHealthData;
+    private EnrichedHealthData enrichedHealthData;
     private UserPreferences preferences;
     private WeatherData todayWeather;
+
+    /**
+     * 캐싱된 시스템 프롬프트
+     * 대화 시작 시 1회 생성되어 대화 종료까지 재사용
+     */
+    private String systemPrompt;
+
     private LocalDateTime lastAccessTime;
     private boolean isActive;
 }

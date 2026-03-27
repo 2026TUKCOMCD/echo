@@ -1,6 +1,7 @@
 package com.example.graduation_project.data.voice
 
 import android.content.Context
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.example.graduation_project.domain.voice.AudioRecordException
 import com.example.graduation_project.domain.voice.AudioRecordListener
@@ -76,11 +77,13 @@ class AudioRecordManager @VisibleForTesting internal constructor(
      * 흐름: Idle → Preparing → Listening → Recording → Processing → Completed
      */
     fun start() {
+        Log.d(TAG, "start() called, current state: ${_state.value}")
+
         if (_state.value is AudioRecordState.Preparing ||
             _state.value is AudioRecordState.Listening ||
-            _state.value is AudioRecordState.Recording ||
-            _state.value is AudioRecordState.Processing
+            _state.value is AudioRecordState.Recording
         ) {
+            Log.d(TAG, "start() - already active, skipping")
             return // 이미 활성 상태
         }
 
@@ -96,6 +99,11 @@ class AudioRecordManager @VisibleForTesting internal constructor(
 
         observeVadState()
         voiceRecordingManager.start()
+        Log.d(TAG, "start() - VoiceRecordingManager started")
+    }
+
+    companion object {
+        private const val TAG = "AudioRecordManager"
     }
 
     /**

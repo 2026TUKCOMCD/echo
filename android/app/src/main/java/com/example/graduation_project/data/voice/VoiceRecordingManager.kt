@@ -1,6 +1,7 @@
 package com.example.graduation_project.data.voice
 
 import android.content.Context
+import android.util.Log
 import com.example.graduation_project.domain.voice.VadConfig
 import com.example.graduation_project.domain.voice.VadException
 import com.example.graduation_project.domain.voice.VadListener
@@ -56,18 +57,29 @@ class VoiceRecordingManager(
     }
 
     /**
+     * 현재 녹음이 실행 중인지 확인
+     */
+    fun isRunning(): Boolean = recordingJob?.isActive == true
+
+    /**
      * 음성 감지 시작
      */
     fun start() {
-        if (recordingJob?.isActive == true) return
+        Log.d(TAG, "start() called, isRunning: ${isRunning()}")
+        if (recordingJob?.isActive == true) {
+            Log.d(TAG, "start() - already running, skipping")
+            return
+        }
 
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
         scope?.launch {
             try {
                 // VAD 초기화
+                Log.d(TAG, "Initializing VAD...")
                 vadProcessor.initialize()
                 _vadState.value = VadState.Listening
+                Log.d(TAG, "VAD initialized, state: Listening")
 
                 // 타임아웃 설정
                 withTimeoutOrNull(config.maxRecordingDurationMs) {
@@ -136,6 +148,7 @@ class VoiceRecordingManager(
         when {
             // 음성 시작 감지
             isSpeech && !isSpeechActive -> {
+                Log.d(TAG, "Speech START detected")
                 isSpeechActive = true
                 audioBuffer.reset()
                 appendToBuffer(audioFrame)
@@ -148,6 +161,7 @@ class VoiceRecordingManager(
             }
             // 음성 종료 감지
             !isSpeech && isSpeechActive -> {
+                Log.d(TAG, "Speech END detected")
                 // Silero VAD의 silenceDurationMs가 충족되면 isSpeech가 false로 전환됨
                 finalizeSpeech()
             }
@@ -160,6 +174,7 @@ class VoiceRecordingManager(
 
     private fun finalizeSpeech() {
         val pcmData = audioBuffer.toByteArray()
+        Log.d(TAG, "finalizeSpeech() - PCM data size: ${pcmData.size} bytes")
         audioBuffer.reset()
         isSpeechActive = false
 
@@ -182,5 +197,9 @@ class VoiceRecordingManager(
         // ShortArray를 ByteArray로 변환하여 버퍼에 추가
         val byteData = WavConverter.shortArrayToByteArray(audioFrame)
         audioBuffer.write(byteData)
+    }
+
+    companion object {
+        private const val TAG = "VoiceRecordingManager"
     }
 }
