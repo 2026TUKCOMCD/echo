@@ -75,7 +75,7 @@ public class ContextService {
                 .conversationHistory(new ArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
                 .preferences(preferences)
-                .todayWeather(weatherClient.getCurrentWeather())
+                .todayWeather(weatherClient.getCurrentWeather(null, null))
                 .locationData(locationData)
                 .lastAccessTime(LocalDateTime.now())
                 .isActive(true)

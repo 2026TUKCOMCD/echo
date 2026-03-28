@@ -98,7 +98,7 @@ class ContextServiceTest {
             given(healthDataService.getTodayHealthData(userId)).willReturn(mockHealthData);
             given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
                     .willReturn(mockEnrichedHealthData);
-            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
 
             // when
             UserContext result = contextService.initializeContext(userId);
@@ -125,7 +125,7 @@ class ContextServiceTest {
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
             given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
                     .willReturn(mockEnrichedHealthData);
-            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
 
             // when
             UserContext result = contextService.initializeContext(userId, mockHealthData);
@@ -150,7 +150,7 @@ class ContextServiceTest {
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
             given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
                     .willReturn(mockEnrichedHealthData);
-            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
 
             // when
             contextService.initializeContext(userId, mockHealthData);
@@ -158,7 +158,7 @@ class ContextServiceTest {
             // then (건강 데이터 저장은 ConversationService에서 담당)
             then(userService).should(times(1)).getPreferences(userId);
             then(healthDataService).should(times(1)).buildEnrichedHealthData(eq(mockHealthData), eq(userId), any());
-            then(weatherClient).should(times(1)).getCurrentWeather();
+            then(weatherClient).should(times(1)).getCurrentWeather(null, null);
         }
 
         @Test
@@ -169,7 +169,7 @@ class ContextServiceTest {
             given(healthDataService.getTodayHealthData(userId)).willReturn(mockHealthData);
             given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
                     .willReturn(mockEnrichedHealthData);
-            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
 
             // when
             contextService.initializeContext(userId);
@@ -178,7 +178,7 @@ class ContextServiceTest {
             then(userService).should(times(1)).getPreferences(userId);
             then(healthDataService).should(times(1)).getTodayHealthData(userId);
             then(healthDataService).should(times(1)).buildEnrichedHealthData(eq(mockHealthData), eq(userId), any());
-            then(weatherClient).should(times(1)).getCurrentWeather();
+            then(weatherClient).should(times(1)).getCurrentWeather(null, null);
         }
     }
 
@@ -193,7 +193,7 @@ class ContextServiceTest {
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
             given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
                     .willReturn(mockEnrichedHealthData);
-            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
 
             contextService.initializeContext(userId, mockHealthData);
 
@@ -229,7 +229,7 @@ class ContextServiceTest {
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
             given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
                     .willReturn(mockEnrichedHealthData);
-            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
 
             contextService.initializeContext(userId, mockHealthData);
 
@@ -254,7 +254,7 @@ class ContextServiceTest {
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
             given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
                     .willReturn(mockEnrichedHealthData);
-            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
 
             contextService.initializeContext(userId, mockHealthData);
 
@@ -282,7 +282,7 @@ class ContextServiceTest {
             given(userService.getPreferences(userId)).willReturn(mockPreferences);
             given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
                     .willReturn(mockEnrichedHealthData);
-            given(weatherClient.getCurrentWeather()).willReturn(mockWeatherData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
 
             contextService.initializeContext(userId, mockHealthData);
 
