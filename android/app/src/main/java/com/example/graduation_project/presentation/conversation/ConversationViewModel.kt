@@ -306,10 +306,9 @@ class ConversationViewModel(
             if (!transitionTo(ConversationState.Sending)) return@launch
             _uiState.update { it.copy(errorMessage = null, currentError = null) }
 
-            // [A11] 데이터 수집 중 메시지
-            _uiState.update { it.copy(processingMessage = "데이터 수집 중") }
+            // [A11] 위치 데이터 수집
+            _uiState.update { it.copy(processingMessage = "위치 데이터 수집 중") }
 
-            // [A11] 현재 위치 수집 — 권한 없으면 null (graceful degradation)
             val hasLocationPermission = ContextCompat.checkSelfPermission(
                 getApplication(), Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED ||
@@ -319,14 +318,17 @@ class ConversationViewModel(
 
             val currentLocation = if (hasLocationPermission) locationManager.getCurrentLocation() else null
 
-            // [A10] ExerciseRoute 수집 → locationData 조립
+            // [A10] ExerciseRoute 수집
             val routes = healthRepository.readTodayExerciseRoutes()
 
-            // PROCESSING 타이머 시작
-            _uiState.update { it.copy(processingMessage = null) }
-            startProcessingTimer()
+            // [A11] 건강 데이터 수집
+            _uiState.update { it.copy(processingMessage = "건강 데이터 수집 중") }
 
             val healthData = getHealthDataUseCase()
+
+            // API 호출 대기 타이머
+            _uiState.update { it.copy(processingMessage = null) }
+            startProcessingTimer()
             val locationData = RawLocationData(
                 currentLatitude = currentLocation?.latitude,
                 currentLongitude = currentLocation?.longitude,
