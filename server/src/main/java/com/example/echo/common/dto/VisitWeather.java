@@ -27,10 +27,4 @@ public class VisitWeather {
      * 기온 (섭씨)
      */
     private Integer temperature;
-
-    /**
-     * 해당 시간대에 비가 왔는지 여부
-     * - 강수 정보 기반 (rain, drizzle, thunderstorm 등)
-     */
-    private boolean hadRain;
 }

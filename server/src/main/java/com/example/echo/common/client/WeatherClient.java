@@ -35,7 +35,7 @@ public class WeatherClient {
 
     /**
      * 현재 날씨 캐시
-     * - 키: 좌표 (소수점 2자리, 약 1km 범위)
+     * - 키: 좌표 (소수점 1자리, 약 10km 범위)
      * - 값: WeatherData
      * - TTL: 30분 (실시간 날씨 변동)
      * - 최대 크기: 100개
@@ -77,8 +77,8 @@ public class WeatherClient {
             return null;
         }
 
-        // 캐시 키 생성 (소수점 2자리 = 약 1km 범위)
-        String cacheKey = String.format("%.2f,%.2f", latitude, longitude);
+        // 캐시 키 생성 (소수점 1자리 = 약 10km 범위)
+        String cacheKey = String.format("%.1f,%.1f", latitude, longitude);
 
         return currentWeatherCache.get(cacheKey, key -> {
             log.debug("현재 날씨 캐시 미스 - API 호출: {}", key);
@@ -167,10 +167,9 @@ public class WeatherClient {
 
             VisitWeather visitWeather = response.toVisitWeather();
             if (visitWeather != null) {
-                log.info("방문 날씨 조회 성공 - {}, {}도, 비: {}",
+                log.info("방문 날씨 조회 성공 - {}, {}도",
                         visitWeather.getDescription(),
-                        visitWeather.getTemperature(),
-                        visitWeather.isHadRain());
+                        visitWeather.getTemperature());
             }
 
             return visitWeather;
