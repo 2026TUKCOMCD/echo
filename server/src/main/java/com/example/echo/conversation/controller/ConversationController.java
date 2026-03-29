@@ -3,10 +3,10 @@ package com.example.echo.conversation.controller;
 import com.example.echo.common.auth.CurrentUser;
 import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
+import com.example.echo.conversation.dto.ConversationStartRequest;
 import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.service.ConversationService;
-import com.example.echo.health.dto.HealthData;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -48,9 +48,13 @@ public class ConversationController {
     @PostMapping("/start")
     public ResponseEntity<ConversationStartResponse> startConversation(
             @Parameter(hidden = true) @CurrentUser Long userId,
-            @RequestBody(required = false) HealthData healthData
+            @RequestBody(required = false) ConversationStartRequest request
     ) {
-        ConversationStartResponse response = conversationService.startConversation(userId, healthData);
+        ConversationStartResponse response = conversationService.startConversation(
+                userId,
+                request != null ? request.getHealthData() : null,
+                request != null ? request.getLocationData() : null
+        );
         return ResponseEntity.ok(response);
     }
 

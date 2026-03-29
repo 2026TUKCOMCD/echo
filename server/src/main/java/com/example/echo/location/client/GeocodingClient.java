@@ -1,23 +1,29 @@
 package com.example.echo.location.client;
 
-import com.example.echo.location.dto.GeocodingResult;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+import com.example.echo.location.dto.KakaoGeocodingResponse;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
-@Slf4j
-@Component
-public class GeocodingClient {
+/**
+ * Kakao 역지오코딩 Feign 클라이언트
+ *
+ * 좌표(위도/경도) → 주소명 변환
+ *
+ * 주의: Kakao API는 x=경도(lon), y=위도(lat) 순서
+ *       GPS의 lat/lon과 반대이므로 호출 시 반드시 확인
+ */
+@FeignClient(
+        name = "kakao-geocoding",
+        url = "${kakao.api.url}",
+        configuration = KakaoFeignConfig.class
+)
+public interface GeocodingClient {
 
-    public String getCityName(Double latitude, Double longitude) {
-        // TODO: 실제 역지오코딩 API 연동 시 구현
-        return "서울";
-    }
-
-    public GeocodingResult reverseGeocode(Double latitude, Double longitude) {
-        // TODO: 실제 역지오코딩 API 연동 시 구현
-        return GeocodingResult.builder()
-                .placeName("알 수 없는 장소")
-                .address("주소 정보 없음")
-                .build();
-    }
+    @GetMapping("/v2/local/geo/coord2address.json")
+    KakaoGeocodingResponse reverseGeocode(
+            @RequestParam("x") double lon,
+            @RequestParam("y") double lat,
+            @RequestParam("input_coord") String inputCoord
+    );
 }
