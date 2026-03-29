@@ -1,6 +1,7 @@
 package com.example.echo.conversation.dto;
 
 import com.example.echo.health.dto.HealthData;
+import com.example.echo.location.dto.RawLocationData;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -22,4 +23,10 @@ public class ConversationStartRequest {
      * - null인 경우 DB에서 기존 데이터 조회
      */
     private HealthData healthData;
+
+    /**
+     * 앱에서 전송하는 위치 데이터 (null 허용)
+     * - null인 경우 위치 기반 대화 주제 생성 불가
+     */
+    private RawLocationData locationData;
 }
