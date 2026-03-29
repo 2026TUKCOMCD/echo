@@ -99,13 +99,13 @@ class ConversationServiceTest2 {
             String greeting = "안녕하세요, 오늘 하루는 어떠셨나요?";
             byte[] audioData = "mock audio data".getBytes();
 
-            given(contextService.initializeContext(eq(userId), any())).willReturn(mockContext);
+            given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
             given(promptService.buildSystemPrompt(mockContext)).willReturn(systemPrompt);
             given(aiService.generateGreeting(systemPrompt, mockContext)).willReturn(greeting);
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
             // when
-            ConversationStartResponse result = conversationService.startConversation(userId, null);
+            ConversationStartResponse result = conversationService.startConversation(userId, null, null);
 
             // then
             assertThat(result).isNotNull();
@@ -121,17 +121,17 @@ class ConversationServiceTest2 {
             String greeting = "안녕하세요!";
             byte[] audioData = "audio".getBytes();
 
-            given(contextService.initializeContext(eq(userId), any())).willReturn(mockContext);
+            given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
             given(promptService.buildSystemPrompt(mockContext)).willReturn(systemPrompt);
             given(aiService.generateGreeting(systemPrompt, mockContext)).willReturn(greeting);
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
             // when
-            conversationService.startConversation(userId, null);
+            conversationService.startConversation(userId, null, null);
 
             // then (순서대로 호출 검증)
             var inOrder = inOrder(contextService, promptService, aiService, voiceService);
-            inOrder.verify(contextService).initializeContext(eq(userId), any());
+            inOrder.verify(contextService).initializeContext(eq(userId), any(), any());
             inOrder.verify(promptService).buildSystemPrompt(mockContext);
             inOrder.verify(aiService).generateGreeting(systemPrompt, mockContext);
             inOrder.verify(voiceService).textToSpeech(greeting, mockVoiceSettings);

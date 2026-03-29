@@ -1,11 +1,12 @@
 package com.example.graduation_project.domain.health
 
+import com.example.graduation_project.data.model.RawVisitedPlace
+import com.example.graduation_project.domain.model.LocationPoint
+
 /**
  * Health Connect 데이터 접근 추상화 인터페이스.
  * domain 레이어가 data 레이어를 직접 참조하지 않도록 의존성 역전.
  */
-import com.example.graduation_project.data.model.RawVisitedPlace
-import com.example.graduation_project.domain.model.LocationPoint
 
 interface IHealthRepository {
 

@@ -89,6 +89,9 @@ dependencies {
     // VAD (Voice Activity Detection)
     implementation(libs.android.vad.silero)
 
+    // Location
+    implementation(libs.play.services.location)
+
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
@@ -100,6 +103,9 @@ dependencies {
 
     // Health Connect
     implementation(libs.health.connect.client)
+
+    // Location
+    implementation(libs.play.services.location)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
