@@ -48,3 +48,4 @@ application-local.yaml
 application-dev.yaml
 .env
 nul
+.run/
