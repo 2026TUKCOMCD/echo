@@ -13,8 +13,8 @@ data class RawVisitedPlace(
 
 @Serializable
 data class RawLocationData(
-    val currentLatitude: Double?,                               // 현재 위치 위도 (yuripiece A2 연동 후 채워짐)
-    val currentLongitude: Double?,                              // 현재 위치 경도 (yuripiece A2 연동 후 채워짐)
+    val currentLatitude: Double?,                               // 현재 위치 위도 (A2 연동 후 채워짐)
+    val currentLongitude: Double?,                              // 현재 위치 경도 (A2 연동 후 채워짐)
     val visitedPlaces: List<RawVisitedPlace> = emptyList(),     // 오늘 운동 경로 방문 장소
     val totalDistanceKm: Double? = null                         // 오늘 총 운동 거리 (HealthData.exerciseDistanceKm)
 )
