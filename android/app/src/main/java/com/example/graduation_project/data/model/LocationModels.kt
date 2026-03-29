@@ -6,8 +6,8 @@ import kotlinx.serialization.Serializable
 data class RawVisitedPlace(
     val latitude: Double,
     val longitude: Double,
-    val visitStartTime: String,       // "HH:mm:ss" 형식 (서버 LocalTime 직렬화)
-    val visitEndTime: String,         // "HH:mm:ss" 형식
+    val visitStartTime: String,       // ISO-8601 (session.startTime.toString())
+    val visitEndTime: String,         // ISO-8601 (session.endTime.toString())
     val stayDurationMinutes: Int
 )
 

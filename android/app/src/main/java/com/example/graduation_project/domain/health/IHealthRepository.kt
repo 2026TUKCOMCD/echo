@@ -1,11 +1,13 @@
 package com.example.graduation_project.domain.health
 
 import com.example.graduation_project.data.model.RawVisitedPlace
+import com.example.graduation_project.domain.model.LocationPoint
 
 /**
  * Health Connect 데이터 접근 추상화 인터페이스.
  * domain 레이어가 data 레이어를 직접 참조하지 않도록 의존성 역전.
  */
+
 interface IHealthRepository {
 
     /** Health Connect SDK 가용성 확인 (동기, 비suspend) */
@@ -40,7 +42,13 @@ interface IHealthRepository {
 
     /**
      * 오늘 자정(00:00) → 현재 범위의 운동 세션에서 GPS 경로 중간점 추출.
-     * @return 방문 장소 목록. 실제 구현은 US5.5 브랜치 (HealthConnectManager)에서 제공.
+     * route 없는 세션 제외. 데이터 없으면 빈 리스트 반환.
      */
-    suspend fun readTodayExerciseRoutes(): List<RawVisitedPlace> = emptyList()
+    suspend fun readTodayExerciseRoutes(): List<RawVisitedPlace>
+
+    /**
+     * 오늘 자정(00:00) → 현재 범위의 운동 세션에서 GPS 좌표 전체를 세션별로 추출.
+     * route 없거나 좌표 2개 미만 세션 제외. 데이터 없으면 빈 리스트 반환.
+     */
+    suspend fun readExerciseSessionLocations(): List<List<LocationPoint>>
 }
