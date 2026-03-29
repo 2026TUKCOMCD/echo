@@ -105,7 +105,7 @@ class ConversationServiceTest2 {
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
             // when
-            ConversationStartResponse result = conversationService.startConversation(userId, null);
+            ConversationStartResponse result = conversationService.startConversation(userId, null, null);
 
             // then
             assertThat(result).isNotNull();
@@ -127,7 +127,7 @@ class ConversationServiceTest2 {
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
             // when
-            conversationService.startConversation(userId, null);
+            conversationService.startConversation(userId, null, null);
 
             // then (순서대로 호출 검증)
             var inOrder = inOrder(contextService, promptService, aiService, voiceService);

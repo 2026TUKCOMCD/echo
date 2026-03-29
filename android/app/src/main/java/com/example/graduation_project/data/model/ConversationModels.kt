@@ -31,6 +31,13 @@ data class TtsRetryResponse(
     val audioData: String? = null
 )
 
+// /start 요청 body DTO — HealthData + 위치 데이터 묶음
+@Serializable
+data class ConversationStartRequest(
+    val healthData: HealthData,
+    val locationData: RawLocationData? = null
+)
+
 // 요청 Model(DTO) -> /start에 대한 DTO
 @Serializable
 data class HealthData(
