@@ -2,7 +2,6 @@ package com.example.echo.location.service;
 
 import com.example.echo.common.client.WeatherClient;
 import com.example.echo.common.dto.VisitWeather;
-import com.example.echo.location.client.GeocodingClient;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.RawLocationData;
@@ -27,7 +26,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class LocationService {
 
-    private final GeocodingClient geocodingClient;
+    private final GeocodingService geocodingService;
     private final WeatherClient weatherClient;
 
     /**
@@ -41,9 +40,9 @@ public class LocationService {
             return null;
         }
 
-        String currentCity = geocodingClient.getCityName(
-            raw.getCurrentLatitude(),
-            raw.getCurrentLongitude()
+        String currentCity = geocodingService.getCityName(
+                raw.getCurrentLatitude(),
+                raw.getCurrentLongitude()
         );
 
         List<VisitedPlace> enrichedPlaces = new ArrayList<>();
@@ -68,16 +67,16 @@ public class LocationService {
      */
     private VisitedPlace enrichVisitedPlace(RawVisitedPlace raw) {
         // 1. 역지오코딩
-        GeocodingResult result = geocodingClient.reverseGeocode(
-            raw.getLatitude(),
-            raw.getLongitude()
+        GeocodingResult result = geocodingService.reverseGeocode(
+                raw.getLatitude(),
+                raw.getLongitude()
         );
 
         // 2. 방문 시점 날씨 조회 (Timemachine API)
         VisitWeather visitWeather = weatherClient.getWeatherForVisit(
-            raw.getLatitude(),
-            raw.getLongitude(),
-            raw.getVisitStartTime()
+                raw.getLatitude(),
+                raw.getLongitude(),
+                raw.getVisitStartTime()
         );
 
         return VisitedPlace.builder()

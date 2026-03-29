@@ -10,6 +10,7 @@ import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.HealthData;
+import com.example.echo.location.dto.RawLocationData;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
@@ -34,14 +35,14 @@ public class ConversationService {
     private final HealthDataService healthDataService;
 
     @Transactional
-    public ConversationStartResponse startConversation(Long userId, HealthData healthData) {
+    public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
         if (healthData != null) {
             healthDataService.saveHealthData(userId, healthData);
         }
 
-        // 1. 컨텍스트 초기화 (healthData 전달하여 DB 재조회 방지)
-        UserContext context = contextService.initializeContext(userId, healthData);
+        // 1. 컨텍스트 초기화 (healthData, locationData 전달)
+        UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
 
         // 2. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
         String systemPrompt = promptService.buildSystemPrompt(context);

@@ -104,6 +104,9 @@ dependencies {
     // Health Connect
     implementation(libs.health.connect.client)
 
+    // Location
+    implementation(libs.play.services.location)
+
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)

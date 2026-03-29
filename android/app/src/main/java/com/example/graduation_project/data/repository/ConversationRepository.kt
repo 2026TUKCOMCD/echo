@@ -7,7 +7,9 @@ import com.example.graduation_project.data.api.ConversationApi
 import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
+import com.example.graduation_project.data.model.ConversationStartRequest
 import com.example.graduation_project.data.model.HealthData
+import com.example.graduation_project.data.model.RawLocationData
 import com.example.graduation_project.data.model.TtsRetryResponse
 import okhttp3.MultipartBody
 
@@ -15,9 +17,12 @@ class ConversationRepository(
     private val conversationApi: ConversationApi = ApiClient.conversationApi
 ) {
 
-    suspend fun startConversation(healthData: HealthData): ApiResult<ConversationStartResponse> {
+    suspend fun startConversation(
+        healthData: HealthData,
+        locationData: RawLocationData?
+    ): ApiResult<ConversationStartResponse> {
         return safeApiCall {
-            conversationApi.startConversation(healthData)
+            conversationApi.startConversation(ConversationStartRequest(healthData, locationData))
         }
     }
 
