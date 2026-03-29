@@ -1,5 +1,7 @@
 package com.example.echo.location.service;
 
+import com.example.echo.common.client.WeatherClient;
+import com.example.echo.common.dto.VisitWeather;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.RawLocationData;
@@ -13,10 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 원시 위치 데이터(RawLocationData) → 보강된 위치 데이터(LocationData) 변환
+ * 위치 데이터 처리 서비스
  *
- * GeocodingClient를 통해 좌표를 장소명/주소로 변환한다.
- * 변환 결과는 ContextService에서 UserContext에 저장되어 대화 세션 동안 재사용된다.
+ * - 원시 위치 데이터를 보강된 위치 데이터로 변환
+ * - 역지오코딩으로 장소명/주소 추가
+ * - Timemachine API로 방문 시점 날씨 추가
  */
 @Slf4j
 @Service
@@ -24,7 +27,14 @@ import java.util.List;
 public class LocationService {
 
     private final GeocodingService geocodingService;
+    private final WeatherClient weatherClient;
 
+    /**
+     * 원시 위치 데이터를 보강된 위치 데이터로 변환
+     *
+     * @param raw 앱에서 받은 원시 위치 데이터
+     * @return 장소명, 주소, 날씨가 추가된 위치 데이터
+     */
     public LocationData enrichLocationData(RawLocationData raw) {
         if (raw == null) {
             return null;
@@ -49,15 +59,30 @@ public class LocationService {
                 .build();
     }
 
+    /**
+     * 방문 장소 정보 보강
+     *
+     * - 역지오코딩으로 장소명/주소 추가
+     * - Timemachine API로 방문 시점 날씨 추가
+     */
     private VisitedPlace enrichVisitedPlace(RawVisitedPlace raw) {
+        // 1. 역지오코딩
         GeocodingResult result = geocodingService.reverseGeocode(
                 raw.getLatitude(),
                 raw.getLongitude()
         );
 
+        // 2. 방문 시점 날씨 조회 (Timemachine API)
+        VisitWeather visitWeather = weatherClient.getWeatherForVisit(
+                raw.getLatitude(),
+                raw.getLongitude(),
+                raw.getVisitStartTime()
+        );
+
         return VisitedPlace.builder()
                 .placeName(result.getPlaceName())
                 .address(result.getAddress())
+                .weather(visitWeather)
                 .latitude(raw.getLatitude())
                 .longitude(raw.getLongitude())
                 .visitStartTime(raw.getVisitStartTime())
