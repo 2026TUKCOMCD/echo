@@ -35,7 +35,7 @@ public class ConversationController {
 
     @Operation(
             summary = "대화 시작",
-            description = "AI가 먼저 인사하며 대화를 시작합니다. 건강 데이터를 함께 전송하면 맞춤형 인사를 생성합니다."
+            description = "AI가 먼저 인사하며 대화를 시작합니다. 건강 데이터와 위치 데이터를 함께 전송하면 맞춤형 인사를 생성합니다."
     )
     @ApiResponses({
             @ApiResponse(

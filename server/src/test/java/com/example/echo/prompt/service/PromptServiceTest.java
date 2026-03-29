@@ -6,6 +6,8 @@ import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
+import com.example.echo.location.dto.LocationData;
+import com.example.echo.location.dto.VisitedPlace;
 import com.example.echo.user.dto.UserPreferences;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +17,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -138,7 +141,7 @@ class PromptServiceTest {
         // Given
         PromptTemplate template = PromptTemplate.builder()
                 .type(PromptType.SYSTEM)
-                .content("걸음: {{steps}}, 수면: {{sleepInfo}}, 걸음평가: {{stepsEvaluation}}, 수면평가: {{sleepEvaluation}}")
+                .content("걸음: {{steps}}, 수면: {{sleepDuration}}, 걸음평가: {{stepsEvaluation}}, 수면평가: {{sleepEvaluation}}")
                 .build();
 
         when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
@@ -179,4 +182,86 @@ class PromptServiceTest {
         // Then
         assertThat(result).isEqualTo("걸음: [], 수면평가: []");
     }
+
+    // ===== buildSystemPrompt 위치 데이터 테스트 =====
+
+    @Test
+    @DisplayName("buildSystemPrompt - 방문 장소 체류 시간 내림차순 정렬 확인")
+    void buildSystemPrompt_visitedPlacesSortedByStayDuration() {
+        // Given: 체류 시간이 다른 3개 장소 (정렬되지 않은 순서로 입력)
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("편의점").stayDurationMinutes(10).build(),
+                VisitedPlace.builder().placeName("이마트").stayDurationMinutes(45).build(),
+                VisitedPlace.builder().placeName("공원").stayDurationMinutes(30).build()
+        );
+
+        LocationData locationData = LocationData.builder()
+                .currentCity("서울")
+                .visitedPlaces(places)
+                .build();
+
+        UserContext contextWithLocation = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .enrichedHealthData(enrichedHealthData)
+                .locationData(locationData)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("방문장소: {{visitedPlacesText}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(contextWithLocation);
+
+        // Then: 체류 시간 내림차순 정렬 (이마트 > 공원 > 편의점)
+        int indexEmart = result.indexOf("이마트");
+        int indexPark = result.indexOf("공원");
+        int indexStore = result.indexOf("편의점");
+
+        assertThat(indexEmart).isLessThan(indexPark);
+        assertThat(indexPark).isLessThan(indexStore);
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 방문 장소 체류 시간 미표시 확인")
+    void buildSystemPrompt_visitedPlacesWithoutDuration() {
+        // Given
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("스타벅스").stayDurationMinutes(60).build()
+        );
+
+        LocationData locationData = LocationData.builder()
+                .currentCity("서울")
+                .visitedPlaces(places)
+                .build();
+
+        UserContext contextWithLocation = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .locationData(locationData)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{visitedPlacesText}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(contextWithLocation);
+
+        // Then: 체류 시간(분)이 표시되지 않음
+        assertThat(result).contains("스타벅스");
+        assertThat(result).doesNotContain("60");
+        assertThat(result).doesNotContain("분");
+        assertThat(result).doesNotContain("체류");
+    }
+
 }
