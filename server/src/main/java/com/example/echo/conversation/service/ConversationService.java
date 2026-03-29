@@ -10,8 +10,8 @@ import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.HealthData;
-import com.example.echo.health.service.HealthDataService;
 import com.example.echo.location.dto.RawLocationData;
+import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
@@ -34,16 +34,6 @@ public class ConversationService {
     private final DiaryService diaryService;
     private final HealthDataService healthDataService;
 
-    /**
-     * 대화 시작 (위치 데이터 없이)
-     *
-     * 기존 API 호환성 유지를 위한 오버로드 메서드
-     */
-    @Transactional
-    public ConversationStartResponse startConversation(Long userId, HealthData healthData) {
-        return startConversation(userId, healthData, null);
-    }
-
     @Transactional
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
@@ -51,7 +41,7 @@ public class ConversationService {
             healthDataService.saveHealthData(userId, healthData);
         }
 
-        // 1. 컨텍스트 초기화 (healthData, rawLocationData 전달하여 DB 재조회 방지)
+        // 1. 컨텍스트 초기화 (healthData, locationData 전달)
         UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
 
         // 2. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
