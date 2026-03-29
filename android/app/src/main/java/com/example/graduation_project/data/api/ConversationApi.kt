@@ -3,7 +3,7 @@ package com.example.graduation_project.data.api
 import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
-import com.example.graduation_project.data.model.HealthData
+import com.example.graduation_project.data.model.ConversationStartRequest
 import com.example.graduation_project.data.model.TtsRetryResponse
 import okhttp3.MultipartBody
 import retrofit2.http.Body
@@ -15,7 +15,7 @@ interface ConversationApi {
 
     @POST("/api/conversations/start")
     suspend fun startConversation(
-        @Body healthData: HealthData
+        @Body request: ConversationStartRequest
     ): ConversationStartResponse
 
     @Multipart
