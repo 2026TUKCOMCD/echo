@@ -72,10 +72,9 @@ class ConversationViewModel(
     private val audioRecordManager: AudioRecordManager = AudioRecordManager(application),
     private val healthRepository: IHealthRepository =
         HealthConnectRepositoryImpl(HealthConnectManager(application)),
-    private val locationManager: LocationManager = LocationManager(application)
+    private val locationManager: LocationManager = LocationManager(application),
+    private val getHealthDataUseCase: GetHealthDataUseCase = GetHealthDataUseCase(healthRepository)
 ) : AndroidViewModel(application) {
-
-    private val getHealthDataUseCase = GetHealthDataUseCase(healthRepository)
 
     // 내부에서만 수정 가능한 상태
     // TODO: 실제 사용자 정보는 DataStore/SharedPreferences에서 가져오기

@@ -5,6 +5,7 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.tasks.OnFailureListener
 import com.google.android.gms.tasks.OnSuccessListener
 import com.google.android.gms.tasks.Task
+import com.google.android.gms.tasks.Tasks
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -23,6 +24,8 @@ import org.junit.Test
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LocationManagerTest {
@@ -99,30 +102,18 @@ class LocationManagerTest {
     // ===== 헬퍼 =====
 
     private fun stubCurrentLocation(successResult: Location?) {
-        val task = mockk<Task<Location>>()
-        every { mockFusedClient.getCurrentLocation(any(), any()) } returns task
-        every { task.addOnSuccessListener(any<OnSuccessListener<Location>>()) } answers {
-            firstArg<OnSuccessListener<Location>>().onSuccess(successResult)
-            task
-        }
-        every { task.addOnFailureListener(any()) } returns task
+        val task: Task<Location> = Tasks.forResult(successResult)
+        every { mockFusedClient.getCurrentLocation(any<Int>(), any()) } returns task
     }
 
     private fun stubCurrentLocationHanging() {
-        val task = mockk<Task<Location>>()
-        every { mockFusedClient.getCurrentLocation(any(), any()) } returns task
-        every { task.addOnSuccessListener(any<OnSuccessListener<Location>>()) } returns task
-        every { task.addOnFailureListener(any()) } returns task
+        val task = mockk<Task<Location>>(relaxed = true) // 리스너 미호출 → 타임아웃 유도
+        every { mockFusedClient.getCurrentLocation(any<Int>(), any()) } returns task
     }
 
     private fun stubLastLocation(successResult: Location?) {
-        val task = mockk<Task<Location>>()
+        val task: Task<Location> = Tasks.forResult(successResult)
         every { mockFusedClient.lastLocation } returns task
-        every { task.addOnSuccessListener(any<OnSuccessListener<Location>>()) } answers {
-            firstArg<OnSuccessListener<Location>>().onSuccess(successResult)
-            task
-        }
-        every { task.addOnFailureListener(any()) } returns task
     }
 }
 

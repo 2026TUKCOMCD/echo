@@ -71,8 +71,8 @@ class LocationDataManager(
         return RawVisitedPlace(
             latitude = latitude,
             longitude = longitude,
-            visitStartTime = LocalTime.ofInstant(startTime, zone).toString(),
-            visitEndTime = LocalTime.ofInstant(endTime, zone).toString(),
+            visitStartTime = startTime.atZone(zone).toLocalTime().toString(),
+            visitEndTime = endTime.atZone(zone).toLocalTime().toString(),
             stayDurationMinutes = durationMinutes
         )
     }

@@ -1,16 +1,22 @@
 package com.example.graduation_project.presentation.conversation
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import android.location.Location
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.location.LocationManager
 import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.voice.AudioRecordManager
+import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.domain.usecase.GetHealthDataUseCase
 import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.presentation.model.ConversationState
@@ -63,6 +69,8 @@ class ConversationViewModelTest {
     private val mockAudioRecordState = MutableStateFlow<AudioRecordState>(AudioRecordState.Idle)
     private val mockAudioRecordManager = mockk<AudioRecordManager>(relaxed = true)
     private val mockGetHealthDataUseCase = mockk<GetHealthDataUseCase>()
+    private val mockHealthRepository = mockk<IHealthRepository>(relaxed = true)
+    private val mockLocationManager = mockk<LocationManager>(relaxed = true)
 
     private lateinit var viewModel: ConversationViewModel
 
@@ -70,18 +78,24 @@ class ConversationViewModelTest {
     fun setUp() {
         // android.util.Log은 JVM 단위 테스트에서 사용 불가 → static mock으로 대체
         mockkStatic(Log::class)
+        mockkStatic(ContextCompat::class)
         every { Log.d(any(), any<String>()) } returns 0
         every { Log.w(any(), any<String>()) } returns 0
         every { Log.e(any(), any<String>()) } returns 0
         every { Log.e(any(), any<String>(), any()) } returns 0
+        // ContextCompat 기본값: 권한 허용 (개별 테스트에서 오버라이드 가능)
+        every { ContextCompat.checkSelfPermission(any(), any()) } returns PackageManager.PERMISSION_GRANTED
         every { mockAudioRecordManager.state } returns mockAudioRecordState
         coEvery { mockGetHealthDataUseCase() } returns HealthData()
+        coEvery { mockHealthRepository.readTodayExerciseRoutes() } returns emptyList()
 
         viewModel = ConversationViewModel(
             application = mockApplication,
             repository = mockRepository,
             messageDao = mockMessageDao,
             audioRecordManager = mockAudioRecordManager,
+            healthRepository = mockHealthRepository,
+            locationManager = mockLocationManager,
             getHealthDataUseCase = mockGetHealthDataUseCase
         )
     }
@@ -89,6 +103,7 @@ class ConversationViewModelTest {
     @After
     fun tearDown() {
         unmockkStatic(Log::class)
+        unmockkStatic(ContextCompat::class)
     }
 
     // ===== 중복 요청 방지 테스트 =====
@@ -97,7 +112,7 @@ class ConversationViewModelTest {
     fun `startConversation 중복 호출 시 repository는 1번만 호출된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             // 진행 중(Sending) 상태가 유지되도록 delay로 첫 번째 호출을 지연
-            coEvery { mockRepository.startConversation(any()) } coAnswers {
+            coEvery { mockRepository.startConversation(any(), any()) } coAnswers {
                 delay(1_000)
                 ApiResult.Success(ConversationStartResponse(message = "안녕하세요"))
             }
@@ -106,7 +121,7 @@ class ConversationViewModelTest {
             viewModel.startConversation()  // Sending → Sending 전이 실패 → return@launch
             advanceUntilIdle()
 
-            coVerify(exactly = 1) { mockRepository.startConversation(any()) }
+            coVerify(exactly = 1) { mockRepository.startConversation(any(), any()) }
         }
 
     @Test
@@ -149,7 +164,7 @@ class ConversationViewModelTest {
     @Test
     fun `startConversation 실패 시 Idle로 복구된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            coEvery { mockRepository.startConversation(any()) } returns
+            coEvery { mockRepository.startConversation(any(), any()) } returns
                 ApiResult.Error(ApiException.NetworkError())
 
             viewModel.startConversation()
@@ -200,6 +215,93 @@ class ConversationViewModelTest {
             assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
         }
 
+    // ===== A12 통합 테스트: 위치 수집 → 서버 전송 플로우 =====
+
+    @Test
+    fun `위치 권한 있을 때 현재 위치가 locationData에 포함된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // 위치 권한 승인
+            every {
+                ContextCompat.checkSelfPermission(any(), Manifest.permission.ACCESS_FINE_LOCATION)
+            } returns PackageManager.PERMISSION_GRANTED
+
+            // GPS 좌표 반환
+            val mockLocation = mockk<Location>()
+            every { mockLocation.latitude } returns 37.88
+            every { mockLocation.longitude } returns 127.73
+            coEvery { mockLocationManager.getCurrentLocation() } returns mockLocation
+
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Success(ConversationStartResponse(message = "안녕하세요"))
+
+            viewModel.startConversation()
+            advanceUntilIdle()
+
+            coVerify {
+                mockRepository.startConversation(
+                    any(),
+                    match { it?.currentLatitude == 37.88 && it.currentLongitude == 127.73 }
+                )
+            }
+        }
+
+    @Test
+    fun `운동 기록 없을 때 visitedPlaces가 빈 리스트로 전송된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // 위치 권한 승인
+            every {
+                ContextCompat.checkSelfPermission(any(), Manifest.permission.ACCESS_FINE_LOCATION)
+            } returns PackageManager.PERMISSION_GRANTED
+
+            val mockLocation = mockk<Location>()
+            every { mockLocation.latitude } returns 37.88
+            every { mockLocation.longitude } returns 127.73
+            coEvery { mockLocationManager.getCurrentLocation() } returns mockLocation
+            coEvery { mockHealthRepository.readTodayExerciseRoutes() } returns emptyList()
+
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Success(ConversationStartResponse(message = "안녕하세요"))
+
+            viewModel.startConversation()
+            advanceUntilIdle()
+
+            coVerify {
+                mockRepository.startConversation(
+                    any(),
+                    match { it?.visitedPlaces?.isEmpty() == true }
+                )
+            }
+        }
+
+    @Test
+    fun `위치 권한 거부 시 null 위치로 대화가 정상 시작된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // 두 권한 모두 거부
+            every {
+                ContextCompat.checkSelfPermission(any(), Manifest.permission.ACCESS_FINE_LOCATION)
+            } returns PackageManager.PERMISSION_DENIED
+            every {
+                ContextCompat.checkSelfPermission(any(), Manifest.permission.ACCESS_COARSE_LOCATION)
+            } returns PackageManager.PERMISSION_DENIED
+
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Success(ConversationStartResponse(message = "안녕하세요"))
+
+            viewModel.startConversation()
+            advanceUntilIdle()
+
+            // LocationManager는 호출되지 않아야 함
+            coVerify(exactly = 0) { mockLocationManager.getCurrentLocation() }
+
+            // null 좌표로 서버 호출
+            coVerify {
+                mockRepository.startConversation(
+                    any(),
+                    match { it?.currentLatitude == null && it?.currentLongitude == null }
+                )
+            }
+        }
+
     // ===== 헬퍼 =====
 
     /**
@@ -209,7 +311,7 @@ class ConversationViewModelTest {
      * advanceUntilIdle()은 TestScope의 확장 함수이므로 TestScope 수신자로 선언
      */
     private fun TestScope.setupListeningState() {
-        coEvery { mockRepository.startConversation(any()) } returns
+        coEvery { mockRepository.startConversation(any(), any()) } returns
             ApiResult.Success(ConversationStartResponse(message = "안녕하세요"))
 
         viewModel.startConversation()
