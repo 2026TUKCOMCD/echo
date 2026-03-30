@@ -68,14 +68,18 @@ public class ContextService {
         //    변환 결과는 contextStore에 저장되어 세션 동안 재사용 (API 재호출 없음)
         LocationData locationData = locationService.enrichLocationData(rawLocationData);
 
-        // 5. 컨텍스트 생성 및 저장
+        // 5. 현재 위치 좌표 추출 (날씨 조회용)
+        Double currentLat = rawLocationData != null ? rawLocationData.getCurrentLatitude() : null;
+        Double currentLon = rawLocationData != null ? rawLocationData.getCurrentLongitude() : null;
+
+        // 6. 컨텍스트 생성 및 저장
         UserContext context = UserContext.builder()
                 .userId(userId)
                 .date(LocalDate.now())
                 .conversationHistory(new ArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
                 .preferences(preferences)
-                .todayWeather(weatherClient.getCurrentWeather(null, null))
+                .todayWeather(weatherClient.getCurrentWeather(currentLat, currentLon))
                 .locationData(locationData)
                 .lastAccessTime(LocalDateTime.now())
                 .isActive(true)
