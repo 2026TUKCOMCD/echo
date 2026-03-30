@@ -37,6 +37,18 @@ azure:
     api-key: ${AZURE_TTS_API_KEY}
     default-voice: ko-KR-SunHiNeural
 
+# Kakao API 설정
+kakao:
+  api:
+    url: https://dapi.kakao.com
+    key: ${KAKAO_API_KEY}
+
+# OpenWeatherMap API 설정
+weather:
+  api:
+    url: https://api.openweathermap.org
+    key: ${WEATHER_API_KEY}
+
 logging:
   level:
     feign: DEBUG

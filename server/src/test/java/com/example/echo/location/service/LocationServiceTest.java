@@ -1,6 +1,7 @@
 package com.example.echo.location.service;
 
-import com.example.echo.location.client.GeocodingClient;
+import com.example.echo.common.client.WeatherClient;
+import com.example.echo.common.dto.VisitWeather;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.RawLocationData;
@@ -24,7 +25,10 @@ import static org.mockito.Mockito.when;
 class LocationServiceTest {
 
     @Mock
-    private GeocodingClient geocodingClient;
+    private GeocodingService geocodingService;
+
+    @Mock
+    private WeatherClient weatherClient;
 
     @InjectMocks
     private LocationService locationService;
@@ -50,7 +54,7 @@ class LocationServiceTest {
                     .totalDistanceKm(2.5)
                     .build();
 
-            when(geocodingClient.getCityName(any(), any())).thenReturn("서울");
+            when(geocodingService.getCityName(any(), any())).thenReturn("서울");
 
             LocationData result = locationService.enrichLocationData(raw);
 
@@ -68,7 +72,7 @@ class LocationServiceTest {
                     .totalDistanceKm(3.2)
                     .build();
 
-            when(geocodingClient.getCityName(37.5665, 126.9780)).thenReturn("서울");
+            when(geocodingService.getCityName(37.5665, 126.9780)).thenReturn("서울");
 
             LocationData result = locationService.enrichLocationData(raw);
 
@@ -94,11 +98,17 @@ class LocationServiceTest {
                     .totalDistanceKm(1.0)
                     .build();
 
-            when(geocodingClient.getCityName(any(), any())).thenReturn("서울");
-            when(geocodingClient.reverseGeocode(37.5172, 127.0473)).thenReturn(
+            when(geocodingService.getCityName(any(), any())).thenReturn("서울");
+            when(geocodingService.reverseGeocode(37.5172, 127.0473)).thenReturn(
                     GeocodingResult.builder()
                             .placeName("스타벅스 강남점")
                             .address("서울 강남구 테헤란로 101")
+                            .build()
+            );
+            when(weatherClient.getWeatherForVisit(any(), any(), any())).thenReturn(
+                    VisitWeather.builder()
+                            .description("맑음")
+                            .temperature(18)
                             .build()
             );
 
@@ -112,6 +122,41 @@ class LocationServiceTest {
             assertThat(result.getVisitedPlaces().get(0).getVisitStartTime()).isEqualTo(LocalTime.of(14, 0));
             assertThat(result.getVisitedPlaces().get(0).getVisitEndTime()).isEqualTo(LocalTime.of(15, 30));
             assertThat(result.getVisitedPlaces().get(0).getStayDurationMinutes()).isEqualTo(90);
+            assertThat(result.getVisitedPlaces().get(0).getWeather()).isNotNull();
+            assertThat(result.getVisitedPlaces().get(0).getWeather().getDescription()).isEqualTo("맑음");
+        }
+
+        @Test
+        @DisplayName("방문 시점 날씨 조회 실패 시 weather = null")
+        void enrichLocationData_weatherNull() {
+            RawVisitedPlace rawPlace = RawVisitedPlace.builder()
+                    .latitude(37.5172)
+                    .longitude(127.0473)
+                    .visitStartTime(LocalTime.of(14, 0))
+                    .visitEndTime(LocalTime.of(15, 30))
+                    .stayDurationMinutes(90)
+                    .build();
+
+            RawLocationData raw = RawLocationData.builder()
+                    .currentLatitude(37.5665)
+                    .currentLongitude(126.9780)
+                    .visitedPlaces(List.of(rawPlace))
+                    .totalDistanceKm(1.0)
+                    .build();
+
+            when(geocodingService.getCityName(any(), any())).thenReturn("서울");
+            when(geocodingService.reverseGeocode(any(), any())).thenReturn(
+                    GeocodingResult.builder()
+                            .placeName("테스트 장소")
+                            .address("테스트 주소")
+                            .build()
+            );
+            when(weatherClient.getWeatherForVisit(any(), any(), any())).thenReturn(null);
+
+            LocationData result = locationService.enrichLocationData(raw);
+
+            assertThat(result.getVisitedPlaces()).hasSize(1);
+            assertThat(result.getVisitedPlaces().get(0).getWeather()).isNull();
         }
     }
 }
