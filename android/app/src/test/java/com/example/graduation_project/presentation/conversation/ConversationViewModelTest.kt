@@ -16,6 +16,7 @@ import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.voice.AudioRecordManager
+import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.domain.usecase.GetHealthDataUseCase
 import com.example.graduation_project.domain.voice.AudioRecordState
@@ -86,6 +87,7 @@ class ConversationViewModelTest {
         // ContextCompat 기본값: 권한 허용 (개별 테스트에서 오버라이드 가능)
         every { ContextCompat.checkSelfPermission(any(), any()) } returns PackageManager.PERMISSION_GRANTED
         every { mockAudioRecordManager.state } returns mockAudioRecordState
+        every { mockHealthRepository.getAvailability() } returns HealthConnectAvailability.NotSupported
         coEvery { mockGetHealthDataUseCase() } returns HealthData()
         coEvery { mockHealthRepository.readTodayExerciseRoutes() } returns emptyList()
 

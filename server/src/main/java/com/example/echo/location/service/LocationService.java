@@ -40,10 +40,13 @@ public class LocationService {
             return null;
         }
 
-        String currentCity = geocodingService.getCityName(
-                raw.getCurrentLatitude(),
-                raw.getCurrentLongitude()
-        );
+        String currentCity = null;
+        if (raw.getCurrentLatitude() != null && raw.getCurrentLongitude() != null) {
+            currentCity = geocodingService.getCityName(
+                    raw.getCurrentLatitude(),
+                    raw.getCurrentLongitude()
+            );
+        }
 
         List<VisitedPlace> enrichedPlaces = new ArrayList<>();
         if (raw.getVisitedPlaces() != null) {
