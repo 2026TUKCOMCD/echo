@@ -2,7 +2,7 @@ name: CI/CD - Build and Deploy to EC2
 
 on:
   push:
-    branches: [feat/system-prompt-v6]
+    branches: [test/US-5.8-integration-test]
     paths: ['server/**']
 
 env:
