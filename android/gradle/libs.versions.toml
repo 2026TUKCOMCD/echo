@@ -20,7 +20,6 @@ media3 = "1.2.1"
 mockk = "1.13.12"
 playServicesLocation = "21.3.0"
 healthConnect = "1.1.0"
-playServicesLocation = "21.3.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -72,9 +71,6 @@ media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "medi
 
 # Health Connect
 health-connect-client = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
-
-# Location
-play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 
 # Test
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }

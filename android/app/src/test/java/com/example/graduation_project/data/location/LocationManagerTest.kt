@@ -2,6 +2,7 @@ package com.example.graduation_project.data.location
 
 import android.location.Location
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.tasks.CancellationToken
 import com.google.android.gms.tasks.OnFailureListener
 import com.google.android.gms.tasks.OnSuccessListener
 import com.google.android.gms.tasks.Task
@@ -23,6 +24,8 @@ import org.junit.Test
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LocationManagerTest {
@@ -100,7 +103,7 @@ class LocationManagerTest {
 
     private fun stubCurrentLocation(successResult: Location?) {
         val task = mockk<Task<Location>>()
-        every { mockFusedClient.getCurrentLocation(any(), any()) } returns task
+        every { mockFusedClient.getCurrentLocation(any<Int>(), any<CancellationToken>()) } returns task
         every { task.addOnSuccessListener(any<OnSuccessListener<Location>>()) } answers {
             firstArg<OnSuccessListener<Location>>().onSuccess(successResult)
             task
@@ -110,7 +113,7 @@ class LocationManagerTest {
 
     private fun stubCurrentLocationHanging() {
         val task = mockk<Task<Location>>()
-        every { mockFusedClient.getCurrentLocation(any(), any()) } returns task
+        every { mockFusedClient.getCurrentLocation(any<Int>(), any<CancellationToken>()) } returns task
         every { task.addOnSuccessListener(any<OnSuccessListener<Location>>()) } returns task
         every { task.addOnFailureListener(any()) } returns task
     }
