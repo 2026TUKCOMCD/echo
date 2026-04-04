@@ -40,6 +40,10 @@ public class LocationService {
             return null;
         }
 
+        log.debug("위치 데이터 보강 시작 - 현재좌표: ({}, {}), 방문장소 수: {}",
+                raw.getCurrentLatitude(), raw.getCurrentLongitude(),
+                raw.getVisitedPlaces() != null ? raw.getVisitedPlaces().size() : 0);
+
         String currentCity = null;
         if (raw.getCurrentLatitude() != null && raw.getCurrentLongitude() != null) {
             currentCity = geocodingService.getCityName(
@@ -54,6 +58,9 @@ public class LocationService {
                 enrichedPlaces.add(enrichVisitedPlace(rawPlace));
             }
         }
+
+        log.info("위치 데이터 보강 완료 - currentCity: {}, 방문장소 수: {}, 총 이동거리: {}km",
+                currentCity, enrichedPlaces.size(), raw.getTotalDistanceKm());
 
         return LocationData.builder()
                 .currentCity(currentCity)
@@ -82,6 +89,11 @@ public class LocationService {
                 raw.getVisitStartTime()
         );
 
+        log.debug("방문 장소 보강 완료 - placeName: {}, address: {}, 체류: {}분, 날씨: {}",
+                result.getPlaceName(), result.getAddress(),
+                raw.getStayDurationMinutes(),
+                visitWeather != null ? visitWeather.getDescription() : "null");
+
         return VisitedPlace.builder()
                 .placeName(result.getPlaceName())
                 .address(result.getAddress())
@@ -94,3 +106,4 @@ public class LocationService {
                 .build();
     }
 }
+ 
