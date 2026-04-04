@@ -2,7 +2,7 @@ name: CI/CD - Build and Deploy to EC2
 
 on:
   push:
-    branches: [feat/system-prompt-v6]
+    branches: [feature/add-location-data-logging]
     paths: ['server/**']
 
 env:
