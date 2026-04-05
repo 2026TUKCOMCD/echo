@@ -3,6 +3,7 @@ package com.example.graduation_project.data.health
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.DistanceRecord
@@ -31,6 +32,7 @@ import java.time.ZoneId
 class HealthConnectManager(private val context: Context) {
 
     companion object {
+        private const val TAG = "HealthConnectManager"
         private const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
         private const val PLAY_STORE_URI = "market://details?id=$HEALTH_CONNECT_PACKAGE"
         private const val PLAY_STORE_WEB_URI =
@@ -252,6 +254,9 @@ class HealthConnectManager(private val context: Context) {
         val startTime = LocalDate.now(zone).atStartOfDay(zone).toInstant()
         val endTime = Instant.now()
 
+        Log.d(TAG, "=== HealthConnect 위치 데이터 조회 시작 ===")
+        Log.d(TAG, "조회 범위: $startTime ~ $endTime")
+
         val sessions = client.readRecords(
             ReadRecordsRequest(
                 recordType = ExerciseSessionRecord::class,
@@ -259,11 +264,45 @@ class HealthConnectManager(private val context: Context) {
             )
         ).records
 
-        return sessions.mapNotNull { session ->
+        Log.d(TAG, "운동 세션 총 개수: ${sessions.size}")
+
+        val result = sessions.mapNotNull { session ->
+            Log.d(TAG, "--- 세션 분석 ---")
+            Log.d(TAG, "세션 ID: ${session.metadata.id}")
+            Log.d(TAG, "운동 종류: ${exerciseTypeToKorean(session.exerciseType)}")
+            Log.d(TAG, "세션 시간: ${session.startTime} ~ ${session.endTime}")
+
             val routeResult = session.exerciseRouteResult
-            if (routeResult !is ExerciseRouteResult.Data) return@mapNotNull null
+            Log.d(TAG, "ExerciseRouteResult 타입: ${routeResult::class.simpleName}")
+
+            if (routeResult !is ExerciseRouteResult.Data) {
+                Log.w(TAG, "⚠️ Route 데이터 없음 (타입: ${routeResult::class.simpleName})")
+                return@mapNotNull null
+            }
+
             val locations = routeResult.exerciseRoute.route
-            if (locations.size < 2) return@mapNotNull null
+            Log.d(TAG, "Route 좌표 개수: ${locations.size}")
+
+            if (locations.size < 2) {
+                Log.w(TAG, "⚠️ 좌표 2개 미만으로 스킵")
+                return@mapNotNull null
+            }
+
+            // 각 좌표 로깅 (처음 5개, 마지막 5개만)
+            val logLimit = 5
+            locations.take(logLimit).forEachIndexed { index, loc ->
+                Log.d(TAG, "  [$index] lat=${loc.latitude}, lon=${loc.longitude}, time=${loc.time}")
+            }
+            if (locations.size > logLimit * 2) {
+                Log.d(TAG, "  ... (${locations.size - logLimit * 2}개 생략) ...")
+            }
+            if (locations.size > logLimit) {
+                locations.takeLast(logLimit).forEachIndexed { index, loc ->
+                    val actualIndex = locations.size - logLimit + index
+                    Log.d(TAG, "  [$actualIndex] lat=${loc.latitude}, lon=${loc.longitude}, time=${loc.time}")
+                }
+            }
+
             locations.map { location ->
                 LocationPoint(
                     latitude = location.latitude,
@@ -272,6 +311,9 @@ class HealthConnectManager(private val context: Context) {
                 )
             }
         }
+
+        Log.d(TAG, "=== 위치 데이터 조회 완료: 유효 세션 ${result.size}개, 총 좌표 ${result.sumOf { it.size }}개 ===")
+        return result
     }
 
     /**
