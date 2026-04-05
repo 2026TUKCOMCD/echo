@@ -45,6 +45,10 @@ class HealthConnectManager(private val context: Context) {
             HealthPermission.getReadPermission(ExerciseSessionRecord::class),
             HealthPermission.getReadPermission(DistanceRecord::class)
         )
+
+        // ExerciseRoute 권한 (AndroidManifest.xml에 READ_EXERCISE_ROUTES 선언 필요)
+        // ExerciseSessionRecord 읽기 권한이 있으면 route 접근 가능
+        // 다른 앱 데이터는 ConsentRequired 상태로 반환되며 사용자 동의 UI 필요
     }
 
     /**
@@ -275,9 +279,24 @@ class HealthConnectManager(private val context: Context) {
             val routeResult = session.exerciseRouteResult
             Log.d(TAG, "ExerciseRouteResult 타입: ${routeResult::class.simpleName}")
 
-            if (routeResult !is ExerciseRouteResult.Data) {
-                Log.w(TAG, "⚠️ Route 데이터 없음 (타입: ${routeResult::class.simpleName})")
-                return@mapNotNull null
+            when (routeResult) {
+                is ExerciseRouteResult.Data -> {
+                    Log.d(TAG, "✅ Route 데이터 있음")
+                }
+                is ExerciseRouteResult.NoData -> {
+                    Log.w(TAG, "⚠️ Route 데이터 없음 - 소스 앱이 GPS 경로를 기록하지 않음")
+                    return@mapNotNull null
+                }
+                is ExerciseRouteResult.ConsentRequired -> {
+                    Log.w(TAG, "⚠️ Route 접근에 사용자 동의 필요")
+                    Log.w(TAG, "   → 세션 ID: ${session.metadata.id}")
+                    Log.w(TAG, "   → ExerciseRouteRequestContract로 동의 UI 표시 필요")
+                    return@mapNotNull null
+                }
+                else -> {
+                    Log.w(TAG, "⚠️ 알 수 없는 Route 상태: ${routeResult::class.simpleName}")
+                    return@mapNotNull null
+                }
             }
 
             val locations = routeResult.exerciseRoute.route
