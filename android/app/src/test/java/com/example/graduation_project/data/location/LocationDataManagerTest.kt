@@ -1,6 +1,10 @@
 package com.example.graduation_project.data.location
 
+import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Location
+import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.domain.health.StayPointDetector
 import com.example.graduation_project.domain.model.LocationPoint
@@ -8,7 +12,10 @@ import com.example.graduation_project.domain.model.StayPoint
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -18,6 +25,7 @@ import java.time.Instant
 
 class LocationDataManagerTest {
 
+    private lateinit var context: Context
     private lateinit var locationManager: LocationManager
     private lateinit var healthConnectManager: HealthConnectManager
     private lateinit var stayPointDetector: StayPointDetector
@@ -25,10 +33,28 @@ class LocationDataManagerTest {
 
     @Before
     fun setUp() {
+        // android.util.Log static mock
+        mockkStatic(Log::class)
+        every { Log.d(any(), any<String>()) } returns 0
+        every { Log.w(any(), any<String>()) } returns 0
+        every { Log.e(any(), any<String>()) } returns 0
+
+        mockkStatic(ContextCompat::class)
+        context = mockk(relaxed = true)
         locationManager = mockk()
         healthConnectManager = mockk()
         stayPointDetector = mockk()
-        manager = LocationDataManager(locationManager, healthConnectManager, stayPointDetector)
+
+        // 기본적으로 위치 권한 있음으로 설정
+        every { ContextCompat.checkSelfPermission(context, any()) } returns PackageManager.PERMISSION_GRANTED
+
+        manager = LocationDataManager(context, locationManager, healthConnectManager, stayPointDetector)
+    }
+
+    @After
+    fun tearDown() {
+        unmockkStatic(ContextCompat::class)
+        unmockkStatic(Log::class)
     }
 
     @Test

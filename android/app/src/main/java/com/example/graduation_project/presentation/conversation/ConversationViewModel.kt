@@ -73,6 +73,7 @@ class ConversationViewModel(
         HealthConnectRepositoryImpl(healthConnectManager),
     private val locationManager: LocationManager = LocationManager(application),
     private val locationDataManager: LocationDataManager = LocationDataManager(
+        context = application,
         locationManager = locationManager,
         healthConnectManager = healthConnectManager,
         stayPointDetector = StayPointDetectorImpl()

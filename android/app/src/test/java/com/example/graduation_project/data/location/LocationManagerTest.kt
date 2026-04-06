@@ -1,6 +1,7 @@
 package com.example.graduation_project.data.location
 
 import android.location.Location
+import android.util.Log
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.tasks.CancellationToken
 import com.google.android.gms.tasks.OnFailureListener
@@ -8,6 +9,8 @@ import com.google.android.gms.tasks.OnSuccessListener
 import com.google.android.gms.tasks.Task
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -16,6 +19,7 @@ import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -38,8 +42,19 @@ class LocationManagerTest {
 
     @Before
     fun setUp() {
+        mockkStatic(Log::class)
+        every { Log.d(any(), any<String>()) } returns 0
+        every { Log.w(any(), any<String>()) } returns 0
+        every { Log.e(any(), any<String>()) } returns 0
+        every { Log.e(any(), any<String>(), any()) } returns 0
+
         mockFusedClient = mockk()
         locationManager = LocationManager(mockFusedClient)
+    }
+
+    @After
+    fun tearDown() {
+        unmockkStatic(Log::class)
     }
 
     // ===== 1. 정상 조회 =====
@@ -47,7 +62,10 @@ class LocationManagerTest {
     @Test
     fun `getCurrentLocation 성공 시 Location 반환`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            val expected = mockk<Location>()
+            val expected = mockk<Location>().apply {
+                every { latitude } returns 37.5665
+                every { longitude } returns 126.9780
+            }
             stubCurrentLocation(successResult = expected)
             stubLastLocation(successResult = null)
 
@@ -61,7 +79,10 @@ class LocationManagerTest {
     @Test
     fun `getCurrentLocation null 시 getLastKnownLocation 폴백 호출`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            val fallback = mockk<Location>()
+            val fallback = mockk<Location>().apply {
+                every { latitude } returns 37.5665
+                every { longitude } returns 126.9780
+            }
             stubCurrentLocation(successResult = null)
             stubLastLocation(successResult = fallback)
 
@@ -87,7 +108,10 @@ class LocationManagerTest {
     @Test
     fun `5초 타임아웃 시 getLastKnownLocation 폴백 호출`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            val fallback = mockk<Location>()
+            val fallback = mockk<Location>().apply {
+                every { latitude } returns 37.5665
+                every { longitude } returns 126.9780
+            }
             stubCurrentLocationHanging()
             stubLastLocation(successResult = fallback)
 

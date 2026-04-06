@@ -1,6 +1,10 @@
 package com.example.graduation_project.data.location
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.model.RawLocationData
 import com.example.graduation_project.data.model.RawVisitedPlace
@@ -16,6 +20,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 class LocationDataManager(
+    private val context: Context,
     private val locationManager: LocationManager,
     private val healthConnectManager: HealthConnectManager,
     private val stayPointDetector: StayPointDetector
@@ -23,6 +28,21 @@ class LocationDataManager(
 
     suspend fun collectLocationData(): RawLocationData? {
         Log.d(TAG, "========== LocationDataManager 위치 데이터 수집 시작 ==========")
+
+        // 0. 위치 권한 체크
+        val hasFineLocation = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarseLocation = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        Log.d(TAG, "위치 권한 상태: FINE=$hasFineLocation, COARSE=$hasCoarseLocation")
+
+        if (!hasFineLocation && !hasCoarseLocation) {
+            Log.w(TAG, "⚠️ 위치 권한 없음 - null 반환")
+            return null
+        }
 
         // 1. 현재 위치 — null이면 위치 기반 대화 불가이므로 전체 반환 null
         val currentLocation = locationManager.getCurrentLocation()
