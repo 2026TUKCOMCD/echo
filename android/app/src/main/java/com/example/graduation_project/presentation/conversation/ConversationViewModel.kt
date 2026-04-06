@@ -4,15 +4,13 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.health.HealthConnectRepositoryImpl
+import com.example.graduation_project.data.health.StayPointDetectorImpl
+import com.example.graduation_project.data.location.LocationDataManager
 import com.example.graduation_project.data.location.LocationManager
-import com.example.graduation_project.data.model.RawLocationData
 import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.MessageDao
@@ -70,9 +68,15 @@ class ConversationViewModel(
     private val repository: ConversationRepository = ConversationRepository(),
     private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao(),
     private val audioRecordManager: AudioRecordManager = AudioRecordManager(application),
+    private val healthConnectManager: HealthConnectManager = HealthConnectManager(application),
     private val healthRepository: IHealthRepository =
-        HealthConnectRepositoryImpl(HealthConnectManager(application)),
-    private val locationManager: LocationManager = LocationManager(application)
+        HealthConnectRepositoryImpl(healthConnectManager),
+    private val locationManager: LocationManager = LocationManager(application),
+    private val locationDataManager: LocationDataManager = LocationDataManager(
+        locationManager = locationManager,
+        healthConnectManager = healthConnectManager,
+        stayPointDetector = StayPointDetectorImpl()
+    )
 ) : AndroidViewModel(application) {
 
     private val getHealthDataUseCase = GetHealthDataUseCase(healthRepository)
@@ -306,20 +310,10 @@ class ConversationViewModel(
             if (!transitionTo(ConversationState.Sending)) return@launch
             _uiState.update { it.copy(errorMessage = null, currentError = null) }
 
-            // [A11] 위치 데이터 수집
+            // [A11] 위치 데이터 수집 (LocationDataManager로 통합)
             _uiState.update { it.copy(processingMessage = "위치 데이터 수집 중") }
 
-            val hasLocationPermission = ContextCompat.checkSelfPermission(
-                getApplication(), Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                getApplication(), Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-
-            val currentLocation = if (hasLocationPermission) locationManager.getCurrentLocation() else null
-
-            // [A10] ExerciseRoute 수집
-            val routes = healthRepository.readTodayExerciseRoutes()
+            val locationData = locationDataManager.collectLocationData()
 
             // [A11] 건강 데이터 수집
             _uiState.update { it.copy(processingMessage = "건강 데이터 수집 중") }
@@ -329,12 +323,6 @@ class ConversationViewModel(
             // API 호출 대기 타이머
             _uiState.update { it.copy(processingMessage = null) }
             startProcessingTimer()
-            val locationData = RawLocationData(
-                currentLatitude = currentLocation?.latitude,
-                currentLongitude = currentLocation?.longitude,
-                visitedPlaces = routes,
-                totalDistanceKm = healthData.exerciseDistanceKm
-            )
             val result = repository.startConversation(healthData, locationData)
 
             // PROCESSING 타이머 중지
