@@ -1,6 +1,5 @@
 package com.example.graduation_project.data.health
 
-import com.example.graduation_project.data.model.RawVisitedPlace
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.domain.health.SleepSummary
@@ -25,9 +24,6 @@ class HealthConnectRepositoryImpl(
     override suspend fun readLatestExercise(): Pair<Double?, String?> = manager.readLatestExercise()
 
     override suspend fun readTodayActivityList(): String? = manager.readTodayActivityList()
-
-    override suspend fun readTodayExerciseRoutes(): List<RawVisitedPlace> =
-        manager.readTodayExerciseRoutes()
 
     override suspend fun readExerciseSessionLocations(): List<List<LocationPoint>> =
         manager.readExerciseSessionLocations()
