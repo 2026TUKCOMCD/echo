@@ -4,7 +4,10 @@ import android.app.Application
 import android.util.Log
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.location.LocationDataManager
+import com.example.graduation_project.data.location.LocationManager
 import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
@@ -62,7 +65,10 @@ class ConversationViewModelTest {
     private val mockApplication = mockk<Application>(relaxed = true)
     private val mockAudioRecordState = MutableStateFlow<AudioRecordState>(AudioRecordState.Idle)
     private val mockAudioRecordManager = mockk<AudioRecordManager>(relaxed = true)
+    private val mockHealthConnectManager = mockk<HealthConnectManager>(relaxed = true)
     private val mockHealthRepository = mockk<IHealthRepository>(relaxed = true)
+    private val mockLocationManager = mockk<LocationManager>(relaxed = true)
+    private val mockLocationDataManager = mockk<LocationDataManager>(relaxed = true)
 
     private lateinit var viewModel: ConversationViewModel
 
@@ -76,13 +82,17 @@ class ConversationViewModelTest {
         every { Log.e(any(), any<String>(), any()) } returns 0
         every { mockAudioRecordManager.state } returns mockAudioRecordState
         every { mockHealthRepository.getAvailability() } returns HealthConnectAvailability.NotSupported
+        coEvery { mockLocationDataManager.collectLocationData() } returns null
 
         viewModel = ConversationViewModel(
             application = mockApplication,
             repository = mockRepository,
             messageDao = mockMessageDao,
             audioRecordManager = mockAudioRecordManager,
-            healthRepository = mockHealthRepository
+            healthConnectManager = mockHealthConnectManager,
+            healthRepository = mockHealthRepository,
+            locationManager = mockLocationManager,
+            locationDataManager = mockLocationDataManager
         )
     }
 
