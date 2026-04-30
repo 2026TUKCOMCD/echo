@@ -30,3 +30,7 @@ azure:
     endpoint: https://koreacentral.tts.speech.microsoft.com
     api-key: ${AZURE_TTS_API_KEY}
     default-voice: ko-KR-SunHiNeural
+
+supertone:
+  base-url: https://supertoneplay.io  # TODO: API Console 확인 후 정확한 URL로 교체
+  api-key: ${SUPERTONE_API_KEY}
