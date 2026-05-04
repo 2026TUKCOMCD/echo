@@ -52,3 +52,9 @@ azure:
     endpoint: https://koreacentral.tts.speech.microsoft.com
     # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)
     default-voice: ko-KR-SunHiNeural  # 기본 음성 (친근하고 따뜻한 여성)
+
+# JWT 설정
+jwt:
+  # secret은 application-local.yaml(${JWT_SECRET})에서 주입
+  access-token-expiration: 3600000      # 1시간
+  refresh-token-expiration: 2592000000  # 30일
