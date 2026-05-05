@@ -107,6 +107,12 @@ dependencies {
     // Location
     implementation(libs.play.services.location)
 
+    // Navigation
+    implementation(libs.androidx.navigation.compose)
+
+    // Security (EncryptedSharedPreferences)
+    implementation(libs.androidx.security.crypto)
+
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
