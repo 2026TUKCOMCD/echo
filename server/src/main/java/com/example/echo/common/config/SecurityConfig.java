@@ -40,7 +40,9 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/api/auth/**",
+                                "/api/auth/signup",
+                                "/api/auth/login",
+                                "/api/auth/refresh",
                                 "/actuator/health",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
