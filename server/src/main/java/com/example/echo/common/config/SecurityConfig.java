@@ -1,24 +1,30 @@
 package com.example.echo.common.config;
 
+import com.example.echo.auth.filter.JwtAuthFilter;
+import com.example.echo.common.exception.ErrorResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-/**
- * 보안 설정 (T1.1-2 최소 버전).
- *
- * - BCryptPasswordEncoder Bean 노출 (회원가입 비번 해시용)
- * - 세션 STATELESS, CSRF/formLogin/httpBasic 비활성 (JWT 환경 준비)
- * - 모든 엔드포인트 permitAll → 기존 API 동작 유지
- *
- * T1.2-1에서 JwtAuthFilter 추가 + 패턴별 authenticated 잠금으로 강화 예정.
- */
+import java.nio.charset.StandardCharsets;
+
 @Configuration
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final JwtAuthFilter jwtAuthFilter;
+    private final ObjectMapper objectMapper;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -32,7 +38,28 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
-                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                "/api/auth/**",
+                                "/actuator/health",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**"
+                        ).permitAll()
+                        .anyRequest().authenticated()
+                )
+                .exceptionHandling(eh -> eh.authenticationEntryPoint(unauthorizedEntryPoint()))
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    private AuthenticationEntryPoint unauthorizedEntryPoint() {
+        return (request, response, authException) -> {
+            response.setStatus(HttpStatus.UNAUTHORIZED.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            ErrorResponse body = ErrorResponse.of(HttpStatus.UNAUTHORIZED, "인증이 필요합니다.");
+            response.getWriter().write(objectMapper.writeValueAsString(body));
+        };
     }
 }
