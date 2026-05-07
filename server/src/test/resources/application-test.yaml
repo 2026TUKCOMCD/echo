@@ -39,7 +39,7 @@ azure:
 
 # Supertone Play TTS 설정
 supertone:
-  base-url: https://supertoneplay.io  # TODO: API Console 확인 후 정확한 URL로 교체
+  base-url: https://supertoneapi.com
   api-key: ${SUPERTONE_API_KEY}
 
 logging:
