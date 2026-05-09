@@ -57,6 +57,12 @@ azure:
 tts:
   provider: supertone
 
+# JWT 설정
+jwt:
+  # secret은 application-local.yaml(${JWT_SECRET})에서 주입
+  access-token-expiration: 3600000      # 1시간
+  refresh-token-expiration: 2592000000  # 30일
+
 # Supertone Play TTS 설정
 supertone:
   base-url: https://supertoneapi.com
