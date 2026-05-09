@@ -1,7 +1,8 @@
 package com.example.graduation_project.data.location
 
+import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Location
-import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.domain.health.StayPointDetector
 import com.example.graduation_project.domain.model.LocationPoint
 import com.example.graduation_project.domain.model.StayPoint
@@ -18,17 +19,23 @@ import java.time.Instant
 
 class LocationDataManagerTest {
 
+    private lateinit var context: Context
     private lateinit var locationManager: LocationManager
-    private lateinit var healthConnectManager: HealthConnectManager
+    private lateinit var locationStorageManager: LocationStorageManager
     private lateinit var stayPointDetector: StayPointDetector
     private lateinit var manager: LocationDataManager
 
     @Before
     fun setUp() {
+        context = mockk()
         locationManager = mockk()
-        healthConnectManager = mockk()
+        locationStorageManager = mockk()
         stayPointDetector = mockk()
-        manager = LocationDataManager(locationManager, healthConnectManager, stayPointDetector)
+
+        // 위치 권한 있음으로 mock
+        every { context.checkPermission(any(), any(), any()) } returns PackageManager.PERMISSION_GRANTED
+
+        manager = LocationDataManager(context, locationManager, locationStorageManager, stayPointDetector)
     }
 
     @Test
@@ -39,13 +46,13 @@ class LocationDataManagerTest {
     }
 
     @Test
-    fun `운동 기록 없으면 visitedPlaces 비어있고 totalDistanceKm 0`() = runTest {
+    fun `GPS 기록 없으면 visitedPlaces 비어있고 totalDistanceKm 0`() = runTest {
         val location = mockk<Location>().apply {
             every { latitude } returns 37.5665
             every { longitude } returns 126.9780
         }
         coEvery { locationManager.getCurrentLocation() } returns location
-        coEvery { healthConnectManager.readExerciseSessionLocations() } returns emptyList()
+        coEvery { locationStorageManager.getTodayLocations() } returns emptyList()
         every { stayPointDetector.detect(emptyList()) } returns emptyList()
 
         val result = manager.collectLocationData()
@@ -69,7 +76,7 @@ class LocationDataManagerTest {
             durationMinutes = 90
         )
         coEvery { locationManager.getCurrentLocation() } returns location
-        coEvery { healthConnectManager.readExerciseSessionLocations() } returns emptyList()
+        coEvery { locationStorageManager.getTodayLocations() } returns emptyList()
         every { stayPointDetector.detect(emptyList()) } returns listOf(stayPoint)
 
         val result = manager.collectLocationData()
@@ -82,7 +89,7 @@ class LocationDataManagerTest {
     }
 
     @Test
-    fun `이동 거리 계산 - 동일 좌표 두 세션`() = runTest {
+    fun `이동 거리 계산 - GPS 포인트 2개`() = runTest {
         val location = mockk<Location>().apply {
             every { latitude } returns 37.5665
             every { longitude } returns 126.9780
@@ -93,7 +100,7 @@ class LocationDataManagerTest {
             LocationPoint(37.5755, 126.9780, Instant.now())  // 약 1km 북쪽
         )
         coEvery { locationManager.getCurrentLocation() } returns location
-        coEvery { healthConnectManager.readExerciseSessionLocations() } returns listOf(locations)
+        coEvery { locationStorageManager.getTodayLocations() } returns locations
         every { stayPointDetector.detect(locations) } returns emptyList()
 
         val result = manager.collectLocationData()
