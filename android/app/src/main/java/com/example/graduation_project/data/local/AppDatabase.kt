@@ -44,8 +44,8 @@ abstract class AppDatabase : RoomDatabase() {
          * 기존 messages 테이블은 그대로 유지
          */
         private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("""
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS location_points (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         latitude REAL NOT NULL,
@@ -75,7 +75,7 @@ abstract class AppDatabase : RoomDatabase() {
             )
                 .addMigrations(MIGRATION_1_2)
                 // Migration 실패 시에만 fallback (안전망)
-                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
         }
     }
