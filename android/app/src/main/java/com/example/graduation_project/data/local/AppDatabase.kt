@@ -4,7 +4,11 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.graduation_project.data.local.dao.LocationPointDao
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.local.entity.LocationPointEntity
 import com.example.graduation_project.data.local.entity.MessageEntity
 
 /**
@@ -19,19 +23,39 @@ import com.example.graduation_project.data.local.entity.MessageEntity
  * - 마이그레이션 전략 필요 (현재는 fallbackToDestructiveMigration 사용)
  */
 @Database(
-    entities = [MessageEntity::class],
-    version = 1,
+    entities = [MessageEntity::class, LocationPointEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun messageDao(): MessageDao
 
+    abstract fun locationPointDao(): LocationPointDao
+
     companion object {
         private const val DATABASE_NAME = "echo_database"
 
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        /**
+         * Migration 1 → 2: location_points 테이블 추가
+         * 기존 messages 테이블은 그대로 유지
+         */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS location_points (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        latitude REAL NOT NULL,
+                        longitude REAL NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        date TEXT NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
 
         /**
          * 데이터베이스 인스턴스 가져오기
@@ -49,8 +73,8 @@ abstract class AppDatabase : RoomDatabase() {
                 AppDatabase::class.java,
                 DATABASE_NAME
             )
-                // 스키마 변경 시 데이터 삭제 후 재생성 (개발 단계용)
-                // TODO: 프로덕션에서는 마이그레이션 전략 구현 필요
+                .addMigrations(MIGRATION_1_2)
+                // Migration 실패 시에만 fallback (안전망)
                 .fallbackToDestructiveMigration()
                 .build()
         }
