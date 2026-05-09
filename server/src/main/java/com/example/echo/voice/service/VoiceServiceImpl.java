@@ -14,9 +14,13 @@ import com.example.echo.voice.client.TTSClient;
 // [2024-01 merge] voice.dto.VoiceSettings → user.dto.VoiceSettings로 통일
 // 이유: user/dto에 더 완성도 높은 VoiceSettings가 있어 중복 제거
 import com.example.echo.user.dto.VoiceSettings;
+import com.example.echo.voice.dto.SupertoneCreditBalance;
 import com.example.echo.voice.dto.SupertoneTtsRequest;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
+import com.example.echo.voice.exception.RetryableVoiceException;
+import com.example.echo.voice.exception.SupertoneInsufficientCreditException;
 import com.example.echo.voice.exception.VoiceProcessingException;
+import org.springframework.retry.support.RetryTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +37,7 @@ public class VoiceServiceImpl implements VoiceService {
     private final STTClient sttClient;
     private final TTSClient ttsClient;
     private final SupertoneTtsClient supertoneClient;
+    private final RetryTemplate supertoneRetryTemplate;
 
     @Value("${openai.whisper.model:whisper-1}")
     private String whisperModel;
@@ -137,6 +142,8 @@ public class VoiceServiceImpl implements VoiceService {
             return synthesizeWithAzure(text, voiceSettings);
         } catch (VoiceProcessingException e) {
             throw e;
+        } catch (SupertoneInsufficientCreditException e) {
+            throw e;
         } catch (Exception e) {
             log.error("TTS 처리 중 오류 발생: {}", e.getMessage(), e);
             throw new VoiceProcessingException("텍스트를 음성으로 변환하는 중 오류가 발생했습니다.", e);
@@ -162,14 +169,38 @@ public class VoiceServiceImpl implements VoiceService {
         log.info("Supertone TTS 변환 시작: voice_id={}, style={}, speed={}, text_length={}",
             supertoneVoiceId, style, speed, text.length());
 
-        byte[] audioData = supertoneClient.synthesize(supertoneVoiceId, request);
+        try {
+            byte[] audioData = supertoneRetryTemplate.execute(ctx -> {
+                if (ctx.getRetryCount() > 0) {
+                    log.warn("Supertone TTS 재시도 중: {}/2회", ctx.getRetryCount());
+                }
+                return supertoneClient.synthesize(supertoneVoiceId, request);
+            });
 
-        if (audioData == null || audioData.length == 0) {
-            throw new VoiceProcessingException("Supertone TTS API 응답이 비어있습니다.");
+            if (audioData == null || audioData.length == 0) {
+                throw new VoiceProcessingException("Supertone TTS API 응답이 비어있습니다.");
+            }
+
+            log.info("Supertone TTS 변환 완료: {} chars -> {} bytes", text.length(), audioData.length);
+            return audioData;
+
+        } catch (SupertoneInsufficientCreditException e) {
+            logCreditBalance();
+            throw e;
+        } catch (RetryableVoiceException e) {
+            log.error("Supertone TTS 3회 재시도 후 최종 실패: {}", e.getMessage());
+            throw new VoiceProcessingException(
+                    "Supertone TTS 서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.", e);
         }
+    }
 
-        log.info("Supertone TTS 변환 완료: {} chars -> {} bytes", text.length(), audioData.length);
-        return audioData;
+    private void logCreditBalance() {
+        try {
+            SupertoneCreditBalance balance = supertoneClient.getCreditBalance();
+            log.warn("[크레딧 부족] Supertone 크레딧 잔액: {}", balance);
+        } catch (Exception ex) {
+            log.warn("[크레딧 부족] 크레딧 잔액 조회 실패: {}", ex.getMessage());
+        }
     }
 
     private byte[] synthesizeWithAzure(String text, VoiceSettings voiceSettings) {

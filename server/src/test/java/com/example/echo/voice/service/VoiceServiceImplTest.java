@@ -5,6 +5,8 @@ import com.example.echo.voice.client.STTClient;
 import com.example.echo.voice.client.SupertoneTtsClient;
 import com.example.echo.voice.client.TTSClient;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
+import com.example.echo.voice.exception.RetryableVoiceException;
+import com.example.echo.voice.exception.SupertoneInsufficientCreditException;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,7 +16,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.retry.policy.SimpleRetryPolicy;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,7 +44,16 @@ class VoiceServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        voiceService = new VoiceServiceImpl(sttClient, ttsClient, supertoneClient);
+        // 테스트용 RetryTemplate: noBackoff으로 빠르게 실행, 동일한 재시도 정책 적용
+        RetryTemplate testRetryTemplate = new RetryTemplate();
+        Map<Class<? extends Throwable>, Boolean> retryableExceptions = Map.of(
+                RetryableVoiceException.class, true,
+                SupertoneInsufficientCreditException.class, false,
+                VoiceProcessingException.class, false
+        );
+        testRetryTemplate.setRetryPolicy(new SimpleRetryPolicy(3, retryableExceptions, true));
+
+        voiceService = new VoiceServiceImpl(sttClient, ttsClient, supertoneClient, testRetryTemplate);
         ReflectionTestUtils.setField(voiceService, "whisperModel", "whisper-1");
         ReflectionTestUtils.setField(voiceService, "defaultLanguage", "ko");
         ReflectionTestUtils.setField(voiceService, "defaultVoice", "ko-KR-SunHiNeural");
@@ -456,6 +471,7 @@ class VoiceServiceImplTest {
 
         @Test
         @DisplayName("SSML에 텍스트가 포함되어 전달됨")
+
         void ssml_containsText() {
             when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
 
@@ -504,6 +520,83 @@ class VoiceServiceImplTest {
             voiceService.textToSpeech("A>B", null);
 
             verify(ttsClient).synthesize(contains("A&gt;B"));
+        }
+    }
+
+    // ========== Supertone TTS 에러 처리 및 재시도 테스트 ==========
+
+    @Nested
+    @DisplayName("Supertone TTS - 에러 처리 및 재시도")
+    class SupertoneErrorHandlingTest {
+
+        @BeforeEach
+        void setSupertoneProvider() {
+            ReflectionTestUtils.setField(voiceService, "ttsProvider", "supertone");
+        }
+
+        @Test
+        @DisplayName("Supertone 정상 응답 → 음성 바이트 배열 반환")
+        void success() {
+            byte[] expectedAudio = "wav-data".getBytes();
+            when(supertoneClient.synthesize(any(), any())).thenReturn(expectedAudio);
+
+            byte[] result = voiceService.textToSpeech("테스트", null);
+
+            assertThat(result).isEqualTo(expectedAudio);
+            verify(supertoneClient, times(1)).synthesize(any(), any());
+        }
+
+        @Test
+        @DisplayName("Supertone 5xx 오류 → 3회 재시도 후 VoiceProcessingException 발생")
+        void retryableError_exhausted_throwsVoiceProcessingException() {
+            when(supertoneClient.synthesize(any(), any()))
+                    .thenThrow(new RetryableVoiceException("서버 오류 (HTTP 500)"));
+
+            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
+                    .isInstanceOf(VoiceProcessingException.class)
+                    .hasMessageContaining("일시적으로 불안정");
+
+            verify(supertoneClient, times(3)).synthesize(any(), any());
+        }
+
+        @Test
+        @DisplayName("Supertone 1회 실패 후 성공 → 정상 반환 (재시도 동작 확인)")
+        void retrySuccess_afterOneFailure() {
+            byte[] expectedAudio = "wav-data".getBytes();
+            when(supertoneClient.synthesize(any(), any()))
+                    .thenThrow(new RetryableVoiceException("임시 오류"))
+                    .thenReturn(expectedAudio);
+
+            byte[] result = voiceService.textToSpeech("테스트", null);
+
+            assertThat(result).isEqualTo(expectedAudio);
+            verify(supertoneClient, times(2)).synthesize(any(), any());
+        }
+
+        @Test
+        @DisplayName("Supertone 402 → SupertoneInsufficientCreditException 즉시 발생 (재시도 없음)")
+        void creditExhausted_noRetry_throwsInsufficientCreditException() {
+            when(supertoneClient.synthesize(any(), any()))
+                    .thenThrow(new SupertoneInsufficientCreditException("크레딧 부족"));
+
+            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
+                    .isInstanceOf(SupertoneInsufficientCreditException.class)
+                    .hasMessageContaining("크레딧");
+
+            verify(supertoneClient, times(1)).synthesize(any(), any());
+            verify(supertoneClient, times(1)).getCreditBalance();
+        }
+
+        @Test
+        @DisplayName("402 발생 시 잔액 조회 실패해도 예외 전파 (graceful degradation)")
+        void creditExhausted_balanceQueryFails_exceptionStillPropagates() {
+            when(supertoneClient.synthesize(any(), any()))
+                    .thenThrow(new SupertoneInsufficientCreditException("크레딧 부족"));
+            when(supertoneClient.getCreditBalance())
+                    .thenThrow(new RuntimeException("잔액 조회 API 실패"));
+
+            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
+                    .isInstanceOf(SupertoneInsufficientCreditException.class);
         }
     }
 }

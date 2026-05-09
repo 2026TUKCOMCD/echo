@@ -49,6 +49,9 @@ dependencies {
 	// OpenFeign
 	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
 	implementation 'io.github.openfeign:feign-micrometer'
+
+	// Spring Retry (RetryTemplate — AOP 불필요)
+	implementation 'org.springframework.retry:spring-retry'
 	compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	runtimeOnly 'com.mysql:mysql-connector-j'
