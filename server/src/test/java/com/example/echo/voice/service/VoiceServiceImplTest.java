@@ -2,6 +2,7 @@ package com.example.echo.voice.service;
 
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.client.STTClient;
+import com.example.echo.voice.client.SupertoneTtsClient;
 import com.example.echo.voice.client.TTSClient;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
 import com.example.echo.voice.exception.VoiceProcessingException;
@@ -30,14 +31,20 @@ class VoiceServiceImplTest {
     @Mock
     private TTSClient ttsClient;
 
+    @Mock
+    private SupertoneTtsClient supertoneClient;
+
     private VoiceServiceImpl voiceService;
 
     @BeforeEach
     void setUp() {
-        voiceService = new VoiceServiceImpl(sttClient, ttsClient);
+        voiceService = new VoiceServiceImpl(sttClient, ttsClient, supertoneClient);
         ReflectionTestUtils.setField(voiceService, "whisperModel", "whisper-1");
         ReflectionTestUtils.setField(voiceService, "defaultLanguage", "ko");
         ReflectionTestUtils.setField(voiceService, "defaultVoice", "ko-KR-SunHiNeural");
+        ReflectionTestUtils.setField(voiceService, "ttsProvider", "azure");
+        ReflectionTestUtils.setField(voiceService, "supertoneVoiceId", "195e1922033a6168f0c90f");
+        ReflectionTestUtils.setField(voiceService, "supertoneModel", "sona_speech_2");
     }
 
     // ========== STT 테스트 ==========
