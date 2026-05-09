@@ -5,6 +5,7 @@ import com.example.echo.voice.dto.TtsRequest;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import com.example.echo.voice.service.VoiceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +35,14 @@ class VoiceControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private VoiceController voiceController;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(voiceController, "ttsProvider", "supertone");
+    }
 
     @Nested
     @DisplayName("POST /api/voice/stt - STT 엔드포인트")
@@ -73,11 +83,11 @@ class VoiceControllerTest {
     class TtsEndpointTest {
 
         @Test
-        @DisplayName("정상 요청: 텍스트 → 200 OK + audio/mpeg 응답")
+        @DisplayName("정상 요청: 텍스트 → 200 OK + audio/wav 응답")
         void success() throws Exception {
             TtsRequest request = new TtsRequest("안녕하세요",
                     VoiceSettings.builder().voiceSpeed(1.0).voiceTone("warm").build());
-            byte[] audioData = "fake-mp3-data".getBytes();
+            byte[] audioData = "fake-wav-data".getBytes();
 
             when(voiceService.textToSpeech(any(), any())).thenReturn(audioData);
 
@@ -85,8 +95,8 @@ class VoiceControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
-                    .andExpect(header().string("Content-Type", "audio/mpeg"))
-                    .andExpect(header().string("Content-Disposition", "inline; filename=\"speech.mp3\""))
+                    .andExpect(header().string("Content-Type", "audio/wav"))
+                    .andExpect(header().string("Content-Disposition", "inline; filename=\"speech.wav\""))
                     .andExpect(content().bytes(audioData));
         }
 
@@ -102,7 +112,7 @@ class VoiceControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
-                    .andExpect(header().string("Content-Type", "audio/mpeg"));
+                    .andExpect(header().string("Content-Type", "audio/wav"));
         }
 
         @Test
