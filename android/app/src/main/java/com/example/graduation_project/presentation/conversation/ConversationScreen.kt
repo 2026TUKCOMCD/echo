@@ -54,7 +54,14 @@ import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.permission.MicrophonePermissionHandler
+import com.example.graduation_project.presentation.permission.MicrophonePermissionDialog
+import com.example.graduation_project.presentation.permission.MicrophonePermissionSettingsDialog
 import com.example.graduation_project.presentation.permission.PermissionSettingsDialog
+import com.example.graduation_project.presentation.permission.BackgroundLocationPermissionHandler
+import com.example.graduation_project.presentation.permission.BackgroundLocationState
+import com.example.graduation_project.presentation.permission.BackgroundLocationPermissionDialog
+import com.example.graduation_project.presentation.permission.BackgroundLocationSettingsDialog
+import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.domain.permission.PermissionState
 import com.example.graduation_project.presentation.health.HealthConnectPermissionHandler
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
@@ -121,40 +128,153 @@ fun ConversationScreen(
     // 설정 다이얼로그 상태
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // Health Connect 권한 처리 (graceful degradation)
-    HealthConnectPermissionHandler {
-        // 마이크 권한 처리
-        MicrophonePermissionHandler(
-            onPermissionResult = { /* 권한 결과 로깅 등 */ }
-        ) { permissionState, requestPermission, openSettings ->
+    // ========== 다이얼로그 순차 표시를 위한 상태 관리 ==========
+    // 순서: 마이크(필수) → 위치(선택) → Health Connect(선택)
 
-            // 권한에 따른 대화 시작 처리
-            val handleStartClick: () -> Unit = {
-                when (permissionState) {
-                    PermissionState.Granted -> viewModel.startConversation()
-                    PermissionState.NotRequested, PermissionState.Denied -> requestPermission()
-                    PermissionState.PermanentlyDenied -> openSettings()
+    // 마이크 권한 다이얼로그 상태
+    var showMicrophoneDialog by remember { mutableStateOf(false) }
+    var showMicrophoneSettingsDialog by remember { mutableStateOf(false) }
+    // 백그라운드 위치 권한 다이얼로그 상태
+    var showBackgroundLocationDialog by remember { mutableStateOf(false) }
+    var showBackgroundLocationSettingsDialog by remember { mutableStateOf(false) }
+    // Health Connect 다이얼로그 표시 상태 추적
+    var isHealthConnectDialogShowing by remember { mutableStateOf(false) }
+    // 대기 중인 다이얼로그 타입 (마이크 허용 후 표시)
+    var pendingLocationDialogType by remember { mutableStateOf<String?>(null) }
+
+    // 마이크 권한 처리 (필수 - 가장 먼저)
+    MicrophonePermissionHandler(
+        onPermissionResult = { /* 권한 결과 로깅 */ }
+    ) { micPermissionState, requestMicPermission, openMicSettings ->
+
+        // 앱 시작 시 마이크 권한 상태에 따라 다이얼로그 표시
+        LaunchedEffect(micPermissionState) {
+            when (micPermissionState) {
+                PermissionState.NotRequested, PermissionState.Denied -> {
+                    showMicrophoneDialog = true
+                    showMicrophoneSettingsDialog = false
+                }
+                PermissionState.PermanentlyDenied -> {
+                    showMicrophoneDialog = false
+                    showMicrophoneSettingsDialog = true
+                }
+                PermissionState.Granted -> {
+                    showMicrophoneDialog = false
+                    showMicrophoneSettingsDialog = false
                 }
             }
+        }
 
-            // 화면 구성
-            ConversationScreenContent(
-                uiState = uiState,
-                snackbarHostState = snackbarHostState,
-                animationManager = animationManager,
-                onStartClick = handleStartClick,
-                onEndClick = viewModel::onFarewellButtonClicked,
-                onSettingsClick = { showSettingsDialog = true },
-                onRetryClick = viewModel::onUserRetryClicked,
-                onContactSupportClick = { /* TODO: 고객센터 연결 */ }
+        // 마이크 권한 요청 다이얼로그 (필수 - 닫기 불가)
+        if (showMicrophoneDialog) {
+            MicrophonePermissionDialog(
+                onRequestPermission = requestMicPermission
             )
+        }
 
-            // 권한 영구 거부 시 설정 안내 다이얼로그 표시
-            if (permissionState == PermissionState.PermanentlyDenied) {
-                PermissionSettingsDialog(
-                    onOpenSettings = openSettings,
-                    onDismiss = { /* 다이얼로그 닫기 */ }
-                )
+        // 마이크 권한 설정 안내 다이얼로그 (영구 거부 시 - 닫기 불가)
+        if (showMicrophoneSettingsDialog) {
+            MicrophonePermissionSettingsDialog(
+                onOpenSettings = openMicSettings
+            )
+        }
+
+        // 마이크 권한이 허용된 경우에만 다음 권한 처리
+        if (micPermissionState == PermissionState.Granted) {
+            // 백그라운드 위치 권한 처리 (선택)
+            BackgroundLocationPermissionHandler(
+                onPermissionResult = { state ->
+                    if (state == BackgroundLocationState.Granted) {
+                        LocationScheduler.enableLocationCollection(context)
+                    }
+                }
+            ) { locationState, requestForegroundPermission, requestBackgroundPermission, openLocationSettings ->
+
+                // 위치 권한 상태 확인 → 다이얼로그 대기열에 추가
+                LaunchedEffect(locationState) {
+                    when (locationState) {
+                        BackgroundLocationState.NotRequested,
+                        BackgroundLocationState.NeedsForegroundFirst -> {
+                            pendingLocationDialogType = "request"
+                        }
+                        BackgroundLocationState.Denied,
+                        BackgroundLocationState.PermanentlyDenied -> {
+                            pendingLocationDialogType = "settings"
+                        }
+                        BackgroundLocationState.Granted -> {
+                            pendingLocationDialogType = null
+                            LocationScheduler.enableLocationCollection(context)
+                        }
+                    }
+                }
+
+                // 위치 다이얼로그 표시 (Health Connect 다이얼로그가 닫힌 후)
+                LaunchedEffect(isHealthConnectDialogShowing, pendingLocationDialogType) {
+                    if (!isHealthConnectDialogShowing && pendingLocationDialogType != null) {
+                        when (pendingLocationDialogType) {
+                            "request" -> showBackgroundLocationDialog = true
+                            "settings" -> showBackgroundLocationSettingsDialog = true
+                        }
+                    }
+                }
+
+                // 백그라운드 위치 권한 요청 다이얼로그 (선택)
+                if (showBackgroundLocationDialog) {
+                    BackgroundLocationPermissionDialog(
+                        onDismiss = {
+                            showBackgroundLocationDialog = false
+                            pendingLocationDialogType = null
+                        },
+                        onRequestPermission = {
+                            when (locationState) {
+                                BackgroundLocationState.NeedsForegroundFirst -> requestForegroundPermission()
+                                else -> requestBackgroundPermission()
+                            }
+                            showBackgroundLocationDialog = false
+                            pendingLocationDialogType = null
+                        }
+                    )
+                }
+
+                // 백그라운드 위치 설정 안내 다이얼로그 (선택)
+                if (showBackgroundLocationSettingsDialog) {
+                    BackgroundLocationSettingsDialog(
+                        onDismiss = {
+                            showBackgroundLocationSettingsDialog = false
+                            pendingLocationDialogType = null
+                        },
+                        onOpenSettings = {
+                            openLocationSettings()
+                            showBackgroundLocationSettingsDialog = false
+                            pendingLocationDialogType = null
+                        }
+                    )
+                }
+
+                // Health Connect 권한 처리 (선택)
+                HealthConnectPermissionHandler(
+                    canShowDialog = !showBackgroundLocationDialog && !showBackgroundLocationSettingsDialog,
+                    onDialogStateChanged = { isShowing ->
+                        isHealthConnectDialogShowing = isShowing
+                    }
+                ) {
+                    // 대화 시작 처리 (마이크 권한은 이미 허용됨)
+                    val handleStartClick: () -> Unit = {
+                        viewModel.startConversation()
+                    }
+
+                    // 화면 구성
+                    ConversationScreenContent(
+                        uiState = uiState,
+                        snackbarHostState = snackbarHostState,
+                        animationManager = animationManager,
+                        onStartClick = handleStartClick,
+                        onEndClick = viewModel::onFarewellButtonClicked,
+                        onSettingsClick = { showSettingsDialog = true },
+                        onRetryClick = viewModel::onUserRetryClicked,
+                        onContactSupportClick = { /* TODO: 고객센터 연결 */ }
+                    )
+                }
             }
         }
     }
