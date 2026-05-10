@@ -35,7 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun SignupScreen(
     onSignupSuccess: () -> Unit,
-    viewModel: SignupViewModel = viewModel()
+    viewModel: SignupViewModel = viewModel(factory = SignupViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
