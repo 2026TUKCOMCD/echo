@@ -8,6 +8,7 @@ import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.health.HealthConnectRepositoryImpl
+import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationDataManager
 import com.example.graduation_project.data.location.LocationManager
 import com.example.graduation_project.data.location.LocationStorageManager
@@ -501,6 +502,8 @@ class ConversationViewModel(
                     audioPlayerManager.stop()  // 재시도 중이어도 즉시 중지
                     audioRecordManager.stop()  // 녹음 중지
                     stopProcessingTimer()  // PROCESSING 타이머 중지
+                    // GPS 수집 서비스 중지 (대화 종료 시)
+                    LocationCollectionService.stop(getApplication())
                     conversationId = null
                     // Sending → Ended
                     transitionTo(ConversationState.Ended)
