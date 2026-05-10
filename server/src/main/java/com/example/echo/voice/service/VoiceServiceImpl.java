@@ -9,12 +9,18 @@ STTclient, TTS client 실행하는 곳
 package com.example.echo.voice.service;
 
 import com.example.echo.voice.client.STTClient;
+import com.example.echo.voice.client.SupertoneTtsClient;
 import com.example.echo.voice.client.TTSClient;
 // [2024-01 merge] voice.dto.VoiceSettings → user.dto.VoiceSettings로 통일
 // 이유: user/dto에 더 완성도 높은 VoiceSettings가 있어 중복 제거
 import com.example.echo.user.dto.VoiceSettings;
+import com.example.echo.voice.dto.SupertoneCreditBalance;
+import com.example.echo.voice.dto.SupertoneTtsRequest;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
+import com.example.echo.voice.exception.RetryableVoiceException;
+import com.example.echo.voice.exception.SupertoneInsufficientCreditException;
 import com.example.echo.voice.exception.VoiceProcessingException;
+import org.springframework.retry.support.RetryTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +36,8 @@ public class VoiceServiceImpl implements VoiceService {
 
     private final STTClient sttClient;
     private final TTSClient ttsClient;
+    private final SupertoneTtsClient supertoneClient;
+    private final RetryTemplate supertoneRetryTemplate;
 
     @Value("${openai.whisper.model:whisper-1}")
     private String whisperModel;
@@ -40,12 +48,29 @@ public class VoiceServiceImpl implements VoiceService {
     @Value("${azure.tts.default-voice:ko-KR-SunHiNeural}")
     private String defaultVoice;
 
+    @Value("${tts.provider:supertone}")
+    private String ttsProvider;
+
+    @Value("${supertone.voice-id}")
+    private String supertoneVoiceId;
+
+    @Value("${supertone.model:sona_speech_2}")
+    private String supertoneModel;
+
     // voiceTone → Azure Neural Voice 매핑
     private static final Map<String, String> TONE_TO_VOICE = Map.of(
         "warm",   "ko-KR-SunHiNeural",   // 친근하고 따뜻한 여성
         "calm",   "ko-KR-InJoonNeural",  // 차분한 남성
         "bright", "ko-KR-JiMinNeural",   // 밝고 활기찬 여성
         "gentle", "ko-KR-YuJinNeural"    // 부드러운 여성
+    );
+
+    // voiceTone → Supertone style 매핑
+    private static final Map<String, String> TONE_TO_STYLE = Map.of(
+        "warm",   "serene",
+        "calm",   "neutral",
+        "bright", "happy",
+        "gentle", "serene"
     );
 
     /*
@@ -108,37 +133,92 @@ public class VoiceServiceImpl implements VoiceService {
      */
     @Override
     public byte[] textToSpeech(String text, VoiceSettings voiceSettings) {
-        // 1. 검증
         validateText(text);
 
         try {
-            // 2. 전처리 - 사용자 설정을 Azure SSML 형식으로 변환
-            String voiceName = resolveVoice(voiceSettings);
-            String rate = convertSpeedToRate(voiceSettings);
-            String ssml = buildSsml(text, voiceName, rate);
-
-            log.info("TTS 변환 시작: voice={}, rate={}, text_length={}",
-                    voiceName, rate, text.length());
-
-            // 3. API 호출
-            byte[] audioData = ttsClient.synthesize(ssml);
-
-            // 4. 응답 확인
-            if (audioData == null || audioData.length == 0) {
-                throw new VoiceProcessingException("Azure TTS API 응답이 비어있습니다.");
+            if ("supertone".equals(ttsProvider)) {
+                return synthesizeWithSupertone(text, voiceSettings);
             }
-
-            log.info("TTS 변환 완료: {} chars -> {} bytes",
-                    text.length(), audioData.length);
-
-            return audioData;
-
+            return synthesizeWithAzure(text, voiceSettings);
         } catch (VoiceProcessingException e) {
+            throw e;
+        } catch (SupertoneInsufficientCreditException e) {
             throw e;
         } catch (Exception e) {
             log.error("TTS 처리 중 오류 발생: {}", e.getMessage(), e);
             throw new VoiceProcessingException("텍스트를 음성으로 변환하는 중 오류가 발생했습니다.", e);
         }
+    }
+
+    private byte[] synthesizeWithSupertone(String text, VoiceSettings voiceSettings) {
+        String style = (voiceSettings != null && voiceSettings.getVoiceTone() != null)
+            ? TONE_TO_STYLE.getOrDefault(voiceSettings.getVoiceTone().toLowerCase(), "serene")
+            : "serene";
+        Double speed = (voiceSettings != null && voiceSettings.getVoiceSpeed() != null)
+            ? voiceSettings.getVoiceSpeed()
+            : 1.0;
+
+        SupertoneTtsRequest request = SupertoneTtsRequest.builder()
+            .text(text)
+            .language("ko")
+            .style(style)
+            .model(supertoneModel)
+            .speed(speed)
+            .build();
+
+        log.info("Supertone TTS 변환 시작: voice_id={}, style={}, speed={}, text_length={}",
+            supertoneVoiceId, style, speed, text.length());
+
+        try {
+            byte[] audioData = supertoneRetryTemplate.execute(ctx -> {
+                if (ctx.getRetryCount() > 0) {
+                    log.warn("Supertone TTS 재시도 중: {}/2회", ctx.getRetryCount());
+                }
+                return supertoneClient.synthesize(supertoneVoiceId, request);
+            });
+
+            if (audioData == null || audioData.length == 0) {
+                throw new VoiceProcessingException("Supertone TTS API 응답이 비어있습니다.");
+            }
+
+            log.info("Supertone TTS 변환 완료: {} chars -> {} bytes", text.length(), audioData.length);
+            return audioData;
+
+        } catch (SupertoneInsufficientCreditException e) {
+            logCreditBalance();
+            throw e;
+        } catch (RetryableVoiceException e) {
+            log.error("Supertone TTS 3회 재시도 후 최종 실패: {}", e.getMessage());
+            throw new VoiceProcessingException(
+                    "Supertone TTS 서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.", e);
+        }
+    }
+
+    private void logCreditBalance() {
+        try {
+            SupertoneCreditBalance balance = supertoneClient.getCreditBalance();
+            log.warn("[크레딧 부족] Supertone 크레딧 잔액: {}", balance);
+        } catch (Exception ex) {
+            log.warn("[크레딧 부족] 크레딧 잔액 조회 실패: {}", ex.getMessage());
+        }
+    }
+
+    private byte[] synthesizeWithAzure(String text, VoiceSettings voiceSettings) {
+        String voiceName = resolveVoice(voiceSettings);
+        String rate = convertSpeedToRate(voiceSettings);
+        String ssml = buildSsml(text, voiceName, rate);
+
+        log.info("Azure TTS 변환 시작: voice={}, rate={}, text_length={}",
+            voiceName, rate, text.length());
+
+        byte[] audioData = ttsClient.synthesize(ssml);
+
+        if (audioData == null || audioData.length == 0) {
+            throw new VoiceProcessingException("Azure TTS API 응답이 비어있습니다.");
+        }
+
+        log.info("Azure TTS 변환 완료: {} chars -> {} bytes", text.length(), audioData.length);
+        return audioData;
     }
 
     private void validateText(String text) {
