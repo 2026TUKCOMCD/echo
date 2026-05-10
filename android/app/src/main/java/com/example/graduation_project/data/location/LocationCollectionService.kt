@@ -74,6 +74,12 @@ class LocationCollectionService : Service() {
         // Foreground Service 시작
         startForegroundService()
 
+        // 이미 수집 중이면 다시 시작하지 않음
+        if (collectionJob?.isActive == true) {
+            Log.d(TAG, "이미 위치 수집 중 - 중복 시작 무시")
+            return START_STICKY
+        }
+
         // 위치 수집 시작
         startLocationCollection()
 
@@ -106,10 +112,11 @@ class LocationCollectionService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "위치 수집 서비스",
-            NotificationManager.IMPORTANCE_LOW
+            NotificationManager.IMPORTANCE_DEFAULT  // 상태바에 아이콘 표시
         ).apply {
             description = "하루 동안 방문 장소를 기록합니다"
             setShowBadge(false)
+            setSound(null, null)  // 소리 없음
         }
 
         val notificationManager = getSystemService(NotificationManager::class.java)

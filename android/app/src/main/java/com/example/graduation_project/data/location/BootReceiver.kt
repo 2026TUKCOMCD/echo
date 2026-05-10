@@ -47,14 +47,9 @@ class BootReceiver : BroadcastReceiver() {
         // 아침 6시 알람 스케줄링
         LocationScheduler.scheduleMorningAlarm(context)
 
-        // 현재 시간이 6시~자정 사이면 즉시 서비스 시작
-        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        if (hour in 6..23) {
-            Log.d(TAG, "활동 시간대 - 위치 수집 서비스 즉시 시작")
-            LocationCollectionService.start(context)
-        } else {
-            Log.d(TAG, "수면 시간대 - 아침 6시에 서비스 시작 예약됨")
-        }
+        // 테스트용: 시간 제한 없이 항상 시작
+        Log.d(TAG, "위치 수집 서비스 즉시 시작")
+        LocationCollectionService.start(context)
     }
 
     companion object {

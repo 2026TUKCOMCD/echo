@@ -119,11 +119,8 @@ object LocationScheduler {
      * - 아침 알람 스케줄링
      */
     fun enableLocationCollection(context: Context) {
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-
-        if (hour in MORNING_HOUR..23) {
-            LocationCollectionService.start(context)
-        }
+        // 테스트용: 시간 제한 없이 항상 시작
+        LocationCollectionService.start(context)
 
         scheduleMorningAlarm(context)
         Log.d(TAG, "위치 수집 활성화 완료")

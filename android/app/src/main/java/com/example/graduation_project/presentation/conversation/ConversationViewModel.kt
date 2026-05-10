@@ -317,6 +317,9 @@ class ConversationViewModel(
             _uiState.update { it.copy(processingMessage = "위치 데이터 수집 중") }
             val locationData = locationDataManager.collectLocationData()
 
+            // GPS 수집 서비스 중지 (대화 시작 시 - 위치 데이터 수집 완료 후)
+            LocationCollectionService.stop(getApplication())
+
             // [A11] 건강 데이터 수집
             _uiState.update { it.copy(processingMessage = "건강 데이터 수집 중") }
             val healthData = getHealthDataUseCase()
@@ -502,8 +505,6 @@ class ConversationViewModel(
                     audioPlayerManager.stop()  // 재시도 중이어도 즉시 중지
                     audioRecordManager.stop()  // 녹음 중지
                     stopProcessingTimer()  // PROCESSING 타이머 중지
-                    // GPS 수집 서비스 중지 (대화 종료 시)
-                    LocationCollectionService.stop(getApplication())
                     conversationId = null
                     // Sending → Ended
                     transitionTo(ConversationState.Ended)
