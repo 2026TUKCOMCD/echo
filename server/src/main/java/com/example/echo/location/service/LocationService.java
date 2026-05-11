@@ -70,10 +70,17 @@ public class LocationService {
     }
 
     /**
+     * 방문 시점 날씨 조회를 위한 최소 체류 시간 (분)
+     * - API 호출 최적화를 위해 30분 이상 체류한 장소만 날씨 조회
+     * - 짧은 체류(편의점, 버스정류장 등)는 대화 주제로 부적합
+     */
+    private static final int MIN_STAY_DURATION_FOR_WEATHER = 30;
+
+    /**
      * 방문 장소 정보 보강
      *
      * - 역지오코딩으로 장소명/주소 추가
-     * - Timemachine API로 방문 시점 날씨 추가
+     * - Timemachine API로 방문 시점 날씨 추가 (30분 이상 체류 시에만)
      */
     private VisitedPlace enrichVisitedPlace(RawVisitedPlace raw) {
         // 1. 역지오코딩
@@ -82,12 +89,22 @@ public class LocationService {
                 raw.getLongitude()
         );
 
-        // 2. 방문 시점 날씨 조회 (Timemachine API)
-        VisitWeather visitWeather = weatherClient.getWeatherForVisit(
-                raw.getLatitude(),
-                raw.getLongitude(),
-                raw.getVisitStartTime()
-        );
+        // 2. 방문 시점 날씨 조회 (30분 이상 체류 시에만 API 호출)
+        VisitWeather visitWeather = null;
+        Integer stayDuration = raw.getStayDurationMinutes();
+        if (stayDuration != null && stayDuration >= MIN_STAY_DURATION_FOR_WEATHER) {
+            visitWeather = weatherClient.getWeatherForVisit(
+                    raw.getLatitude(),
+                    raw.getLongitude(),
+                    raw.getVisitStartTime()
+            );
+            log.debug("방문 시점 날씨 조회 - 체류 {}분 >= {}분, 날씨: {}",
+                    stayDuration, MIN_STAY_DURATION_FOR_WEATHER,
+                    visitWeather != null ? visitWeather.getDescription() : "null");
+        } else {
+            log.debug("방문 시점 날씨 조회 생략 - 체류 {}분 < {}분 (API 절약)",
+                    stayDuration, MIN_STAY_DURATION_FOR_WEATHER);
+        }
 
         log.debug("방문 장소 보강 완료 - placeName: {}, address: {}, 체류: {}분, 날씨: {}",
                 result.getPlaceName(), result.getAddress(),
