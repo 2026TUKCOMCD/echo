@@ -53,12 +53,7 @@ import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.permission.LocationPermissionHandler
-import com.example.graduation_project.presentation.permission.LocationPermissionSettingsDialog
-import com.example.graduation_project.presentation.permission.MicrophonePermissionHandler
-import com.example.graduation_project.presentation.permission.PermissionSettingsDialog
-import com.example.graduation_project.domain.permission.PermissionState
-import com.example.graduation_project.presentation.health.HealthConnectPermissionHandler
+import com.example.graduation_project.presentation.permission.UnifiedPermissionHandler
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
 /**
@@ -124,63 +119,24 @@ fun ConversationScreen(
     // 설정 다이얼로그 상태
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // Health Connect 권한 처리 (graceful degradation)
-    HealthConnectPermissionHandler {
-        // 위치 권한 처리 (선택적 — 거부해도 대화 가능)
-        LocationPermissionHandler(
-            onPermissionResult = { /* 권한 결과 로깅 등 */ }
-        ) { locationPermissionState, requestLocationPermission, openLocationSettings ->
-
-            // 화면 진입 시 위치 권한 자동 요청
-            LaunchedEffect(locationPermissionState) {
-                if (locationPermissionState == PermissionState.NotRequested) {
-                    requestLocationPermission()
-                }
-            }
-
-            // 마이크 권한 처리
-            MicrophonePermissionHandler(
-                onPermissionResult = { /* 권한 결과 로깅 등 */ }
-            ) { permissionState, requestPermission, openSettings ->
-
-                // 권한에 따른 대화 시작 처리
-                val handleStartClick: () -> Unit = {
-                    when (permissionState) {
-                        PermissionState.Granted -> viewModel.startConversation()
-                        PermissionState.NotRequested, PermissionState.Denied -> requestPermission()
-                        PermissionState.PermanentlyDenied -> openSettings()
-                    }
-                }
-
-                // 화면 구성
-                ConversationScreenContent(
-                    uiState = uiState,
-                    snackbarHostState = snackbarHostState,
-                    animationManager = animationManager,
-                    onStartClick = handleStartClick,
-                    onEndClick = viewModel::onFarewellButtonClicked,
-                    onSettingsClick = { showSettingsDialog = true },
-                    onRetryClick = viewModel::onUserRetryClicked,
-                    onContactSupportClick = { /* TODO: 고객센터 연결 */ }
-                )
-
-                // 마이크 권한 영구 거부 시 설정 안내 다이얼로그 표시
-                if (permissionState == PermissionState.PermanentlyDenied) {
-                    PermissionSettingsDialog(
-                        onOpenSettings = openSettings,
-                        onDismiss = { /* 다이얼로그 닫기 */ }
-                    )
-                }
-            }
-
-            // 위치 권한 영구 거부 시 설정 안내 다이얼로그 표시
-            if (locationPermissionState == PermissionState.PermanentlyDenied) {
-                LocationPermissionSettingsDialog(
-                    onOpenSettings = openLocationSettings,
-                    onDismiss = { /* 다이얼로그 닫기 */ }
-                )
-            }
+    // 통합 권한 핸들러 - 모든 권한을 순차적으로 처리
+    UnifiedPermissionHandler {
+        // 대화 시작 처리
+        val handleStartClick: () -> Unit = {
+            viewModel.startConversation()
         }
+
+        // 화면 구성
+        ConversationScreenContent(
+            uiState = uiState,
+            snackbarHostState = snackbarHostState,
+            animationManager = animationManager,
+            onStartClick = handleStartClick,
+            onEndClick = viewModel::onFarewellButtonClicked,
+            onSettingsClick = { showSettingsDialog = true },
+            onRetryClick = viewModel::onUserRetryClicked,
+            onContactSupportClick = { /* TODO: 고객센터 연결 */ }
+        )
     }
 
     // 음성 설정 다이얼로그

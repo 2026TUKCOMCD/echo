@@ -20,6 +20,7 @@ import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ import java.util.Map;
  *
  * 일기 프롬프트는 DiaryService에서 담당 (단일 책임 원칙)
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PromptService {
@@ -120,10 +122,16 @@ public class PromptService {
         if (locationData != null) {
             variables.put("currentCity", locationData.getCurrentCity() != null
                     ? locationData.getCurrentCity() : "");
-            variables.put("visitedPlacesText", buildVisitedPlacesText(locationData.getVisitedPlaces()));
+            String visitedPlacesText = buildVisitedPlacesText(locationData.getVisitedPlaces());
+            variables.put("visitedPlacesText", visitedPlacesText);
+
+            // 프롬프트에 들어가는 위치 정보 로그
+            log.info("[프롬프트] currentCity: {}", variables.get("currentCity"));
+            log.debug("[프롬프트] visitedPlacesText:\n{}", visitedPlacesText);
         } else {
             variables.put("currentCity", "");
             variables.put("visitedPlacesText", "오늘 방문한 장소 정보가 없습니다.");
+            log.info("[프롬프트] 위치 데이터 없음");
         }
 
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
@@ -152,6 +160,17 @@ public class PromptService {
                 .forEach(place -> {
                     sb.append(String.format("- %s", place.getPlaceName()));
 
+                    // 방문 시간 및 체류 시간 추가
+                    if (place.getVisitStartTime() != null && place.getVisitEndTime() != null) {
+                        sb.append(String.format(" (%s~%s",
+                                formatTime(place.getVisitStartTime()),
+                                formatTime(place.getVisitEndTime())));
+                        if (place.getStayDurationMinutes() != null) {
+                            sb.append(String.format(", %d분 체류", place.getStayDurationMinutes()));
+                        }
+                        sb.append(")");
+                    }
+
                     // 방문 시점 날씨 정보 추가
                     VisitWeather weather = place.getWeather();
                     if (weather != null && weather.getDescription() != null) {
@@ -166,6 +185,23 @@ public class PromptService {
                 });
 
         return sb.toString().trim();
+    }
+
+    /**
+     * LocalTime을 "오전/오후 H시 mm분" 형식으로 포맷팅
+     */
+    private String formatTime(java.time.LocalTime time) {
+        if (time == null) return "";
+        int hour = time.getHour();
+        int minute = time.getMinute();
+        String period = hour < 12 ? "오전" : "오후";
+        int displayHour = hour <= 12 ? hour : hour - 12;
+        if (displayHour == 0) displayHour = 12;
+
+        if (minute == 0) {
+            return String.format("%s %d시", period, displayHour);
+        }
+        return String.format("%s %d시 %d분", period, displayHour, minute);
     }
 
     /**

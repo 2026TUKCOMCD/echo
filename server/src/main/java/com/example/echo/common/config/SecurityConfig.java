@@ -60,7 +60,11 @@ public class SecurityConfig {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-            ErrorResponse body = ErrorResponse.of(HttpStatus.UNAUTHORIZED, "인증이 필요합니다.");
+            ErrorResponse body = ErrorResponse.of(
+                    HttpStatus.UNAUTHORIZED.value(),
+                    "UNAUTHORIZED",
+                    "인증이 필요합니다."
+            );
             response.getWriter().write(objectMapper.writeValueAsString(body));
         };
     }

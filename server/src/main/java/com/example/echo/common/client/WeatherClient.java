@@ -6,6 +6,7 @@ import com.example.echo.common.dto.WeatherApiResponse;
 import com.example.echo.common.dto.WeatherData;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -151,6 +152,11 @@ public class WeatherClient {
 
     /**
      * 방문 시점 날씨 API 호출 (One Call API 3.0 Timemachine)
+     *
+     * API 에러 핸들링:
+     * - 429 (Too Many Requests): 일일 한도 초과 경고
+     * - 401/403 (Unauthorized/Forbidden): One Call API 3.0 구독 필요 경고
+     * - 기타 에러: 일반 오류 로그
      */
     private VisitWeather callTimemachineApi(Double latitude, Double longitude, long timestamp) {
         try {
@@ -174,6 +180,23 @@ public class WeatherClient {
 
             return visitWeather;
 
+        } catch (FeignException.TooManyRequests e) {
+            log.error("⚠️ OpenWeatherMap API 한도 초과! 관리자 확인 필요. " +
+                    "일일 무료 한도: 1000회. 위도: {}, 경도: {}", latitude, longitude);
+            return null;
+        } catch (FeignException.Unauthorized e) {
+            log.error("⚠️ OpenWeatherMap API 인증 실패! API 키를 확인하세요. " +
+                    "위도: {}, 경도: {}", latitude, longitude);
+            return null;
+        } catch (FeignException.Forbidden e) {
+            log.error("⚠️ One Call API 3.0 구독이 필요합니다! " +
+                    "OpenWeatherMap 콘솔에서 구독 상태를 확인하세요. " +
+                    "https://home.openweathermap.org/subscriptions");
+            return null;
+        } catch (FeignException e) {
+            log.error("방문 날씨 조회 실패 - 위도: {}, 경도: {}, timestamp: {}, HTTP 상태: {}, 오류: {}",
+                    latitude, longitude, timestamp, e.status(), e.getMessage());
+            return null;
         } catch (Exception e) {
             log.error("방문 날씨 조회 실패 - 위도: {}, 경도: {}, timestamp: {}, 오류: {}",
                     latitude, longitude, timestamp, e.getMessage());

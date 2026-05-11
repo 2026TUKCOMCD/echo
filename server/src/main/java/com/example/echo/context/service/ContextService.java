@@ -82,11 +82,18 @@ public class ContextService {
                 .build();
 
         contextStore.put(userId, context);
-        log.info("위치 데이터 컨텍스트 저장 완료 - userId: {}, currentCity: {}, 방문장소 수: {}",
+        log.info("[컨텍스트] 저장 완료 - userId: {}, currentCity: {}, 방문장소 수: {}",
                 userId,
                 locationData != null ? locationData.getCurrentCity() : "null",
                 locationData != null && locationData.getVisitedPlaces() != null
                         ? locationData.getVisitedPlaces().size() : 0);
+        // 방문 장소 상세 로그
+        if (locationData != null && locationData.getVisitedPlaces() != null) {
+            locationData.getVisitedPlaces().forEach(place ->
+                log.debug("[컨텍스트] 방문장소 - placeName: {}, address: {}, 체류: {}분, 날씨: {}",
+                        place.getPlaceName(), place.getAddress(), place.getStayDurationMinutes(),
+                        place.getWeather() != null ? place.getWeather().getDescription() : "null"));
+        }
         log.info("컨텍스트 초기화 완료 - userId: {}", userId);
         return context;
     }
