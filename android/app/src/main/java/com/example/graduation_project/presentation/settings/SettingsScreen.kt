@@ -1,6 +1,5 @@
 package com.example.graduation_project.presentation.settings
 
-import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,6 +59,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.model.VoiceSettings
+import com.example.graduation_project.presentation.common.BirthdayInputRow
+import com.example.graduation_project.presentation.common.buildBirthdayString
+import com.example.graduation_project.presentation.common.parseBirthday
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.EchoAccentRed
 import com.example.graduation_project.ui.theme.EchoBgCard
@@ -70,7 +72,6 @@ import com.example.graduation_project.ui.theme.EchoTextPrimary
 import com.example.graduation_project.ui.theme.EchoTextSecondary
 import com.example.graduation_project.ui.theme.EchoTextTertiary
 import com.example.graduation_project.ui.theme.OutfitFontFamily
-import java.time.LocalDate
 import java.time.LocalTime
 
 private val EMAIL_REGEX = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
@@ -552,24 +553,50 @@ private fun DatePickerFieldDialog(
     onSelected: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
-    DisposableEffect(Unit) {
-        val today = LocalDate.now()
-        val (y, m, d) = if (!current.isNullOrBlank()) {
-            runCatching {
-                val p = LocalDate.parse(current)
-                Triple(p.year, p.monthValue - 1, p.dayOfMonth)
-            }.getOrDefault(Triple(today.year - 70, 0, 1))
-        } else {
-            Triple(today.year - 70, 0, 1)
+    val initial = remember { parseBirthday(current ?: "") }
+    var year by remember { mutableStateOf(initial.first) }
+    var month by remember { mutableStateOf(initial.second) }
+    var day by remember { mutableStateOf(initial.third) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = EchoBgCard,
+        title = {
+            Text("생년월일", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary)
+        },
+        text = {
+            Column {
+                BirthdayInputRow(
+                    year = year, month = month, day = day,
+                    onYearChange = { year = it; error = null },
+                    onMonthChange = { month = it; error = null },
+                    onDayChange = { day = it; error = null },
+                    isError = error != null
+                )
+                error?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, fontSize = 13.sp, fontFamily = OutfitFontFamily, color = EchoAccentRed)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                when {
+                    year.isBlank() && month.isBlank() && day.isBlank() -> onSelected("")
+                    buildBirthdayString(year, month, day) != null -> onSelected(buildBirthdayString(year, month, day)!!)
+                    else -> error = "올바른 날짜를 입력해주세요"
+                }
+            }) {
+                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            }
         }
-        val dialog = DatePickerDialog(context, { _, year, month, day ->
-            onSelected(LocalDate.of(year, month + 1, day).toString())
-        }, y, m, d)
-        dialog.setOnDismissListener { onDismiss() }
-        dialog.show()
-        onDispose { dialog.dismiss() }
-    }
+    )
 }
 
 @Composable

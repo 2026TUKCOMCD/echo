@@ -1,6 +1,5 @@
 package com.example.graduation_project.presentation.onboarding
 
-import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.presentation.auth.EchoOutlinedTextField
+import com.example.graduation_project.presentation.common.BirthdayInputRow
+import com.example.graduation_project.presentation.common.buildBirthdayString
+import com.example.graduation_project.presentation.common.parseBirthday
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.EchoBgMuted
 import com.example.graduation_project.ui.theme.EchoBgPage
@@ -285,47 +287,23 @@ private fun StepContent(
 
 @Composable
 private fun DatePickerStep(selected: String, onDateSelected: (String) -> Unit) {
-    val context = LocalContext.current
-    var showPicker by remember { mutableStateOf(false) }
+    val initial = remember { parseBirthday(selected) }
+    var year by remember { mutableStateOf(initial.first) }
+    var month by remember { mutableStateOf(initial.second) }
+    var day by remember { mutableStateOf(initial.third) }
 
-    Column {
-        OutlinedButton(
-            onClick = { showPicker = true },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text(
-                text = if (selected.isNotEmpty()) selected else "날짜 선택",
-                fontSize = 16.sp,
-                fontFamily = OutfitFontFamily,
-                color = if (selected.isNotEmpty()) EchoTextPrimary else EchoTextTertiary
-            )
-        }
-        if (selected.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = { onDateSelected("") }) {
-                Text("선택 취소", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
-            }
-        }
+    fun notifyChange(y: String, m: String, d: String) {
+        val built = buildBirthdayString(y, m, d)
+        if (built != null) onDateSelected(built)
+        else if (y.isBlank() && m.isBlank() && d.isBlank()) onDateSelected("")
     }
 
-    if (showPicker) {
-        DisposableEffect(Unit) {
-            val today = LocalDate.now()
-            val (y, m, d) = if (selected.isNotEmpty()) {
-                val parsed = runCatching { LocalDate.parse(selected) }.getOrDefault(today)
-                Triple(parsed.year, parsed.monthValue - 1, parsed.dayOfMonth)
-            } else {
-                Triple(today.year - 70, 0, 1)
-            }
-            val dialog = DatePickerDialog(context, { _, year, month, day ->
-                onDateSelected(LocalDate.of(year, month + 1, day).toString())
-            }, y, m, d)
-            dialog.setOnDismissListener { showPicker = false }
-            dialog.show()
-            onDispose { dialog.dismiss() }
-        }
-    }
+    BirthdayInputRow(
+        year = year, month = month, day = day,
+        onYearChange = { year = it; notifyChange(it, month, day) },
+        onMonthChange = { month = it; notifyChange(year, it, day) },
+        onDayChange = { day = it; notifyChange(year, month, it) }
+    )
 }
 
 @Composable
