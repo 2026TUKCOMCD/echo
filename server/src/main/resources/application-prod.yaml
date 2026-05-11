@@ -40,3 +40,7 @@ supertone:
   default-style: serene
   model: sona_speech_2
   api-key: ${SUPERTONE_API_KEY}
+
+logging:
+  level:
+    com.example.echo.location: DEBUG
