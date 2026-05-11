@@ -5,6 +5,7 @@ import com.example.echo.voice.dto.TtsRequest;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import com.example.echo.voice.service.VoiceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,9 +14,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -33,6 +34,14 @@ class VoiceControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private VoiceController voiceController;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(voiceController, "ttsProvider", "supertone");
+    }
 
     @Nested
     @DisplayName("POST /api/voice/stt - STT 엔드포인트")
@@ -53,8 +62,8 @@ class VoiceControllerTest {
         }
 
         @Test
-        @DisplayName("VoiceProcessingException 발생 시 예외가 전파된다 (GlobalExceptionHandler 미구현)")
-        void voiceProcessingException_propagates() {
+        @DisplayName("VoiceProcessingException 발생 시 500 + VOICE_PROCESSING_ERROR 반환")
+        void voiceProcessingException_returns500() throws Exception {
             MockMultipartFile audioFile = new MockMultipartFile(
                     "file", "test.mp3", "audio/mpeg", "fake-audio".getBytes()
             );
@@ -62,9 +71,10 @@ class VoiceControllerTest {
             when(voiceService.speechToText(any()))
                     .thenThrow(new VoiceProcessingException("오디오 파일이 비어있습니다."));
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(multipart("/api/voice/stt").file(audioFile))
-            ).rootCause().isInstanceOf(VoiceProcessingException.class);
+            mockMvc.perform(multipart("/api/voice/stt").file(audioFile))
+                    .andExpect(status().isInternalServerError())
+                    .andExpect(jsonPath("$.error").value("VOICE_PROCESSING_ERROR"))
+                    .andExpect(jsonPath("$.message").value("오디오 파일이 비어있습니다."));
         }
     }
 
@@ -73,11 +83,11 @@ class VoiceControllerTest {
     class TtsEndpointTest {
 
         @Test
-        @DisplayName("정상 요청: 텍스트 → 200 OK + audio/mpeg 응답")
+        @DisplayName("정상 요청: 텍스트 → 200 OK + audio/wav 응답")
         void success() throws Exception {
             TtsRequest request = new TtsRequest("안녕하세요",
                     VoiceSettings.builder().voiceSpeed(1.0).voiceTone("warm").build());
-            byte[] audioData = "fake-mp3-data".getBytes();
+            byte[] audioData = "fake-wav-data".getBytes();
 
             when(voiceService.textToSpeech(any(), any())).thenReturn(audioData);
 
@@ -85,8 +95,8 @@ class VoiceControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
-                    .andExpect(header().string("Content-Type", "audio/mpeg"))
-                    .andExpect(header().string("Content-Disposition", "inline; filename=\"speech.mp3\""))
+                    .andExpect(header().string("Content-Type", "audio/wav"))
+                    .andExpect(header().string("Content-Disposition", "inline; filename=\"speech.wav\""))
                     .andExpect(content().bytes(audioData));
         }
 
@@ -102,22 +112,23 @@ class VoiceControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
-                    .andExpect(header().string("Content-Type", "audio/mpeg"));
+                    .andExpect(header().string("Content-Type", "audio/wav"));
         }
 
         @Test
-        @DisplayName("VoiceProcessingException 발생 시 예외가 전파된다 (GlobalExceptionHandler 미구현)")
-        void voiceProcessingException_propagates() {
+        @DisplayName("VoiceProcessingException 발생 시 500 + VOICE_PROCESSING_ERROR 반환")
+        void voiceProcessingException_returns500() throws Exception {
             TtsRequest request = new TtsRequest("", null);
 
             when(voiceService.textToSpeech(any(), any()))
                     .thenThrow(new VoiceProcessingException("변환할 텍스트가 비어있습니다."));
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(post("/api/voice/tts")
+            mockMvc.perform(post("/api/voice/tts")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
-            ).rootCause().isInstanceOf(VoiceProcessingException.class);
+                    .andExpect(status().isInternalServerError())
+                    .andExpect(jsonPath("$.error").value("VOICE_PROCESSING_ERROR"))
+                    .andExpect(jsonPath("$.message").value("변환할 텍스트가 비어있습니다."));
         }
     }
 }

@@ -82,6 +82,11 @@ public class ContextService {
                 .build();
 
         contextStore.put(userId, context);
+        log.info("위치 데이터 컨텍스트 저장 완료 - userId: {}, currentCity: {}, 방문장소 수: {}",
+                userId,
+                locationData != null ? locationData.getCurrentCity() : "null",
+                locationData != null && locationData.getVisitedPlaces() != null
+                        ? locationData.getVisitedPlaces().size() : 0);
         log.info("컨텍스트 초기화 완료 - userId: {}", userId);
         return context;
     }
