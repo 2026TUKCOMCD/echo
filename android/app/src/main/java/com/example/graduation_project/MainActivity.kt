@@ -12,44 +12,39 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.graduation_project.data.local.TokenStorage
 import com.example.graduation_project.data.repository.AuthRepository
 import com.example.graduation_project.presentation.auth.LoginScreen
 import com.example.graduation_project.presentation.auth.SignupScreen
+import com.example.graduation_project.presentation.common.EchoTab
+import com.example.graduation_project.presentation.common.EchoTabBar
 import com.example.graduation_project.presentation.conversation.ConversationScreen
+import com.example.graduation_project.presentation.history.ConversationHistoryDetailScreen
+import com.example.graduation_project.presentation.history.ConversationHistoryScreen
+import com.example.graduation_project.presentation.home.HomeScreen
+import com.example.graduation_project.presentation.settings.SettingsScreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.URLDecoder
+import java.net.URLEncoder
 
-/**
- * 앱의 메인 액티비티
- *
- * ## Jetpack Compose 구조
- * - ComponentActivity: Compose 전용 액티비티
- * - enableEdgeToEdge(): 시스템 바 영역까지 콘텐츠 확장
- * - setContent { }: Compose UI를 설정하는 진입점
- *
- * ## 화면 구성
- * - Graduation_projectTheme: Material 3 테마 적용
- * - AppNavHost: Navigation으로 화면 전환 관리
- *
- * ## 권한 및 GPS 수집
- * - UnifiedPermissionHandler에서 모든 권한 처리 및 GPS 수집 시작
- */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,7 +63,16 @@ private object Routes {
     const val SIGNUP = "signup"
     const val ONBOARDING = "onboarding"
     const val CONVERSATION = "conversation"
+    const val HISTORY_DETAIL = "history_detail/{conversationId}"
+
+    fun historyDetail(conversationId: String): String {
+        val encoded = URLEncoder.encode(conversationId, "UTF-8")
+        return "history_detail/$encoded"
+    }
 }
+
+// 탭바가 표시되는 최상위 루트 목록
+private val tabRoutes = EchoTab.entries.map { it.route }.toSet()
 
 @Composable
 private fun AppNavHost() {
@@ -79,51 +83,125 @@ private fun AppNavHost() {
     val navController = rememberNavController()
 
     val startDestination = remember {
-        if (authRepository.hasAccessToken()) Routes.CONVERSATION else Routes.LOGIN
+        if (authRepository.hasAccessToken()) EchoTab.HOME.route else Routes.LOGIN
     }
 
-    NavHost(navController = navController, startDestination = startDestination) {
-        composable(Routes.LOGIN) {
-            LoginScreen(
-                onLoginSuccess = {
-                    navController.navigate(Routes.CONVERSATION) {
-                        popUpTo(Routes.LOGIN) { inclusive = true }
-                    }
-                },
-                onNavigateToSignup = {
-                    navController.navigate(Routes.SIGNUP)
-                }
-            )
-        }
-        composable(Routes.SIGNUP) {
-            SignupScreen(
-                onSignupSuccess = {
-                    navController.navigate(Routes.ONBOARDING) {
-                        popUpTo(Routes.LOGIN) { inclusive = true }
-                    }
-                }
-            )
-        }
-        composable(Routes.ONBOARDING) {
-            OnboardingPlaceholder(
-                onSkip = {
-                    navController.navigate(Routes.CONVERSATION) {
-                        popUpTo(Routes.ONBOARDING) { inclusive = true }
-                    }
-                }
-            )
-        }
-        composable(Routes.CONVERSATION) {
-            ConversationScreen(
-                onLogout = {
-                    coroutineScope.launch {
-                        withContext(Dispatchers.IO) { authRepository.logout() }
-                        navController.navigate(Routes.LOGIN) {
-                            popUpTo(Routes.CONVERSATION) { inclusive = true }
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showTabBar = currentRoute in tabRoutes
+
+    Scaffold(
+        bottomBar = {
+            if (showTabBar) {
+                EchoTabBar(
+                    currentRoute = currentRoute,
+                    onTabSelected = { tab ->
+                        navController.navigate(tab.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
                         }
                     }
-                }
-            )
+                )
+            }
+        }
+    ) { paddingValues ->
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = Modifier.padding(paddingValues)
+        ) {
+            composable(Routes.LOGIN) {
+                LoginScreen(
+                    onLoginSuccess = {
+                        navController.navigate(EchoTab.HOME.route) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        }
+                    },
+                    onNavigateToSignup = {
+                        navController.navigate(Routes.SIGNUP)
+                    }
+                )
+            }
+
+            composable(Routes.SIGNUP) {
+                SignupScreen(
+                    onSignupSuccess = {
+                        navController.navigate(Routes.ONBOARDING) {
+                            popUpTo(Routes.SIGNUP) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            composable(Routes.ONBOARDING) {
+                OnboardingPlaceholder(
+                    onSkip = {
+                        navController.navigate(EchoTab.HOME.route) {
+                            popUpTo(Routes.ONBOARDING) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            // 홈 탭
+            composable(EchoTab.HOME.route) {
+                HomeScreen(
+                    onStartConversation = {
+                        navController.navigate(Routes.CONVERSATION)
+                    }
+                )
+            }
+
+            // 대화기록 탭
+            composable(EchoTab.HISTORY.route) {
+                ConversationHistoryScreen(
+                    onConversationClick = { conversationId ->
+                        navController.navigate(Routes.historyDetail(conversationId))
+                    }
+                )
+            }
+
+            // 대화기록 상세
+            composable(Routes.HISTORY_DETAIL) { backStackEntry ->
+                val encoded = backStackEntry.arguments?.getString("conversationId") ?: ""
+                val conversationId = URLDecoder.decode(encoded, "UTF-8")
+                ConversationHistoryDetailScreen(
+                    conversationId = conversationId,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            // 설정 탭
+            composable(EchoTab.SETTINGS.route) {
+                SettingsScreen(
+                    onLogout = {
+                        coroutineScope.launch {
+                            withContext(Dispatchers.IO) { authRepository.logout() }
+                            navController.navigate(Routes.LOGIN) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
+
+            // 대화 화면 (전체화면, 탭바 없음)
+            composable(Routes.CONVERSATION) {
+                ConversationScreen(
+                    onLogout = {
+                        coroutineScope.launch {
+                            withContext(Dispatchers.IO) { authRepository.logout() }
+                            navController.navigate(Routes.LOGIN) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
@@ -140,15 +218,7 @@ private fun OnboardingPlaceholder(onSkip: () -> Unit = {}) {
         Text("온보딩 (T1.3에서 구현 예정)")
         Spacer(Modifier.height(24.dp))
         Button(onClick = onSkip) {
-            Text("대화 시작 화면으로 이동")
+            Text("시작하기")
         }
-    }
-}
-
-@Preview(showBackground = true, showSystemUi = true)
-@Composable
-private fun MainActivityPreview() {
-    Graduation_projectTheme {
-        AppNavHost()
     }
 }
