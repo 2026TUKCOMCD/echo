@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun VoiceSettingsDialog(
     onDismiss: () -> Unit,
+    onLogout: () -> Unit = {},
     viewModel: VoiceSettingsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -142,6 +143,22 @@ fun VoiceSettingsDialog(
                     Text(
                         text = "닫기",
                         fontSize = 18.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "로그아웃",
+                        fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }

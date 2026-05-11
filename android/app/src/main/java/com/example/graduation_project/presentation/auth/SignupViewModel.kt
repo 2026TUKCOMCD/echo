@@ -2,11 +2,7 @@ package com.example.graduation_project.presentation.auth
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.TokenStorage
@@ -29,12 +25,11 @@ data class SignupUiState(
     val isSignupSuccess: Boolean = false
 )
 
-class SignupViewModel(
-    application: Application,
+class SignupViewModel(application: Application) : AndroidViewModel(application) {
+
     private val repository: AuthRepository = AuthRepository(
         tokenStorage = TokenStorage(application)
     )
-) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(SignupUiState())
     val uiState: StateFlow<SignupUiState> = _uiState.asStateFlow()
@@ -119,15 +114,5 @@ class SignupViewModel(
         value.isBlank() -> "이름을 입력해주세요"
         value.length > 50 -> "이름은 50자 이하로 입력해주세요"
         else -> null
-    }
-
-    companion object {
-        val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
-                val application = checkNotNull(extras[APPLICATION_KEY])
-                return SignupViewModel(application) as T
-            }
-        }
     }
 }

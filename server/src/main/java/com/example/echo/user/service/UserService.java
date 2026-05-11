@@ -1,33 +1,27 @@
 package com.example.echo.user.service;
 
+import com.example.echo.auth.exception.UnauthorizedException;
 import com.example.echo.user.dto.UserPreferences;
-import com.example.echo.user.dto.VoiceSettings;
+import com.example.echo.user.entity.User;
+import com.example.echo.user.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
-import java.time.LocalDate;
-import java.time.LocalTime;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class UserService {
 
+    private final UserRepository userRepository;
+
+    @Transactional(readOnly = true)
     public UserPreferences getPreferences(Long userId) {
-        // TODO: 실제 DB 연동 시 Repository 사용
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UnauthorizedException("사용자를 찾을 수 없습니다."));
+
         return UserPreferences.builder()
-                .userId(userId)
-                .name("김영호")
-                .age(68)
-                .birthday(LocalDate.of(1957, 3, 15))
-                .location("서울시 서초구")
-                .familyInfo("아내, 아들 1명, 손녀 2명")
-                .occupation("은퇴 (전 공무원)")
-                .hobbies("등산, 바둑, 뉴스 보기")
-                .preferredTopics("건강, 가족, 시사")
-                .voiceSettings(VoiceSettings.builder()
-                        .voiceSpeed(0.9)
-                        .voiceTone("warm")
-                        .build())
-                .conversationTime(LocalTime.of(9, 0))
-                .preferredSleepHours(7)  // 선호 수면 시간: 7시간
+                .userId(user.getId())
+                .name(user.getName())
                 .build();
     }
 }

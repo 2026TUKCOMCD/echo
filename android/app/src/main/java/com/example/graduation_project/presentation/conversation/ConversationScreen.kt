@@ -77,6 +77,7 @@ import com.example.graduation_project.ui.theme.Graduation_projectTheme
  */
 @Composable
 fun ConversationScreen(
+    onLogout: () -> Unit = {},
     viewModel: ConversationViewModel = viewModel(factory = ConversationViewModel.Factory)
 ) {
     // ViewModel의 상태를 Compose State로 변환
@@ -140,7 +141,13 @@ fun ConversationScreen(
 
     // 음성 설정 다이얼로그
     if (showSettingsDialog) {
-        VoiceSettingsDialog(onDismiss = { showSettingsDialog = false })
+        VoiceSettingsDialog(
+            onDismiss = { showSettingsDialog = false },
+            onLogout = {
+                showSettingsDialog = false
+                onLogout()
+            }
+        )
     }
 
     // 종료 확인 다이얼로그

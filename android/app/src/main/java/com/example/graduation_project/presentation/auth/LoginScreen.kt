@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -17,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,20 +31,20 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
-fun SignupScreen(
-    onSignupSuccess: () -> Unit,
-    viewModel: SignupViewModel = viewModel()
+fun LoginScreen(
+    onLoginSuccess: () -> Unit,
+    onNavigateToSignup: () -> Unit,
+    viewModel: LoginViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(uiState.isSignupSuccess) {
-        if (uiState.isSignupSuccess) {
-            onSignupSuccess()
+    LaunchedEffect(uiState.isLoginSuccess) {
+        if (uiState.isLoginSuccess) {
+            onLoginSuccess()
         }
     }
 
@@ -66,7 +68,7 @@ fun SignupScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "회원가입",
+                text = "로그인",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -78,10 +80,6 @@ fun SignupScreen(
                 onValueChange = viewModel::updateLoginId,
                 label = { Text("아이디") },
                 singleLine = true,
-                isError = uiState.loginIdError != null,
-                supportingText = {
-                    Text(uiState.loginIdError ?: "영문/숫자 4~20자")
-                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -93,33 +91,15 @@ fun SignupScreen(
                 onValueChange = viewModel::updatePassword,
                 label = { Text("비밀번호") },
                 singleLine = true,
-                isError = uiState.passwordError != null,
-                supportingText = {
-                    Text(uiState.passwordError ?: "8자 이상, 영문/숫자 조합")
-                },
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = uiState.name,
-                onValueChange = viewModel::updateName,
-                label = { Text("이름") },
-                singleLine = true,
-                isError = uiState.nameError != null,
-                supportingText = {
-                    Text(uiState.nameError ?: "최대 50자")
-                },
                 modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = viewModel::signup,
+                onClick = viewModel::login,
                 enabled = !uiState.isLoading,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -132,8 +112,14 @@ fun SignupScreen(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text("회원가입", fontSize = 16.sp)
+                    Text("로그인", fontSize = 16.sp)
                 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            TextButton(onClick = onNavigateToSignup) {
+                Text("회원가입하기")
             }
         }
     }
