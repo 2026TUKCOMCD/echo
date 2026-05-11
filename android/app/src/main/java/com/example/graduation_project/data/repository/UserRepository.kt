@@ -4,6 +4,7 @@ import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.api.UserApi
 import com.example.graduation_project.data.api.safeApiCall
+import com.example.graduation_project.data.model.OnboardingStatusResponse
 import com.example.graduation_project.data.model.UserPreferences
 
 class UserRepository(
@@ -11,14 +12,14 @@ class UserRepository(
 ) {
 
     suspend fun getPreferences(): ApiResult<UserPreferences> {
-        return safeApiCall {
-            userApi.getPreferences()
-        }
+        return safeApiCall { userApi.getPreferences() }
     }
 
     suspend fun updatePreferences(preferences: UserPreferences): ApiResult<UserPreferences> {
-        return safeApiCall {
-            userApi.updatePreferences(preferences)
-        }
+        return safeApiCall { userApi.updatePreferences(preferences) }
+    }
+
+    suspend fun getOnboardingStatus(): ApiResult<OnboardingStatusResponse> {
+        return safeApiCall { userApi.getOnboardingStatus() }
     }
 }

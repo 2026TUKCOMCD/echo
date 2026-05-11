@@ -15,15 +15,21 @@ data class UserPreferences(
     val userId: Long? = null,
     val name: String? = null,
     val age: Int? = null,
-    val birthday: String? = null,               // 서버: LocalDate → "yyyy-MM-dd"
+    val birthday: String? = null,
     val location: String? = null,
-    val familyInfo: String? = null,             // renamed: familyRelation → familyInfo
+    val familyInfo: String? = null,
+    val guardianEmail: String? = null,
     val occupation: String? = null,
-    val hobbies: String? = null,                // renamed: hobby → hobbies
-    val preferredTopics: String? = null,        // type changed: List<String> → String
+    val hobbies: String? = null,
+    val preferredTopics: String? = null,
     val voiceSettings: VoiceSettings? = null,
-    val conversationTime: String? = null,       // 서버: LocalTime → "HH:mm"
+    val conversationTime: String? = null,
     val preferredSleepHours: Int? = null
+)
+
+@Serializable
+data class OnboardingStatusResponse(
+    val completed: Boolean
 )
 
 @Serializable

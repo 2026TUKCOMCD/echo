@@ -5,30 +5,28 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.TokenStorage
 import com.example.graduation_project.data.repository.AuthRepository
+import com.example.graduation_project.data.repository.UserRepository
 import com.example.graduation_project.presentation.auth.LoginScreen
 import com.example.graduation_project.presentation.auth.SignupScreen
 import com.example.graduation_project.presentation.common.EchoTab
@@ -37,7 +35,9 @@ import com.example.graduation_project.presentation.conversation.ConversationScre
 import com.example.graduation_project.presentation.history.ConversationHistoryDetailScreen
 import com.example.graduation_project.presentation.history.ConversationHistoryScreen
 import com.example.graduation_project.presentation.home.HomeScreen
+import com.example.graduation_project.presentation.onboarding.OnboardingScreen
 import com.example.graduation_project.presentation.settings.SettingsScreen
+import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -62,6 +62,7 @@ private object Routes {
     const val LOGIN = "login"
     const val SIGNUP = "signup"
     const val ONBOARDING = "onboarding"
+    const val CHECKING = "checking"
     const val CONVERSATION = "conversation"
     const val HISTORY_DETAIL = "history_detail/{conversationId}"
 
@@ -79,11 +80,12 @@ private fun AppNavHost() {
     val context = LocalContext.current
     val application = context.applicationContext as Application
     val authRepository = remember { AuthRepository(tokenStorage = TokenStorage(application)) }
+    val userRepository = remember { UserRepository() }
     val coroutineScope = rememberCoroutineScope()
     val navController = rememberNavController()
 
     val startDestination = remember {
-        if (authRepository.hasAccessToken()) EchoTab.HOME.route else Routes.LOGIN
+        if (authRepository.hasAccessToken()) Routes.CHECKING else Routes.LOGIN
     }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -113,11 +115,34 @@ private fun AppNavHost() {
             startDestination = startDestination,
             modifier = Modifier.padding(paddingValues)
         ) {
+            composable(Routes.CHECKING) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = EchoAccentGreen)
+                }
+                LaunchedEffect(Unit) {
+                    val completed = when (val result = userRepository.getOnboardingStatus()) {
+                        is ApiResult.Success -> result.data.completed
+                        is ApiResult.Error -> false
+                    }
+                    val destination = if (completed) EchoTab.HOME.route else Routes.ONBOARDING
+                    navController.navigate(destination) {
+                        popUpTo(Routes.CHECKING) { inclusive = true }
+                    }
+                }
+            }
+
             composable(Routes.LOGIN) {
                 LoginScreen(
                     onLoginSuccess = {
-                        navController.navigate(EchoTab.HOME.route) {
-                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        coroutineScope.launch {
+                            val completed = when (val result = userRepository.getOnboardingStatus()) {
+                                is ApiResult.Success -> result.data.completed
+                                is ApiResult.Error -> false
+                            }
+                            val destination = if (completed) EchoTab.HOME.route else Routes.ONBOARDING
+                            navController.navigate(destination) {
+                                popUpTo(Routes.LOGIN) { inclusive = true }
+                            }
                         }
                     },
                     onNavigateToSignup = {
@@ -137,8 +162,8 @@ private fun AppNavHost() {
             }
 
             composable(Routes.ONBOARDING) {
-                OnboardingPlaceholder(
-                    onSkip = {
+                OnboardingScreen(
+                    onOnboardingComplete = {
                         navController.navigate(EchoTab.HOME.route) {
                             popUpTo(Routes.ONBOARDING) { inclusive = true }
                         }
@@ -206,19 +231,3 @@ private fun AppNavHost() {
     }
 }
 
-@Composable
-private fun OnboardingPlaceholder(onSkip: () -> Unit = {}) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("온보딩 (T1.3에서 구현 예정)")
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onSkip) {
-            Text("시작하기")
-        }
-    }
-}
