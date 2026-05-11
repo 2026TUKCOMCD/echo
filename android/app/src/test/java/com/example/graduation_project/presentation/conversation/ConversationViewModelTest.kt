@@ -76,7 +76,6 @@ class ConversationViewModelTest {
         every { Log.e(any(), any<String>(), any()) } returns 0
         every { mockAudioRecordManager.state } returns mockAudioRecordState
         every { mockHealthRepository.getAvailability() } returns HealthConnectAvailability.NotSupported
-        coEvery { mockHealthRepository.readTodayExerciseRoutes() } returns emptyList()
 
         viewModel = ConversationViewModel(
             application = mockApplication,

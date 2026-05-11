@@ -18,10 +18,26 @@ import com.example.graduation_project.presentation.auth.SignupScreen
 import com.example.graduation_project.presentation.conversation.ConversationScreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
+/**
+ * 앱의 메인 액티비티
+ *
+ * ## Jetpack Compose 구조
+ * - ComponentActivity: Compose 전용 액티비티
+ * - enableEdgeToEdge(): 시스템 바 영역까지 콘텐츠 확장
+ * - setContent { }: Compose UI를 설정하는 진입점
+ *
+ * ## 화면 구성
+ * - Graduation_projectTheme: Material 3 테마 적용
+ * - AppNavHost: Navigation으로 화면 전환 관리
+ *
+ * ## 권한 및 GPS 수집
+ * - UnifiedPermissionHandler에서 모든 권한 처리 및 GPS 수집 시작
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
         setContent {
             Graduation_projectTheme {
                 AppNavHost()

@@ -1,21 +1,33 @@
 package com.example.graduation_project.presentation.permission
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -25,13 +37,196 @@ import androidx.compose.ui.window.Dialog
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
 /**
- * 마이크 권한 요청 다이얼로그
- * 어르신 사용자를 위해 큰 글씨와 명확한 버튼 사용
+ * 통합 권한 안내 다이얼로그
+ * 앱 시작 시 모든 권한에 대해 한 번에 안내
  */
 @Composable
-fun MicrophonePermissionDialog(
+fun AllPermissionsIntroDialog(
+    onStartPermissions: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = { /* 바깥 터치 무시 */ },
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "앱 사용을 위한 권한",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "에코는 다음 권한들을 사용합니다",
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // 마이크 (필수)
+                PermissionItemWithHighlight(
+                    icon = Icons.Default.Mic,
+                    title = "마이크",
+                    highlight = "(필수)",
+                    description = "AI와 음성 대화를 위해 필요"
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 위치 (선택)
+                PermissionItemWithHighlight(
+                    icon = Icons.Default.LocationOn,
+                    title = "위치 (선택)",
+                    highlight = null,
+                    description = "방문 장소 기록을 위해 필요",
+                    warning = "\"항상 허용\" 선택 필요"
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 알림 (선택)
+                PermissionItem(
+                    icon = Icons.Default.Notifications,
+                    title = "알림 (선택)",
+                    description = "위치 수집 상태 표시를 위해 필요"
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 건강 데이터 (선택)
+                PermissionItem(
+                    icon = Icons.Default.Favorite,
+                    title = "건강 데이터 (선택)",
+                    description = "수면, 걸음수 정보를 위해 필요"
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onStartPermissions,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "시작하기",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 권한 항목 UI 컴포넌트 (강조 표시 지원)
+ */
+@Composable
+private fun PermissionItemWithHighlight(
+    icon: ImageVector,
+    title: String,
+    highlight: String?,
+    description: String,
+    warning: String? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(32.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column {
+            Row {
+                Text(
+                    text = title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (highlight != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = highlight,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            Text(
+                text = description,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (warning != null) {
+                Text(
+                    text = warning,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 권한 항목 UI 컴포넌트 (기본)
+ */
+@Composable
+private fun PermissionItem(
+    icon: ImageVector,
+    title: String,
+    description: String
+) {
+    PermissionItemWithHighlight(
+        icon = icon,
+        title = title,
+        highlight = null,
+        description = description,
+        warning = null
+    )
+}
+
+/**
+ * 알림 권한 설정 안내 다이얼로그 (거부 시)
+ */
+@Composable
+fun NotificationPermissionSettingsDialog(
     onDismiss: () -> Unit,
-    onRequestPermission: () -> Unit
+    onOpenSettings: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -50,7 +245,7 @@ fun MicrophonePermissionDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "마이크 권한 필요",
+                    text = "알림 권한 설정",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -59,18 +254,28 @@ fun MicrophonePermissionDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "음성 대화를 위해\n마이크 권한이 필요합니다.",
+                    text = "GPS 수집 상태를 상태바에\n표시하려면 알림 권한이 필요합니다.",
                     fontSize = 18.sp,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 26.sp
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "설정 > 앱 > 에코 > 알림",
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
                     onClick = {
-                        onRequestPermission()
+                        onOpenSettings()
                         onDismiss()
                     },
                     modifier = Modifier
@@ -79,7 +284,7 @@ fun MicrophonePermissionDialog(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = "권한 허용하기",
+                        text = "설정으로 이동",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -97,6 +302,244 @@ fun MicrophonePermissionDialog(
                     Text(
                         text = "나중에",
                         fontSize = 18.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Health Connect 권한 설정 안내 다이얼로그 (거부 시)
+ */
+@Composable
+fun HealthConnectPermissionSettingsDialog(
+    onDismiss: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "건강 데이터 권한 설정",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "수면, 걸음수 등 건강 정보를\n가져오려면 권한이 필요합니다.",
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 26.sp
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Health Connect 앱 > 앱 권한 > 에코",
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        onOpenSettings()
+                        onDismiss()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "설정으로 이동",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "나중에",
+                        fontSize = 18.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 마이크 권한 요청 다이얼로그 (필수 권한)
+ * 어르신 사용자를 위해 큰 글씨와 명확한 버튼 사용
+ * - 바깥 터치로 닫히지 않음 (필수 권한이므로)
+ * - 권한 허용 전까지 닫히지 않음
+ */
+@Composable
+fun MicrophonePermissionDialog(
+    onRequestPermission: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = { /* 바깥 터치 무시 - 필수 권한 */ },
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "마이크 권한 (필수)",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "음성 대화를 위해\n마이크 권한이 반드시 필요합니다.",
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 26.sp
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onRequestPermission,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "권한 허용하기",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 마이크 권한 영구 거부 시 설정 화면 안내 다이얼로그 (필수 권한)
+ * - 바깥 터치로 닫히지 않음
+ */
+@Composable
+fun MicrophonePermissionSettingsDialog(
+    onOpenSettings: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = { /* 바깥 터치 무시 - 필수 권한 */ },
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "마이크 권한 (필수)",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "마이크 권한이 거부되었습니다.\n앱 사용을 위해 설정에서\n권한을 허용해주세요.",
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 26.sp
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "설정 > 앱 > 에코 > 권한 > 마이크",
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text(
+                        text = "설정으로 이동",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -362,6 +805,188 @@ fun LocationPermissionSettingsDialog(
                 ) {
                     Text(
                         text = "취소",
+                        fontSize = 18.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 백그라운드 위치 권한 요청 다이얼로그
+ * Android 11+에서 전경 위치 권한 허용 후 별도로 요청
+ */
+@Composable
+fun BackgroundLocationPermissionDialog(
+    onDismiss: () -> Unit,
+    onRequestPermission: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "백그라운드 위치 권한",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "하루 동안 방문한 장소를 기록하여\n더 풍부한 대화를 나눌 수 있습니다.",
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 26.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "\"항상 허용\"을 선택해주세요",
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        onRequestPermission()
+                        onDismiss()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "권한 설정하기",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "나중에",
+                        fontSize = 18.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 백그라운드 위치 권한 설정 안내 다이얼로그
+ */
+@Composable
+fun BackgroundLocationSettingsDialog(
+    onDismiss: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "위치 설정 변경 필요",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "방문 장소 기록을 위해\n위치 권한을 \"항상 허용\"으로\n변경해주세요.",
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 26.sp
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "설정 > 위치 > 항상 허용",
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        onOpenSettings()
+                        onDismiss()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text(
+                        text = "설정으로 이동",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "나중에",
                         fontSize = 18.sp
                     )
                 }
