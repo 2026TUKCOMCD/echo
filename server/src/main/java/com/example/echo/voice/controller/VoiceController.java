@@ -23,6 +23,7 @@ import com.example.echo.voice.dto.SttResponse;
 import com.example.echo.voice.dto.TtsRequest;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +41,9 @@ public class VoiceController {
 
     private final VoiceService voiceService;
 
+    @Value("${tts.provider:supertone}")
+    private String ttsProvider;
+
     @PostMapping("/stt")
     public ResponseEntity<SttResponse> speechToText(@RequestParam("file") MultipartFile audioFile) {
         String transcribedText = voiceService.speechToText(audioFile);
@@ -55,16 +59,20 @@ public class VoiceController {
      * Body: { "text": "안녕하세요", "voiceSettings": { "voiceSpeed": 1.0, "voiceTone": "warm" } }
      *
      * [응답]
-     * Content-Type: audio/mpeg
-     * Body: MP3 바이너리 데이터
+     * Content-Type: audio/wav (supertone) | audio/mpeg (azure)
+     * Body: 오디오 바이너리 데이터
      */
     @PostMapping("/tts")
     public ResponseEntity<byte[]> textToSpeech(@RequestBody TtsRequest request) {
         byte[] audioData = voiceService.textToSpeech(request.getText(), request.getVoiceSettings());
 
+        boolean isSupertone = "supertone".equals(ttsProvider);
+        String contentType = isSupertone ? "audio/wav" : "audio/mpeg";
+        String filename = isSupertone ? "speech.wav" : "speech.mp3";
+
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"speech.mp3\"")
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
                 .body(audioData);
     }
 }

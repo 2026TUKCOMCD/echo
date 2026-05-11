@@ -24,15 +24,26 @@ import com.example.graduation_project.domain.health.HealthConnectAvailability
  * - 앱 시작 시 LaunchedEffect로 availability/permissionState에 따라 적절한 다이얼로그 표시
  * - onResume 시 DisposableEffect로 refreshPermissions() 호출
  * - content()는 권한 상태와 무관하게 항상 렌더링 (graceful degradation)
+ *
+ * @param canShowDialog 다른 다이얼로그가 표시 중이 아닐 때만 true로 전달
+ * @param onDialogStateChanged 다이얼로그 표시 상태가 변경될 때 호출
  */
 @Composable
 fun HealthConnectPermissionHandler(
     viewModel: HealthViewModel = viewModel(factory = HealthViewModel.Factory),
+    canShowDialog: Boolean = true,
+    onDialogStateChanged: (Boolean) -> Unit = {},
     content: @Composable () -> Unit
 ) {
     var showRationale by remember { mutableStateOf(false) }
     var showDenied by remember { mutableStateOf(false) }
     var showNotInstalled by remember { mutableStateOf(false) }
+
+    // 다이얼로그 표시 여부 변경 시 콜백 호출
+    val isShowingDialog = showRationale || showDenied || showNotInstalled
+    LaunchedEffect(isShowingDialog) {
+        onDialogStateChanged(isShowingDialog)
+    }
 
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -44,9 +55,10 @@ fun HealthConnectPermissionHandler(
         viewModel.onPermissionsResult(grantedPermissions)
     }
 
-    // 앱 시작 시 자동 다이얼로그 표시
-    LaunchedEffect(uiState.availability, uiState.permissionState, uiState.isLoading) {
+    // 앱 시작 시 자동 다이얼로그 표시 (canShowDialog가 true일 때만)
+    LaunchedEffect(uiState.availability, uiState.permissionState, uiState.isLoading, canShowDialog) {
         if (uiState.isLoading) return@LaunchedEffect
+        if (!canShowDialog) return@LaunchedEffect
         when {
             uiState.availability is HealthConnectAvailability.NotInstalled ->
                 showNotInstalled = true

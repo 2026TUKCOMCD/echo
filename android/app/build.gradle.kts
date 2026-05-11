@@ -81,6 +81,7 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // ViewModel
     implementation(libs.androidx.lifecycle.viewmodel)
@@ -106,6 +107,12 @@ dependencies {
 
     // Location
     implementation(libs.play.services.location)
+
+    // Navigation
+    implementation(libs.androidx.navigation.compose)
+
+    // Security (EncryptedSharedPreferences)
+    implementation(libs.androidx.security.crypto)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
