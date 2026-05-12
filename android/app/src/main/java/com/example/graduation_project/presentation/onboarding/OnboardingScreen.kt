@@ -1,6 +1,5 @@
 package com.example.graduation_project.presentation.onboarding
 
-import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,7 +25,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -44,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.presentation.auth.EchoOutlinedTextField
 import com.example.graduation_project.presentation.common.BirthdayInputRow
+import com.example.graduation_project.presentation.common.EchoTimePickerContent
 import com.example.graduation_project.presentation.common.buildBirthdayString
 import com.example.graduation_project.presentation.common.parseBirthday
 import com.example.graduation_project.ui.theme.EchoAccentGreen
@@ -53,8 +51,6 @@ import com.example.graduation_project.ui.theme.EchoTextPrimary
 import com.example.graduation_project.ui.theme.EchoTextSecondary
 import com.example.graduation_project.ui.theme.EchoTextTertiary
 import com.example.graduation_project.ui.theme.OutfitFontFamily
-import java.time.LocalDate
-import java.time.LocalTime
 
 private val stepTitles = listOf(
     "생년월일", "가족 관계", "보호자 이메일", "거주 지역",
@@ -308,48 +304,11 @@ private fun DatePickerStep(selected: String, onDateSelected: (String) -> Unit) {
 
 @Composable
 private fun TimePickerStep(selected: String, onTimeSelected: (String) -> Unit) {
-    val context = LocalContext.current
-    var showPicker by remember { mutableStateOf(false) }
-
-    Column {
-        OutlinedButton(
-            onClick = { showPicker = true },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text(
-                text = if (selected.isNotEmpty()) selected else "시간 선택",
-                fontSize = 16.sp,
-                fontFamily = OutfitFontFamily,
-                color = if (selected.isNotEmpty()) EchoTextPrimary else EchoTextTertiary
-            )
-        }
-        if (selected.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = { onTimeSelected("") }) {
-                Text("선택 취소", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
-            }
-        }
+    val initial = if (selected.isNotEmpty()) selected else "09:00"
+    LaunchedEffect(Unit) {
+        if (selected.isEmpty()) onTimeSelected("09:00")
     }
-
-    if (showPicker) {
-        DisposableEffect(Unit) {
-            val (h, m) = if (selected.isNotEmpty()) {
-                runCatching {
-                    val t = LocalTime.parse(selected)
-                    Pair(t.hour, t.minute)
-                }.getOrDefault(Pair(9, 0))
-            } else {
-                Pair(9, 0)
-            }
-            val dialog = TimePickerDialog(context, { _, hour, minute ->
-                onTimeSelected("%02d:%02d".format(hour, minute))
-            }, h, m, true)
-            dialog.setOnDismissListener { showPicker = false }
-            dialog.show()
-            onDispose { dialog.dismiss() }
-        }
-    }
+    EchoTimePickerContent(value = initial, onValueChange = onTimeSelected)
 }
 
 @Composable

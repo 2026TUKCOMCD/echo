@@ -1,6 +1,5 @@
 package com.example.graduation_project.presentation.settings
 
-import android.app.TimePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,7 +40,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,7 +49,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -60,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.model.VoiceSettings
 import com.example.graduation_project.presentation.common.BirthdayInputRow
+import com.example.graduation_project.presentation.common.EchoTimePickerContent
 import com.example.graduation_project.presentation.common.buildBirthdayString
 import com.example.graduation_project.presentation.common.parseBirthday
 import com.example.graduation_project.ui.theme.EchoAccentGreen
@@ -72,7 +70,6 @@ import com.example.graduation_project.ui.theme.EchoTextPrimary
 import com.example.graduation_project.ui.theme.EchoTextSecondary
 import com.example.graduation_project.ui.theme.EchoTextTertiary
 import com.example.graduation_project.ui.theme.OutfitFontFamily
-import java.time.LocalTime
 
 private val EMAIL_REGEX = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 
@@ -605,21 +602,26 @@ private fun TimePickerFieldDialog(
     onSelected: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
-    DisposableEffect(Unit) {
-        val (h, m) = if (!current.isNullOrBlank()) {
-            runCatching {
-                val t = LocalTime.parse(current)
-                Pair(t.hour, t.minute)
-            }.getOrDefault(Pair(9, 0))
-        } else {
-            Pair(9, 0)
+    var value by remember { mutableStateOf(if (!current.isNullOrBlank()) current else "09:00") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = EchoBgCard,
+        title = {
+            Text("대화 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary)
+        },
+        text = {
+            EchoTimePickerContent(value = value, onValueChange = { value = it })
+        },
+        confirmButton = {
+            TextButton(onClick = { onSelected(value) }) {
+                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            }
         }
-        val dialog = TimePickerDialog(context, { _, hour, minute ->
-            onSelected("%02d:%02d".format(hour, minute))
-        }, h, m, true)
-        dialog.setOnDismissListener { onDismiss() }
-        dialog.show()
-        onDispose { dialog.dismiss() }
-    }
+    )
 }
