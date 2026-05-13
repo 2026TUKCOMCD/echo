@@ -39,7 +39,7 @@ public class UserService {
                         .occupation(prefs.getOccupation())
                         .hobbies(prefs.getHobbies())
                         .preferredTopics(prefs.getPreferredTopics())
-                        .voiceSettings(prefs.getVoiceSpeed() != null
+                        .voiceSettings((prefs.getVoiceSpeed() != null || prefs.getVoiceTone() != null)
                                 ? VoiceSettings.builder()
                                         .voiceSpeed(prefs.getVoiceSpeed())
                                         .voiceTone(prefs.getVoiceTone())
