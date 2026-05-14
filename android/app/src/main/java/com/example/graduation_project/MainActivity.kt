@@ -13,8 +13,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -84,13 +86,24 @@ private fun AppNavHost() {
     val coroutineScope = rememberCoroutineScope()
     val navController = rememberNavController()
 
-    val startDestination = remember {
-        if (authRepository.hasAccessToken()) Routes.CHECKING else Routes.LOGIN
+    // EncryptedSharedPreferences 초기화는 Android Keystore를 사용하므로
+    // 메인 스레드에서 동기 호출 시 ANR/크래시 발생. IO 스레드에서 비동기 처리.
+    var startDestination by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        val hasToken = withContext(Dispatchers.IO) { authRepository.hasAccessToken() }
+        startDestination = if (hasToken) Routes.CHECKING else Routes.LOGIN
     }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val showTabBar = currentRoute in tabRoutes
+
+    if (startDestination == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = EchoAccentGreen)
+        }
+        return
+    }
 
     Scaffold(
         bottomBar = {
@@ -112,7 +125,7 @@ private fun AppNavHost() {
     ) { paddingValues ->
         NavHost(
             navController = navController,
-            startDestination = startDestination,
+            startDestination = startDestination!!,
             modifier = Modifier.padding(paddingValues)
         ) {
             composable(Routes.CHECKING) {
