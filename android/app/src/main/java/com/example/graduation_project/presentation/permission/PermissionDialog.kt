@@ -100,7 +100,8 @@ fun AllPermissionsIntroDialog(
                     title = "위치 (선택)",
                     highlight = null,
                     description = "방문 장소 기록을 위해 필요",
-                    warning = "\"항상 허용\" 선택 필요"
+                    warning = "\"항상 허용\" 선택 필요",
+                    note = "매일 오전 6시부터 수집, 대화 시작 시 종료\n(시간 변경은 설정에서 가능합니다)"
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -150,7 +151,8 @@ private fun PermissionItemWithHighlight(
     title: String,
     highlight: String?,
     description: String,
-    warning: String? = null
+    warning: String? = null,
+    note: String? = null
 ) {
     Row(
         modifier = Modifier
@@ -196,6 +198,15 @@ private fun PermissionItemWithHighlight(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.error
+                )
+            }
+            if (note != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = note,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 16.sp
                 )
             }
         }

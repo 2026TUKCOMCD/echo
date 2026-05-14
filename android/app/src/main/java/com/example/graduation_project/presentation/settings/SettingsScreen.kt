@@ -1,5 +1,8 @@
 package com.example.graduation_project.presentation.settings
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +23,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
@@ -42,6 +47,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,11 +57,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.model.VoiceSettings
@@ -63,6 +72,8 @@ import com.example.graduation_project.presentation.common.BirthdayInputRow
 import com.example.graduation_project.presentation.common.EchoTimePickerContent
 import com.example.graduation_project.presentation.common.buildBirthdayString
 import com.example.graduation_project.presentation.common.parseBirthday
+import com.example.graduation_project.presentation.health.openHealthConnectSettings
+import com.example.graduation_project.ui.theme.EchoAccentBlue
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.EchoAccentRed
 import com.example.graduation_project.ui.theme.EchoBgCard
@@ -110,6 +121,19 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingField by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 설정에서 돌아왔을 때 권한 상태 새로고침
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPermissionStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(uiState.savedMessage) {
         uiState.savedMessage?.let {
@@ -241,6 +265,60 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(Modifier.height(20.dp))
+
+            // 권한 및 위치 수집 설정 섹션
+            Text(
+                text = "권한 및 위치 수집",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = OutfitFontFamily,
+                color = EchoTextSecondary,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = EchoBgCard
+            ) {
+                Column {
+                    // 위치 권한
+                    PermissionStatusRow(
+                        label = "위치 권한",
+                        isGranted = uiState.hasBackgroundLocationPermission,
+                        grantedText = "항상 허용됨",
+                        deniedText = "거부됨 - 탭하여 설정",
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", context.packageName, null)
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+
+                    // 건강 데이터 권한
+                    PermissionStatusRow(
+                        label = "건강 데이터",
+                        isGranted = uiState.hasHealthConnectPermission,
+                        grantedText = "허용됨",
+                        deniedText = "거부됨 - 탭하여 설정",
+                        onClick = { openHealthConnectSettings(context) }
+                    )
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+
+                    // 위치 수집 시작 시간
+                    PreferenceRow(
+                        label = "위치 수집 시작 시간",
+                        value = uiState.locationCollectionStartTime,
+                        enabled = !uiState.isSaving
+                    ) { editingField = "locationStartTime" }
+                }
+            }
+
             Spacer(Modifier.height(32.dp))
 
             // 로그아웃 버튼
@@ -340,6 +418,14 @@ fun SettingsScreen(
             onConfirm = { save(buildPreferences(uiState, preferredSleepHours = it)) },
             onDismiss = { editingField = null }
         )
+        "locationStartTime" -> LocationStartTimeDialog(
+            current = uiState.locationCollectionStartTime,
+            onSelected = {
+                viewModel.setLocationCollectionStartTime(it)
+                editingField = null
+            },
+            onDismiss = { editingField = null }
+        )
     }
 }
 
@@ -371,6 +457,44 @@ private fun PreferenceRow(
         if (showWarning) {
             Icon(Icons.Outlined.Warning, contentDescription = "필수 항목 미설정", tint = EchoAccentRed, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
+        }
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
+    }
+}
+
+@Composable
+private fun PermissionStatusRow(
+    label: String,
+    isGranted: Boolean,
+    grantedText: String,
+    deniedText: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isGranted) Icons.Filled.Check else Icons.Filled.Close,
+                    contentDescription = null,
+                    tint = if (isGranted) EchoAccentBlue else EchoAccentRed,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = if (isGranted) grantedText else deniedText,
+                    fontSize = 16.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = if (isGranted) EchoAccentBlue else EchoAccentRed
+                )
+            }
         }
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
     }
@@ -654,6 +778,46 @@ private fun TimePickerFieldDialog(
         },
         text = {
             EchoTimePickerContent(value = value, onValueChange = { value = it })
+        },
+        confirmButton = {
+            TextButton(onClick = { onSelected(value) }) {
+                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+private fun LocationStartTimeDialog(
+    current: String,
+    onSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var value by remember { mutableStateOf(current.ifBlank { "06:00" }) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = EchoBgCard,
+        title = {
+            Text("위치 수집 시작 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary)
+        },
+        text = {
+            Column {
+                Text(
+                    text = "매일 이 시간에 위치 수집을 시작합니다.\n대화를 시작하면 수집이 종료됩니다.",
+                    fontSize = 14.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = EchoTextSecondary,
+                    lineHeight = 20.sp
+                )
+                Spacer(Modifier.height(16.dp))
+                EchoTimePickerContent(value = value, onValueChange = { value = it })
+            }
         },
         confirmButton = {
             TextButton(onClick = { onSelected(value) }) {

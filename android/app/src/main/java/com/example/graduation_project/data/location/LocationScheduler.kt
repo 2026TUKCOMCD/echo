@@ -12,22 +12,31 @@ import java.util.Calendar
  * 위치 수집 스케줄링 관리
  *
  * AlarmManager를 사용하여:
- * - 매일 아침 6시 위치 수집 서비스 시작
+ * - 사용자가 설정한 시간에 위치 수집 서비스 시작 (기본: 아침 6시)
  * - 대화 종료 후 다음날 자동 재시작 예약
  */
 object LocationScheduler {
 
     private const val TAG = "LocationScheduler"
     private const val MORNING_ALARM_REQUEST_CODE = 2001
-    private const val MORNING_HOUR = 6
-    private const val MORNING_MINUTE = 0
 
     /**
-     * 매일 아침 6시 알람 스케줄링
+     * 사용자 설정 시간에 알람 스케줄링
      *
-     * 현재 시간이 6시 이후면 다음날 6시에 예약.
+     * 현재 시간이 설정 시간 이후면 다음날에 예약.
      */
     fun scheduleMorningAlarm(context: Context) {
+        val storage = LocationCollectionStorage(context)
+        val hour = storage.getStartHour()
+        val minute = storage.getStartMinute()
+
+        scheduleAlarmAt(context, hour, minute)
+    }
+
+    /**
+     * 특정 시간에 알람 스케줄링
+     */
+    fun scheduleAlarmAt(context: Context, hour: Int, minute: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
         val intent = Intent(context, MorningAlarmReceiver::class.java)
@@ -38,15 +47,15 @@ object LocationScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 다음 아침 6시 계산
+        // 설정된 시간 계산
         val calendar = Calendar.getInstance().apply {
             timeInMillis = System.currentTimeMillis()
-            set(Calendar.HOUR_OF_DAY, MORNING_HOUR)
-            set(Calendar.MINUTE, MORNING_MINUTE)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
 
-            // 현재 시간이 6시 이후면 다음날로
+            // 현재 시간이 설정 시간 이후면 다음날로
             if (timeInMillis <= System.currentTimeMillis()) {
                 add(Calendar.DAY_OF_YEAR, 1)
             }
@@ -78,7 +87,7 @@ object LocationScheduler {
                 )
             }
 
-            Log.d(TAG, "아침 6시 알람 스케줄링 완료: ${calendar.time}")
+            Log.d(TAG, "위치 수집 알람 스케줄링 완료: ${calendar.time}")
         } catch (e: SecurityException) {
             Log.e(TAG, "알람 스케줄링 실패 - 권한 오류", e)
         }

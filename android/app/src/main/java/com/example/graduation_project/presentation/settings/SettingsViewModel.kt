@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.location.LocationCollectionStorage
+import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.repository.UserRepository
+import com.example.graduation_project.presentation.permission.PermissionChecker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +32,12 @@ data class SettingsUiState(
     val conversationTime: String? = null,
     val preferredSleepHours: Int? = null,
     val alarmEnabled: Boolean = false,
+    // 위치 수집 설정
+    val locationCollectionStartTime: String = "06:00",
+    // 권한 상태
+    val hasLocationPermission: Boolean = false,
+    val hasBackgroundLocationPermission: Boolean = false,
+    val hasHealthConnectPermission: Boolean = false,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
@@ -41,6 +50,7 @@ class SettingsViewModel(
 ) : AndroidViewModel(application) {
 
     private val alarmStorage = ConversationAlarmStorage(application)
+    private val locationStorage = LocationCollectionStorage(application)
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -50,9 +60,28 @@ class SettingsViewModel(
     }
 
     private fun loadSettings() {
+        val context = getApplication<Application>()
+
         // 로컬 알람 설정 로드
         val alarmEnabled = alarmStorage.isAlarmEnabled()
-        _uiState.update { it.copy(alarmEnabled = alarmEnabled) }
+
+        // 위치 수집 시간 로드
+        val locationStartTime = locationStorage.getStartTime()
+
+        // 권한 상태 확인
+        val hasLocation = PermissionChecker.hasForegroundLocationPermission(context)
+        val hasBackgroundLocation = PermissionChecker.hasBackgroundLocationPermission(context)
+        val hasHealthConnect = PermissionChecker.isHealthConnectAvailable(context)
+
+        _uiState.update {
+            it.copy(
+                alarmEnabled = alarmEnabled,
+                locationCollectionStartTime = locationStartTime,
+                hasLocationPermission = hasLocation,
+                hasBackgroundLocationPermission = hasBackgroundLocation,
+                hasHealthConnectPermission = hasHealthConnect
+            )
+        }
 
         viewModelScope.launch {
             when (val result = userRepository.getPreferences()) {
@@ -60,6 +89,34 @@ class SettingsViewModel(
                 is ApiResult.Error -> _uiState.update { it.copy(isLoading = false) }
             }
         }
+    }
+
+    /**
+     * 권한 상태 새로고침 (설정에서 돌아왔을 때 호출)
+     */
+    fun refreshPermissionStatus() {
+        val context = getApplication<Application>()
+        _uiState.update {
+            it.copy(
+                hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
+                hasBackgroundLocationPermission = PermissionChecker.hasBackgroundLocationPermission(context),
+                hasHealthConnectPermission = PermissionChecker.isHealthConnectAvailable(context)
+            )
+        }
+    }
+
+    /**
+     * 위치 수집 시작 시간 설정
+     */
+    fun setLocationCollectionStartTime(time: String) {
+        locationStorage.saveStartTime(time)
+        _uiState.update { it.copy(locationCollectionStartTime = time) }
+
+        // 알람 재스케줄링
+        val context = getApplication<Application>()
+        LocationScheduler.scheduleMorningAlarm(context)
+
+        _uiState.update { it.copy(savedMessage = "위치 수집 시간이 설정되었습니다") }
     }
 
     fun savePreferences(preferences: UserPreferences) {
