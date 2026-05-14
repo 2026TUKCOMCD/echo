@@ -74,11 +74,10 @@ class OnboardingViewModel(
     }
 
     private fun validateStep(state: OnboardingUiState): String? = when (state.currentStep) {
-        2 -> when {
-            state.guardianEmail.isBlank() -> "보호자 이메일을 입력해주세요"
-            !EMAIL_REGEX.matches(state.guardianEmail) -> "올바른 이메일 형식을 입력해주세요"
-            else -> null
-        }
+        0 -> if (state.birthday.isBlank()) "생년월일을 입력해주세요" else null
+        1 -> if (state.location.isBlank()) "거주 지역을 입력해주세요" else null
+        3 -> if (state.guardianEmail.isNotBlank() && !EMAIL_REGEX.matches(state.guardianEmail))
+            "올바른 이메일 형식을 입력해주세요" else null
         9 -> if (state.preferredSleepHours.isNotBlank()) {
             val h = state.preferredSleepHours.toIntOrNull()
             when {

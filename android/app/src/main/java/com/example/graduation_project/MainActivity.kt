@@ -120,11 +120,10 @@ private fun AppNavHost() {
                     CircularProgressIndicator(color = EchoAccentGreen)
                 }
                 LaunchedEffect(Unit) {
-                    val completed = when (val result = userRepository.getOnboardingStatus()) {
-                        is ApiResult.Success -> result.data.completed
-                        is ApiResult.Error -> false
+                    val destination = when (val result = userRepository.getOnboardingStatus()) {
+                        is ApiResult.Success -> if (result.data.completed) EchoTab.HOME.route else Routes.ONBOARDING
+                        is ApiResult.Error -> Routes.LOGIN
                     }
-                    val destination = if (completed) EchoTab.HOME.route else Routes.ONBOARDING
                     navController.navigate(destination) {
                         popUpTo(Routes.CHECKING) { inclusive = true }
                     }
