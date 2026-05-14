@@ -37,6 +37,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.model.VoiceSettings
@@ -225,6 +228,11 @@ fun SettingsScreen(
                     HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("대화 시간", uiState.conversationTime, enabled = enabled) { editingField = "conversationTime" }
                     HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    AlarmToggleRow(
+                        enabled = uiState.alarmEnabled,
+                        onToggle = { viewModel.setAlarmEnabled(it) }
+                    )
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
                         label = "선호 수면 시간",
                         value = uiState.preferredSleepHours?.let { "${it}시간" },
@@ -365,6 +373,40 @@ private fun PreferenceRow(
             Spacer(Modifier.width(6.dp))
         }
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
+    }
+}
+
+@Composable
+private fun AlarmToggleRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("대화 시간 알림", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = if (enabled) "매일 알림을 받습니다" else "알림 꺼짐",
+                fontSize = 16.sp,
+                fontFamily = OutfitFontFamily,
+                color = if (enabled) EchoTextPrimary else EchoTextTertiary
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = EchoAccentGreen,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = EchoBgMuted
+            )
+        )
     }
 }
 

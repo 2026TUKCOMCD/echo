@@ -3,13 +3,18 @@ package com.example.graduation_project.data.location
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.graduation_project.domain.health.StayPointDetector
 import com.example.graduation_project.domain.model.LocationPoint
 import com.example.graduation_project.domain.model.StayPoint
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -32,10 +37,23 @@ class LocationDataManagerTest {
         locationStorageManager = mockk()
         stayPointDetector = mockk()
 
-        // 위치 권한 있음으로 mock
-        every { context.checkPermission(any(), any(), any()) } returns PackageManager.PERMISSION_GRANTED
+        // android.util.Log mock (JVM 테스트에서 사용 불가)
+        mockkStatic(Log::class)
+        every { Log.d(any(), any<String>()) } returns 0
+        every { Log.w(any(), any<String>()) } returns 0
+        every { Log.e(any(), any<String>()) } returns 0
+
+        // ContextCompat 정적 메서드 mock (위치 권한 있음)
+        mockkStatic(ContextCompat::class)
+        every { ContextCompat.checkSelfPermission(context, any()) } returns PackageManager.PERMISSION_GRANTED
 
         manager = LocationDataManager(context, locationManager, locationStorageManager, stayPointDetector)
+    }
+
+    @After
+    fun tearDown() {
+        unmockkStatic(Log::class)
+        unmockkStatic(ContextCompat::class)
     }
 
     @Test

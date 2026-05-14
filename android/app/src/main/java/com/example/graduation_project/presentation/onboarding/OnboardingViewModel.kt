@@ -1,7 +1,10 @@
 package com.example.graduation_project.presentation.onboarding
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
+import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.model.VoiceSettings
@@ -28,6 +31,7 @@ data class OnboardingUiState(
     val voiceSpeed: Double = 1.0,
     val voiceTone: String = "warm",
     val conversationTime: String = "",
+    val alarmEnabled: Boolean = true,
     val preferredSleepHours: String = "",
     val fieldError: String? = null,
     val isLoading: Boolean = false,
@@ -36,8 +40,11 @@ data class OnboardingUiState(
 )
 
 class OnboardingViewModel(
+    application: Application,
     private val userRepository: UserRepository = UserRepository()
-) : ViewModel() {
+) : AndroidViewModel(application) {
+
+    private val alarmStorage = ConversationAlarmStorage(application)
 
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
@@ -52,6 +59,7 @@ class OnboardingViewModel(
     fun updateVoiceSpeed(value: Double) = _uiState.update { it.copy(voiceSpeed = value) }
     fun updateVoiceTone(value: String) = _uiState.update { it.copy(voiceTone = value) }
     fun updateConversationTime(value: String) = _uiState.update { it.copy(conversationTime = value, fieldError = null) }
+    fun updateAlarmEnabled(value: Boolean) = _uiState.update { it.copy(alarmEnabled = value) }
     fun updatePreferredSleepHours(value: String) = _uiState.update { it.copy(preferredSleepHours = value, fieldError = null) }
 
     fun next() {
@@ -106,7 +114,18 @@ class OnboardingViewModel(
                 preferredSleepHours = state.preferredSleepHours.toIntOrNull()
             )
             when (userRepository.updatePreferences(preferences)) {
-                is ApiResult.Success -> _uiState.update { it.copy(isLoading = false, isCompleted = true) }
+                is ApiResult.Success -> {
+                    // 알람 설정 로컬 저장 및 스케줄링
+                    val time = state.conversationTime.ifBlank { null }
+                    alarmStorage.saveConversationTime(time)
+                    alarmStorage.setAlarmEnabled(state.alarmEnabled)
+
+                    if (state.alarmEnabled && time != null) {
+                        ConversationAlarmScheduler.scheduleAlarm(getApplication(), time)
+                    }
+
+                    _uiState.update { it.copy(isLoading = false, isCompleted = true) }
+                }
                 is ApiResult.Error -> _uiState.update {
                     it.copy(isLoading = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
                 }
