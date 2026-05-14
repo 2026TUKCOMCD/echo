@@ -9,10 +9,19 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.example.echo.common.exception.BaseException;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(BaseException.class)
+    public ResponseEntity<ErrorResponse> handleBaseException(BaseException e) {
+        log.warn("Business exception: {} {}", e.getStatus(), e.getMessage());
+        return ResponseEntity
+                .status(e.getStatus())
+                .body(ErrorResponse.of(e.getStatus().value(), e.getStatus().name(), e.getMessage()));
+    }
 
     @ExceptionHandler(SupertoneInsufficientCreditException.class)
     public ResponseEntity<ErrorResponse> handleInsufficientCredit(SupertoneInsufficientCreditException e) {

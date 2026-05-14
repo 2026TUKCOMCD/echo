@@ -4,6 +4,7 @@ import com.example.echo.common.auth.CurrentUser;
 import com.example.echo.user.dto.OnboardingStatusResponse;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,7 +24,7 @@ public class UserController {
     @PutMapping("/preferences")
     public ResponseEntity<UserPreferences> updatePreferences(
             @CurrentUser Long userId,
-            @RequestBody UserPreferences request) {
+            @Valid @RequestBody UserPreferences request) {
         return ResponseEntity.ok(userService.savePreferences(userId, request));
     }
 
