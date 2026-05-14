@@ -321,13 +321,32 @@ fun HealthConnectNotInstalledDialog(
  * 하위: androidx.health.ACTION_HEALTH_CONNECT_SETTINGS
  */
 fun openHealthConnectSettings(context: Context) {
-    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-        Intent("android.intent.action.MANAGE_HEALTH_PERMISSIONS")
-            .setPackage("com.google.android.apps.healthdata")
-            .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
-    } else {
-        Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS")
-            .setPackage("com.google.android.apps.healthdata")
-    }.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-    context.startActivity(intent)
+    try {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            Intent("android.intent.action.MANAGE_HEALTH_PERMISSIONS")
+                .setPackage("com.google.android.apps.healthdata")
+                .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+        } else {
+            Intent("androidx.health.ACTION_HEALTH_CONNECT_SETTINGS")
+                .setPackage("com.google.android.apps.healthdata")
+        }.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // Health Connect 앱이 설치되어 있지 않거나 intent를 처리할 수 없는 경우
+        // Play Store의 Health Connect 페이지로 이동
+        try {
+            val playStoreIntent = Intent(
+                Intent.ACTION_VIEW,
+                android.net.Uri.parse("market://details?id=com.google.android.apps.healthdata")
+            ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+            context.startActivity(playStoreIntent)
+        } catch (e2: Exception) {
+            // Play Store도 없는 경우 웹 브라우저로 이동
+            val webIntent = Intent(
+                Intent.ACTION_VIEW,
+                android.net.Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata")
+            ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+            context.startActivity(webIntent)
+        }
+    }
 }
