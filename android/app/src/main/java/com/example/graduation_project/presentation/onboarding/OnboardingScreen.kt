@@ -53,20 +53,20 @@ import com.example.graduation_project.ui.theme.EchoTextTertiary
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
 private val stepTitles = listOf(
-    "생년월일", "가족 관계", "보호자 이메일", "거주 지역",
-    "직업", "취미", "선호 대화 주제", "음성 설정", "대화 시간", "선호 수면 시간"
+    "생년월일", "거주 지역", "대화 시간",
+    "보호자 이메일", "가족 관계", "직업", "취미", "선호 대화 주제", "음성 설정", "선호 수면 시간"
 )
 
 private val stepHints = listOf(
-    "생일을 알려주세요",
+    "생일을 알려주세요 (필수)",
+    "예) 서울 강남구 (필수)",
+    "매일 같은 시간에 대화를 시작합니다 (필수)",
+    "보호자 이메일을 입력해주세요",
     "예) 딸, 아들, 배우자",
-    "비밀번호 복구에 사용됩니다 (필수)",
-    "예) 서울 강남구",
     "예) 전직 교사, 은행원",
     "예) 정원 가꾸기, 독서",
     "예) 옛날 이야기, 건강",
     "음성 속도와 톤을 설정해주세요",
-    "매일 같은 시간에 대화를 시작합니다",
     "하루 평균 몇 시간 주무시나요?"
 )
 
@@ -252,25 +252,30 @@ private fun StepContent(
 ) {
     when (step) {
         0 -> DatePickerStep(selected = uiState.birthday, onDateSelected = onBirthdayChange)
-        1 -> EchoOutlinedTextField(value = uiState.familyInfo, onValueChange = onFamilyInfoChange, label = "가족 관계")
-        2 -> EchoOutlinedTextField(
+        1 -> EchoOutlinedTextField(
+            value = uiState.location,
+            onValueChange = onLocationChange,
+            label = "거주 지역",
+            isError = uiState.fieldError != null
+        )
+        2 -> TimePickerStep(selected = uiState.conversationTime, onTimeSelected = onConversationTimeChange)
+        3 -> EchoOutlinedTextField(
             value = uiState.guardianEmail,
             onValueChange = onGuardianEmailChange,
             label = "보호자 이메일",
             keyboardType = KeyboardType.Email,
             isError = uiState.fieldError != null
         )
-        3 -> EchoOutlinedTextField(value = uiState.location, onValueChange = onLocationChange, label = "거주 지역")
-        4 -> EchoOutlinedTextField(value = uiState.occupation, onValueChange = onOccupationChange, label = "직업")
-        5 -> EchoOutlinedTextField(value = uiState.hobbies, onValueChange = onHobbiesChange, label = "취미")
-        6 -> EchoOutlinedTextField(value = uiState.preferredTopics, onValueChange = onPreferredTopicsChange, label = "선호 대화 주제")
-        7 -> VoiceSettingsStep(
+        4 -> EchoOutlinedTextField(value = uiState.familyInfo, onValueChange = onFamilyInfoChange, label = "가족 관계")
+        5 -> EchoOutlinedTextField(value = uiState.occupation, onValueChange = onOccupationChange, label = "직업")
+        6 -> EchoOutlinedTextField(value = uiState.hobbies, onValueChange = onHobbiesChange, label = "취미")
+        7 -> EchoOutlinedTextField(value = uiState.preferredTopics, onValueChange = onPreferredTopicsChange, label = "선호 대화 주제")
+        8 -> VoiceSettingsStep(
             voiceSpeed = uiState.voiceSpeed,
             voiceTone = uiState.voiceTone,
             onSpeedChange = onVoiceSpeedChange,
             onToneChange = onVoiceToneChange
         )
-        8 -> TimePickerStep(selected = uiState.conversationTime, onTimeSelected = onConversationTimeChange)
         9 -> EchoOutlinedTextField(
             value = uiState.preferredSleepHours,
             onValueChange = onSleepHoursChange,
