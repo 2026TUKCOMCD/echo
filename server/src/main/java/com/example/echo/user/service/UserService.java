@@ -108,13 +108,6 @@ public class UserService {
         return userPreferencesRepository.existsByUserId(userId);
     }
 
-    @Transactional(readOnly = true)
-    public ConversationTimeResponse getConversationTime(Long userId) {
-        com.example.echo.user.entity.UserPreferences prefs = userPreferencesRepository.findByUserId(userId)
-                .orElseThrow(() -> new UserPreferencesNotFoundException(userId));
-        return ConversationTimeResponse.of(prefs.getConversationTime());
-    }
-
     @Transactional
     public ConversationTimeResponse updateConversationTime(Long userId, ConversationTimeRequest request) {
         com.example.echo.user.entity.UserPreferences prefs = userPreferencesRepository.findByUserId(userId)
@@ -122,5 +115,17 @@ public class UserService {
         prefs.updateConversationTime(request.getConversationTime());
         userPreferencesRepository.save(prefs);
         return ConversationTimeResponse.of(prefs.getConversationTime());
+    }
+
+    @Transactional
+    public VoiceSettings updateVoiceSettings(Long userId, VoiceSettings request) {
+        com.example.echo.user.entity.UserPreferences prefs = userPreferencesRepository.findByUserId(userId)
+                .orElseThrow(() -> new UserPreferencesNotFoundException(userId));
+        prefs.updateVoiceSettings(request.getVoiceSpeed(), request.getVoiceTone());
+        userPreferencesRepository.save(prefs);
+        return VoiceSettings.builder()
+                .voiceSpeed(prefs.getVoiceSpeed())
+                .voiceTone(prefs.getVoiceTone())
+                .build();
     }
 }

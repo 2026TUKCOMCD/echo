@@ -113,4 +113,10 @@ public class UserPreferences {
         this.conversationTime = conversationTime;
         this.updatedAt = LocalDateTime.now();
     }
+
+    public void updateVoiceSettings(Double voiceSpeed, String voiceTone) {
+        this.voiceSpeed = voiceSpeed;
+        this.voiceTone = voiceTone;
+        this.updatedAt = LocalDateTime.now();
+    }
 }
