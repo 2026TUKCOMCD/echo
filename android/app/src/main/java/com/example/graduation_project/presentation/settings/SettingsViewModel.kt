@@ -93,15 +93,24 @@ class SettingsViewModel(
 
     /**
      * 권한 상태 새로고침 (설정에서 돌아왔을 때 호출)
+     * 위치 권한이 새로 허용되었으면 서비스 시작
      */
     fun refreshPermissionStatus() {
         val context = getApplication<Application>()
+        val previousBackgroundPermission = _uiState.value.hasBackgroundLocationPermission
+        val currentBackgroundPermission = PermissionChecker.hasBackgroundLocationPermission(context)
+
         _uiState.update {
             it.copy(
                 hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
-                hasBackgroundLocationPermission = PermissionChecker.hasBackgroundLocationPermission(context),
+                hasBackgroundLocationPermission = currentBackgroundPermission,
                 hasHealthConnectPermission = PermissionChecker.isHealthConnectAvailable(context)
             )
+        }
+
+        // 위치 권한이 새로 허용되었으면 서비스 시작
+        if (!previousBackgroundPermission && currentBackgroundPermission) {
+            LocationScheduler.enableLocationCollection(context)
         }
     }
 

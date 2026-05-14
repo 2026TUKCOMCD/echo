@@ -2,6 +2,7 @@ package com.example.graduation_project.presentation.conversation
 
 import android.app.Application
 import android.util.Log
+import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.dao.MessageDao
@@ -87,6 +88,11 @@ class ConversationViewModelTest {
         every { LocationCollectionService.stop(any()) } just Runs
         every { LocationCollectionService.start(any()) } just Runs
 
+        // ConversationAlarmReceiver companion object mock
+        mockkObject(ConversationAlarmReceiver)
+        every { ConversationAlarmReceiver.cancelNotification(any()) } just Runs
+        every { ConversationAlarmReceiver.showFarewellNotification(any()) } just Runs
+
         every { mockAudioRecordManager.state } returns mockAudioRecordState
         every { mockHealthRepository.getAvailability() } returns HealthConnectAvailability.NotSupported
 
@@ -104,6 +110,7 @@ class ConversationViewModelTest {
     fun tearDown() {
         unmockkStatic(Log::class)
         unmockkObject(LocationCollectionService)
+        unmockkObject(ConversationAlarmReceiver)
     }
 
     // ===== 중복 요청 방지 테스트 =====

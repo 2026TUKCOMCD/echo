@@ -4,11 +4,11 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.health.HealthConnectRepositoryImpl
-import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationDataManager
 import com.example.graduation_project.data.location.LocationManager
 import com.example.graduation_project.data.location.LocationStorageManager
@@ -313,12 +313,12 @@ class ConversationViewModel(
             if (!transitionTo(ConversationState.Sending)) return@launch
             _uiState.update { it.copy(errorMessage = null, currentError = null) }
 
+            // 대화 시간 알림 취소
+            ConversationAlarmReceiver.cancelNotification(getApplication())
+
             // [A11] 위치 데이터 수집 (Room DB 기반 StayPoint 계산)
             _uiState.update { it.copy(processingMessage = "위치 데이터 수집 중") }
             val locationData = locationDataManager.collectLocationData()
-
-            // GPS 수집 서비스 중지 (대화 시작 시 - 위치 데이터 수집 완료 후)
-            LocationCollectionService.stop(getApplication())
 
             // [A11] 건강 데이터 수집
             _uiState.update { it.copy(processingMessage = "건강 데이터 수집 중") }
@@ -508,6 +508,9 @@ class ConversationViewModel(
                     conversationId = null
                     // Sending → Ended
                     transitionTo(ConversationState.Ended)
+
+                    // 대화 종료 알림 표시 (10분 후 자동 사라짐)
+                    ConversationAlarmReceiver.showFarewellNotification(getApplication())
                     _uiState.update {
                         it.copy(
                             sessionId = null,
