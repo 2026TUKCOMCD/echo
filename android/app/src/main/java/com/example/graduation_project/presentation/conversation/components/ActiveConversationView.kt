@@ -148,8 +148,8 @@ fun ActiveConversationView(
                 // 정적 이미지 (Idle/Ended 또는 animationManager 없음)
                 AiCharacterImage(
                     size = 240.dp,
-                    enableFloatingAnimation = conversationState is ConversationState.Playing
-                            && playbackStatus == PlaybackStatus.PLAYING
+                    conversationState = conversationState,
+                    enableFloatingAnimation = true
                 )
             }
 

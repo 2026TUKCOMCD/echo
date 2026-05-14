@@ -1,5 +1,6 @@
 package com.example.graduation_project.data.api
 
+import com.example.graduation_project.data.model.OnboardingStatusResponse
 import com.example.graduation_project.data.model.User
 import com.example.graduation_project.data.model.UserPreferences
 import retrofit2.http.Body
@@ -19,4 +20,7 @@ interface UserApi {
 
     @PUT("/api/users/me/preferences")
     suspend fun updatePreferences(@Body preferences: UserPreferences): UserPreferences
+
+    @GET("/api/users/me/onboarding-status")
+    suspend fun getOnboardingStatus(): OnboardingStatusResponse
 }

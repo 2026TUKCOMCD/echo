@@ -2,8 +2,12 @@ package com.example.echo.user.repository;
 
 import com.example.echo.user.entity.UserPreferences;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
 
-@Repository
+import java.util.Optional;
+
 public interface UserPreferencesRepository extends JpaRepository<UserPreferences, Long> {
+
+    Optional<UserPreferences> findByUserId(Long userId);
+
+    boolean existsByUserId(Long userId);
 }
