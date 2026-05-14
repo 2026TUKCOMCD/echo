@@ -102,6 +102,10 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public boolean isOnboardingCompleted(Long userId) {
-        return userPreferencesRepository.existsByUserId(userId);
+        return userPreferencesRepository.findByUserId(userId)
+                .map(prefs -> prefs.getBirthday() != null
+                        && prefs.getLocation() != null
+                        && prefs.getConversationTime() != null)
+                .orElse(false);
     }
 }
