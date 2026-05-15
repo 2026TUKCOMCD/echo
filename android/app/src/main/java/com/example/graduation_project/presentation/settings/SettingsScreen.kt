@@ -1,5 +1,9 @@
 package com.example.graduation_project.presentation.settings
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,8 +24,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,9 +50,12 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,10 +65,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.model.VoiceSettings
@@ -60,6 +80,8 @@ import com.example.graduation_project.presentation.common.BirthdayInputRow
 import com.example.graduation_project.presentation.common.EchoTimePickerContent
 import com.example.graduation_project.presentation.common.buildBirthdayString
 import com.example.graduation_project.presentation.common.parseBirthday
+import com.example.graduation_project.presentation.health.openHealthConnectSettings
+import com.example.graduation_project.ui.theme.EchoAccentBlue
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.EchoAccentRed
 import com.example.graduation_project.ui.theme.EchoBgCard
@@ -102,11 +124,24 @@ private fun buildPreferences(
 @Composable
 fun SettingsScreen(
     onLogout: () -> Unit,
-    viewModel: SettingsViewModel = viewModel()
+    viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingField by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 설정에서 돌아왔을 때 권한 상태 새로고침
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPermissionStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(uiState.savedMessage) {
         uiState.savedMessage?.let {
@@ -179,9 +214,11 @@ fun SettingsScreen(
                 }
             }
 
+            val enabled = !uiState.isSaving
+
             Spacer(Modifier.height(20.dp))
 
-            // 선호도 목록 카드
+            // ===== 대화 설정 섹션 =====
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -190,26 +227,16 @@ fun SettingsScreen(
                 color = EchoBgCard
             ) {
                 Column {
-                    val enabled = !uiState.isSaving
-
-                    PreferenceRow("생년월일", uiState.birthday, enabled = enabled) { editingField = "birthday" }
+                    CardHeader(
+                        icon = Icons.AutoMirrored.Outlined.Chat,
+                        title = "대화 설정"
+                    )
+                    PreferenceRow("대화 시간", uiState.conversationTime, enabled = enabled) { editingField = "conversationTime" }
                     HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    PreferenceRow("가족 관계", uiState.familyInfo, enabled = enabled) { editingField = "familyInfo" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    PreferenceRow(
-                        label = "보호자 이메일",
-                        value = uiState.guardianEmail,
-                        showWarning = uiState.guardianEmail.isNullOrBlank(),
-                        enabled = enabled
-                    ) { editingField = "guardianEmail" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    PreferenceRow("거주 지역", uiState.location, enabled = enabled) { editingField = "location" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    PreferenceRow("직업", uiState.occupation, enabled = enabled) { editingField = "occupation" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    PreferenceRow("취미", uiState.hobbies, enabled = enabled) { editingField = "hobbies" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    PreferenceRow("선호 대화 주제", uiState.preferredTopics, enabled = enabled) { editingField = "preferredTopics" }
+                    AlarmToggleRow(
+                        enabled = uiState.alarmEnabled,
+                        onToggle = { viewModel.setAlarmEnabled(it) }
+                    )
                     HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
                         label = "음성 설정",
@@ -223,13 +250,177 @@ fun SettingsScreen(
                         enabled = enabled
                     ) { editingField = "voiceSettings" }
                     HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    PreferenceRow("대화 시간", uiState.conversationTime, enabled = enabled) { editingField = "conversationTime" }
+                    PreferenceRow("선호 대화 주제", uiState.preferredTopics, enabled = enabled) { editingField = "preferredTopics" }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ===== 내 정보 섹션 =====
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = EchoBgCard
+            ) {
+                Column {
+                    CardHeader(
+                        icon = Icons.Outlined.Person,
+                        title = "내 정보",
+                        iconTint = EchoAccentBlue
+                    )
+                    PreferenceRow("생년월일", uiState.birthday, enabled = enabled) { editingField = "birthday" }
                     HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PreferenceRow("거주 지역", uiState.location, enabled = enabled) { editingField = "location" }
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PreferenceRow("직업", uiState.occupation, enabled = enabled) { editingField = "occupation" }
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PreferenceRow("취미", uiState.hobbies, enabled = enabled) { editingField = "hobbies" }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ===== 보호자 연결 섹션 =====
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = EchoBgCard
+            ) {
+                Column {
+                    CardHeader(
+                        icon = Icons.Outlined.People,
+                        title = "보호자 연결",
+                        iconTint = Color(0xFFFF9800) // Orange
+                    )
+                    PreferenceRow(
+                        label = "보호자 이메일",
+                        value = uiState.guardianEmail,
+                        showWarning = uiState.guardianEmail.isNullOrBlank(),
+                        enabled = enabled
+                    ) { editingField = "guardianEmail" }
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PreferenceRow("가족 관계", uiState.familyInfo, enabled = enabled) { editingField = "familyInfo" }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ===== 건강 정보 섹션 =====
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = EchoBgCard
+            ) {
+                Column {
+                    CardHeader(
+                        icon = Icons.Outlined.Favorite,
+                        title = "건강 정보",
+                        iconTint = EchoAccentRed
+                    )
                     PreferenceRow(
                         label = "선호 수면 시간",
                         value = uiState.preferredSleepHours?.let { "${it}시간" },
                         enabled = enabled
                     ) { editingField = "sleepHours" }
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PermissionStatusRow(
+                        label = "건강 데이터 권한",
+                        isGranted = uiState.hasHealthConnectPermission,
+                        grantedText = "허용됨",
+                        deniedText = "탭하여 설정",
+                        onClick = { openHealthConnectSettings(context) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ===== 위치 수집 섹션 =====
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = EchoBgCard
+            ) {
+                Column {
+                    CardHeader(
+                        icon = Icons.Outlined.LocationOn,
+                        title = "위치 수집",
+                        iconTint = EchoAccentBlue
+                    )
+                    PermissionStatusRow(
+                        label = "위치 권한",
+                        isGranted = uiState.hasBackgroundLocationPermission,
+                        grantedText = "항상 허용됨",
+                        deniedText = "탭하여 설정",
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", context.packageName, null)
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PreferenceRow(
+                        label = "수집 시작 시간",
+                        value = uiState.locationCollectionStartTime,
+                        enabled = enabled
+                    ) { editingField = "locationStartTime" }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ===== 앱 설정 섹션 =====
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = EchoBgCard
+            ) {
+                Column {
+                    CardHeader(
+                        icon = Icons.Outlined.Settings,
+                        title = "앱 설정",
+                        iconTint = EchoTextSecondary
+                    )
+                    // 앱 알림 설정
+                    NavigationRow(
+                        label = "앱 알림 설정",
+                        description = "시스템 알림 설정으로 이동",
+                        onClick = {
+                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
+                            } else {
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", context.packageName, null)
+                                }
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
+                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    // 앱 권한 설정
+                    NavigationRow(
+                        label = "앱 권한 설정",
+                        description = "모든 권한을 한 곳에서 관리",
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", context.packageName, null)
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
                 }
             }
 
@@ -332,6 +523,14 @@ fun SettingsScreen(
             onConfirm = { save(buildPreferences(uiState, preferredSleepHours = it)) },
             onDismiss = { editingField = null }
         )
+        "locationStartTime" -> LocationStartTimeDialog(
+            current = uiState.locationCollectionStartTime,
+            onSelected = {
+                viewModel.setLocationCollectionStartTime(it)
+                editingField = null
+            },
+            onDismiss = { editingField = null }
+        )
     }
 }
 
@@ -365,6 +564,78 @@ private fun PreferenceRow(
             Spacer(Modifier.width(6.dp))
         }
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
+    }
+}
+
+@Composable
+private fun PermissionStatusRow(
+    label: String,
+    isGranted: Boolean,
+    grantedText: String,
+    deniedText: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isGranted) Icons.Filled.Check else Icons.Filled.Close,
+                    contentDescription = null,
+                    tint = if (isGranted) EchoAccentBlue else EchoAccentRed,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = if (isGranted) grantedText else deniedText,
+                    fontSize = 16.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = if (isGranted) EchoAccentBlue else EchoAccentRed
+                )
+            }
+        }
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
+    }
+}
+
+@Composable
+private fun AlarmToggleRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("대화 시간 알림", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = if (enabled) "매일 알림을 받습니다" else "알림 꺼짐",
+                fontSize = 16.sp,
+                fontFamily = OutfitFontFamily,
+                color = if (enabled) EchoTextPrimary else EchoTextTertiary
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = EchoAccentGreen,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = EchoBgMuted
+            )
+        )
     }
 }
 
@@ -624,4 +895,101 @@ private fun TimePickerFieldDialog(
             }
         }
     )
+}
+
+@Composable
+private fun LocationStartTimeDialog(
+    current: String,
+    onSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var value by remember { mutableStateOf(current.ifBlank { "06:00" }) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = EchoBgCard,
+        title = {
+            Text("위치 수집 시작 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary)
+        },
+        text = {
+            Column {
+                Text(
+                    text = "매일 이 시간에 위치 수집을 시작합니다.\n대화를 시작하면 수집이 종료됩니다.",
+                    fontSize = 14.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = EchoTextSecondary,
+                    lineHeight = 20.sp
+                )
+                Spacer(Modifier.height(16.dp))
+                EchoTimePickerContent(value = value, onValueChange = { value = it })
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSelected(value) }) {
+                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+private fun CardHeader(
+    icon: ImageVector,
+    title: String,
+    iconTint: Color = EchoAccentGreen
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(EchoBgMuted.copy(alpha = 0.5f))
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(24.dp)
+        )
+        Text(
+            text = title,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = OutfitFontFamily,
+            color = EchoTextPrimary
+        )
+    }
+}
+
+@Composable
+private fun NavigationRow(
+    label: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, fontSize = 16.sp, fontFamily = OutfitFontFamily, color = EchoTextPrimary)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = description,
+                fontSize = 14.sp,
+                fontFamily = OutfitFontFamily,
+                color = EchoTextSecondary
+            )
+        }
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
+    }
 }

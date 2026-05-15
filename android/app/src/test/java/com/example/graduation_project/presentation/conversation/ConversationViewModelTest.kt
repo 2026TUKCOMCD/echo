@@ -2,9 +2,12 @@ package com.example.graduation_project.presentation.conversation
 
 import android.app.Application
 import android.util.Log
+import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.location.LocationCollectionService
+import com.example.graduation_project.data.location.LocationDataManager
 import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
@@ -14,11 +17,15 @@ import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.presentation.model.ConversationState
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.mockkObject
 import io.mockk.mockkStatic
+import io.mockk.unmockkObject
 import io.mockk.unmockkStatic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -63,6 +70,7 @@ class ConversationViewModelTest {
     private val mockAudioRecordState = MutableStateFlow<AudioRecordState>(AudioRecordState.Idle)
     private val mockAudioRecordManager = mockk<AudioRecordManager>(relaxed = true)
     private val mockHealthRepository = mockk<IHealthRepository>(relaxed = true)
+    private val mockLocationDataManager = mockk<LocationDataManager>(relaxed = true)
 
     private lateinit var viewModel: ConversationViewModel
 
@@ -74,6 +82,17 @@ class ConversationViewModelTest {
         every { Log.w(any(), any<String>()) } returns 0
         every { Log.e(any(), any<String>()) } returns 0
         every { Log.e(any(), any<String>(), any()) } returns 0
+
+        // LocationCollectionService companion object mock
+        mockkObject(LocationCollectionService)
+        every { LocationCollectionService.stop(any()) } just Runs
+        every { LocationCollectionService.start(any()) } just Runs
+
+        // ConversationAlarmReceiver companion object mock
+        mockkObject(ConversationAlarmReceiver)
+        every { ConversationAlarmReceiver.cancelNotification(any()) } just Runs
+        every { ConversationAlarmReceiver.showFarewellNotification(any()) } just Runs
+
         every { mockAudioRecordManager.state } returns mockAudioRecordState
         every { mockHealthRepository.getAvailability() } returns HealthConnectAvailability.NotSupported
 
@@ -82,13 +101,16 @@ class ConversationViewModelTest {
             repository = mockRepository,
             messageDao = mockMessageDao,
             audioRecordManager = mockAudioRecordManager,
-            healthRepository = mockHealthRepository
+            healthRepository = mockHealthRepository,
+            locationDataManager = mockLocationDataManager
         )
     }
 
     @After
     fun tearDown() {
         unmockkStatic(Log::class)
+        unmockkObject(LocationCollectionService)
+        unmockkObject(ConversationAlarmReceiver)
     }
 
     // ===== 중복 요청 방지 테스트 =====

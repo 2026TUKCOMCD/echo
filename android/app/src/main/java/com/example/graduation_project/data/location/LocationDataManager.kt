@@ -10,7 +10,7 @@ import com.example.graduation_project.data.model.RawVisitedPlace
 import com.example.graduation_project.domain.health.StayPointDetector
 import com.example.graduation_project.domain.model.LocationPoint
 import com.example.graduation_project.domain.model.StayPoint
-import java.time.LocalTime
+import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -138,8 +138,8 @@ class LocationDataManager(
         return RawVisitedPlace(
             latitude = latitude,
             longitude = longitude,
-            visitStartTime = LocalTime.ofInstant(startTime, zone).toString(),
-            visitEndTime = LocalTime.ofInstant(endTime, zone).toString(),
+            visitStartTime = LocalDateTime.ofInstant(startTime, zone).toLocalTime().toString(),
+            visitEndTime = LocalDateTime.ofInstant(endTime, zone).toLocalTime().toString(),
             stayDurationMinutes = durationMinutes
         )
     }

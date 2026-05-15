@@ -52,9 +52,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // 알림 딥링크 처리
+        val navigateTo = intent.getStringExtra("navigate_to")
+
         setContent {
             Graduation_projectTheme {
-                AppNavHost()
+                AppNavHost(navigateTo = navigateTo)
             }
         }
     }
@@ -78,7 +81,7 @@ private object Routes {
 private val tabRoutes = EchoTab.entries.map { it.route }.toSet()
 
 @Composable
-private fun AppNavHost() {
+private fun AppNavHost(navigateTo: String? = null) {
     val context = LocalContext.current
     val application = context.applicationContext as Application
     val authRepository = remember { AuthRepository(tokenStorage = TokenStorage(application)) }
@@ -92,6 +95,19 @@ private fun AppNavHost() {
     LaunchedEffect(Unit) {
         val hasToken = withContext(Dispatchers.IO) { authRepository.hasAccessToken() }
         startDestination = if (hasToken) Routes.CHECKING else Routes.LOGIN
+    }
+
+    // 알림에서 홈 화면으로 이동 요청 시 처리
+    LaunchedEffect(navigateTo, startDestination) {
+        if (navigateTo == "home" && startDestination != null) {
+            // 로그인 상태 확인 후 홈으로 이동
+            val hasToken = withContext(Dispatchers.IO) { authRepository.hasAccessToken() }
+            if (hasToken) {
+                navController.navigate(EchoTab.HOME.route) {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+        }
     }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()

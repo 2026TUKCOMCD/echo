@@ -83,9 +83,9 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
-        <!-- 부팅 시 위치 수집 서비스 자동 시작 -->
+        <!-- 부팅 시 서비스/알람 자동 시작 -->
         <receiver
-            android:name=".data.location.BootReceiver"
+            android:name=".data.receiver.BootReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -95,6 +95,11 @@
         <!-- 매일 아침 6시 위치 수집 서비스 시작 -->
         <receiver
             android:name=".data.location.MorningAlarmReceiver"
+            android:exported="false" />
+
+        <!-- 대화 시간 알람 -->
+        <receiver
+            android:name=".data.alarm.ConversationAlarmReceiver"
             android:exported="false" />
 
     </application>

@@ -83,6 +83,9 @@ class LocationCollectionService : Service() {
         // 위치 수집 시작
         startLocationCollection()
 
+        // 아침 인사 알림 표시
+        showMorningGreetingNotification()
+
         return START_STICKY
     }
 
@@ -224,13 +227,55 @@ class LocationCollectionService : Service() {
         return if (level >= 0 && scale > 0) (level * 100 / scale) else 100
     }
 
+    /**
+     * "좋은 아침이에요" 인사 알림 표시
+     * 10분 후 자동으로 사라짐
+     */
+    private fun showMorningGreetingNotification() {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+
+        // 인사 알림용 채널 생성 (없으면)
+        val greetingChannel = NotificationChannel(
+            GREETING_CHANNEL_ID,
+            "아침 인사",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "위치 수집 시작 알림"
+            setShowBadge(false)
+        }
+        notificationManager.createNotificationChannel(greetingChannel)
+
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, GREETING_CHANNEL_ID)
+            .setContentTitle("좋은 아침이에요! ☀️")
+            .setContentText("오늘 하루도 방문 장소를 기록할게요")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setTimeoutAfter(GREETING_TIMEOUT_MS)  // 10분 후 자동 사라짐
+            .build()
+
+        notificationManager.notify(GREETING_NOTIFICATION_ID, notification)
+        Log.d(TAG, "아침 인사 알림 표시")
+    }
+
     companion object {
         private const val TAG = "LocationCollectionService"
         private const val CHANNEL_ID = "location_collection_channel"
+        private const val GREETING_CHANNEL_ID = "location_greeting_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val GREETING_NOTIFICATION_ID = 1002
 
         private const val INTERVAL_NORMAL_MS = 10 * 60 * 1000L      // 10분
         private const val INTERVAL_LOW_BATTERY_MS = 30 * 60 * 1000L // 30분
+        private const val GREETING_TIMEOUT_MS = 10 * 60 * 1000L     // 10분
 
         const val ACTION_STOP = "com.example.graduation_project.STOP_LOCATION_SERVICE"
 
