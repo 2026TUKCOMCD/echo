@@ -12,6 +12,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.activity.viewModels
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +41,7 @@ import com.example.graduation_project.presentation.history.ConversationHistorySc
 import com.example.graduation_project.presentation.home.HomeScreen
 import com.example.graduation_project.presentation.onboarding.OnboardingScreen
 import com.example.graduation_project.presentation.settings.SettingsScreen
+import com.example.graduation_project.presentation.settings.DisplaySettingsViewModel
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +51,9 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 
 class MainActivity : ComponentActivity() {
+
+    private val displayViewModel: DisplaySettingsViewModel by viewModels { DisplaySettingsViewModel.Factory }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -56,7 +62,8 @@ class MainActivity : ComponentActivity() {
         val navigateTo = intent.getStringExtra("navigate_to")
 
         setContent {
-            Graduation_projectTheme {
+            val displaySettings by displayViewModel.settings.collectAsState()
+            Graduation_projectTheme(displaySettings = displaySettings) {
                 AppNavHost(navigateTo = navigateTo)
             }
         }

@@ -46,12 +46,7 @@ import com.example.graduation_project.presentation.common.BirthdayInputRow
 import com.example.graduation_project.presentation.common.EchoTimePickerContent
 import com.example.graduation_project.presentation.common.buildBirthdayString
 import com.example.graduation_project.presentation.common.parseBirthday
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoBgMuted
-import com.example.graduation_project.ui.theme.EchoBgPage
-import com.example.graduation_project.ui.theme.EchoTextPrimary
-import com.example.graduation_project.ui.theme.EchoTextSecondary
-import com.example.graduation_project.ui.theme.EchoTextTertiary
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
 private val stepTitles = listOf(
@@ -91,10 +86,11 @@ fun OnboardingScreen(
         }
     }
 
+    val colors = LocalEchoColors.current
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(EchoBgPage)
+            .background(colors.bgPage)
     ) {
         // 상단 진행률
         Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
@@ -108,21 +104,21 @@ fun OnboardingScreen(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextPrimary
+                    color = colors.textPrimary
                 )
                 Text(
                     text = "${uiState.currentStep + 1} / $ONBOARDING_STEPS",
                     fontSize = 16.sp,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextSecondary
+                    color = colors.textSecondary
                 )
             }
             Spacer(Modifier.height(12.dp))
             LinearProgressIndicator(
                 progress = { (uiState.currentStep + 1).toFloat() / ONBOARDING_STEPS },
                 modifier = Modifier.fillMaxWidth(),
-                color = EchoAccentGreen,
-                trackColor = EchoBgMuted
+                color = colors.accentGreen,
+                trackColor = colors.bgMuted
             )
         }
 
@@ -138,14 +134,14 @@ fun OnboardingScreen(
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextPrimary
+                color = colors.textPrimary
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = stepHints[uiState.currentStep],
                 fontSize = 15.sp,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextSecondary
+                color = colors.textSecondary
             )
             Spacer(Modifier.height(32.dp))
 
@@ -199,7 +195,7 @@ fun OnboardingScreen(
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = OutfitFontFamily,
-                        color = EchoAccentGreen
+                        color = colors.accentGreen
                     )
                 }
             }
@@ -211,9 +207,9 @@ fun OnboardingScreen(
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = EchoAccentGreen,
+                    containerColor = colors.accentGreen,
                     contentColor = Color.White,
-                    disabledContainerColor = EchoAccentGreen.copy(alpha = 0.6f)
+                    disabledContainerColor = colors.accentGreen.copy(alpha = 0.6f)
                 )
             ) {
                 if (uiState.isLoading) {
@@ -323,6 +319,7 @@ private fun TimePickerStep(
     alarmEnabled: Boolean,
     onAlarmEnabledChange: (Boolean) -> Unit
 ) {
+    val colors = LocalEchoColors.current
     val initial = if (selected.isNotEmpty()) selected else "09:00"
     LaunchedEffect(Unit) {
         if (selected.isEmpty()) onTimeSelected("09:00")
@@ -346,13 +343,13 @@ private fun TimePickerStep(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextPrimary
+                    color = colors.textPrimary
                 )
                 Text(
                     text = if (alarmEnabled) "설정한 시간에 알림을 보내드려요" else "알림을 받지 않습니다",
                     fontSize = 14.sp,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextSecondary
+                    color = colors.textSecondary
                 )
             }
             Switch(
@@ -360,9 +357,9 @@ private fun TimePickerStep(
                 onCheckedChange = onAlarmEnabledChange,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = EchoAccentGreen,
+                    checkedTrackColor = colors.accentGreen,
                     uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = EchoBgMuted
+                    uncheckedTrackColor = colors.bgMuted
                 )
             )
         }
@@ -376,13 +373,14 @@ private fun VoiceSettingsStep(
     onSpeedChange: (Double) -> Unit,
     onToneChange: (String) -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Column {
         Text(
             text = "음성 속도",
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
             fontFamily = OutfitFontFamily,
-            color = EchoTextPrimary
+            color = colors.textPrimary
         )
         Spacer(Modifier.height(4.dp))
         Text(
@@ -395,7 +393,7 @@ private fun VoiceSettingsStep(
             }",
             fontSize = 15.sp,
             fontFamily = OutfitFontFamily,
-            color = EchoAccentGreen
+            color = colors.accentGreen
         )
         androidx.compose.material3.Slider(
             value = voiceSpeed.toFloat(),
@@ -404,14 +402,14 @@ private fun VoiceSettingsStep(
             steps = 3,
             modifier = Modifier.fillMaxWidth(),
             colors = androidx.compose.material3.SliderDefaults.colors(
-                thumbColor = EchoAccentGreen,
-                activeTrackColor = EchoAccentGreen,
-                inactiveTrackColor = EchoBgMuted
+                thumbColor = colors.accentGreen,
+                activeTrackColor = colors.accentGreen,
+                inactiveTrackColor = colors.bgMuted
             )
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("느리게", fontSize = 13.sp, fontFamily = OutfitFontFamily, color = EchoTextTertiary)
-            Text("빠르게", fontSize = 13.sp, fontFamily = OutfitFontFamily, color = EchoTextTertiary)
+            Text("느리게", fontSize = 13.sp, fontFamily = OutfitFontFamily, color = colors.textTertiary)
+            Text("빠르게", fontSize = 13.sp, fontFamily = OutfitFontFamily, color = colors.textTertiary)
         }
 
         Spacer(Modifier.height(24.dp))
@@ -421,7 +419,7 @@ private fun VoiceSettingsStep(
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
             fontFamily = OutfitFontFamily,
-            color = EchoTextPrimary
+            color = colors.textPrimary
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -434,7 +432,7 @@ private fun VoiceSettingsStep(
                         Text(label, fontSize = 14.sp, fontFamily = OutfitFontFamily)
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = EchoAccentGreen,
+                        selectedContainerColor = colors.accentGreen,
                         selectedLabelColor = Color.White
                     )
                 )

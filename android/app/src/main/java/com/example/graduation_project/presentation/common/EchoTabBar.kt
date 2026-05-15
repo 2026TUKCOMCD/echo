@@ -29,10 +29,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoBgCard
-import com.example.graduation_project.ui.theme.EchoBorderSubtle
-import com.example.graduation_project.ui.theme.EchoTabInactive
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
 enum class EchoTab(val route: String, val label: String, val icon: ImageVector) {
@@ -47,8 +44,9 @@ fun EchoTabBar(
     onTabSelected: (EchoTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalEchoColors.current
     Surface(
-        color = EchoBgCard,
+        color = colors.bgCard,
         shadowElevation = 4.dp,
         modifier = modifier.fillMaxWidth()
     ) {
@@ -59,8 +57,8 @@ fun EchoTabBar(
                 .padding(top = 12.dp, bottom = 12.dp)
                 .navigationBarsPadding()
                 .clip(RoundedCornerShape(36.dp))
-                .border(1.dp, EchoBorderSubtle, RoundedCornerShape(36.dp))
-                .background(EchoBgCard)
+                .border(1.dp, colors.borderSubtle, RoundedCornerShape(36.dp))
+                .background(colors.bgCard)
                 .height(62.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
@@ -85,6 +83,7 @@ private fun EchoTabItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalEchoColors.current
     val pillShape = RoundedCornerShape(28.dp)
 
     Column(
@@ -93,7 +92,7 @@ private fun EchoTabItem(
             .padding(horizontal = 4.dp, vertical = 8.dp)
             .clip(pillShape)
             .then(
-                if (isActive) Modifier.background(EchoAccentGreen)
+                if (isActive) Modifier.background(colors.accentGreen)
                 else Modifier
             )
             .clickable(onClick = onClick),
@@ -103,12 +102,12 @@ private fun EchoTabItem(
         Icon(
             imageVector = tab.icon,
             contentDescription = tab.label,
-            tint = if (isActive) Color.White else EchoTabInactive,
+            tint = if (isActive) Color.White else colors.tabInactive,
             modifier = Modifier.size(18.dp)
         )
         Text(
             text = tab.label,
-            color = if (isActive) Color.White else EchoTabInactive,
+            color = if (isActive) Color.White else colors.tabInactive,
             fontSize = 10.sp,
             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
             fontFamily = OutfitFontFamily,

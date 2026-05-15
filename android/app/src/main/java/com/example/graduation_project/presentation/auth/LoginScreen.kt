@@ -37,13 +37,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoBgCard
-import com.example.graduation_project.ui.theme.EchoBgPage
-import com.example.graduation_project.ui.theme.EchoBorderSubtle
-import com.example.graduation_project.ui.theme.EchoTextPrimary
-import com.example.graduation_project.ui.theme.EchoTextSecondary
-import com.example.graduation_project.ui.theme.EchoTextTertiary
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -67,14 +61,15 @@ fun LoginScreen(
         }
     }
 
+    val colors = LocalEchoColors.current
     Scaffold(
-        containerColor = EchoBgPage,
+        containerColor = colors.bgPage,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(EchoBgPage)
+                .background(colors.bgPage)
                 .padding(padding)
                 .padding(horizontal = 32.dp)
                 .verticalScroll(rememberScrollState()),
@@ -87,7 +82,7 @@ fun LoginScreen(
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = OutfitFontFamily,
-                color = EchoAccentGreen
+                color = colors.accentGreen
             )
 
             Spacer(Modifier.height(8.dp))
@@ -96,7 +91,7 @@ fun LoginScreen(
                 text = "함께 이야기 나눠요",
                 fontSize = 16.sp,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextSecondary
+                color = colors.textSecondary
             )
 
             Spacer(Modifier.height(48.dp))
@@ -128,9 +123,9 @@ fun LoginScreen(
                     .height(64.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = EchoAccentGreen,
+                    containerColor = colors.accentGreen,
                     contentColor = Color.White,
-                    disabledContainerColor = EchoAccentGreen.copy(alpha = 0.6f)
+                    disabledContainerColor = colors.accentGreen.copy(alpha = 0.6f)
                 )
             ) {
                 if (uiState.isLoading) {
@@ -156,7 +151,7 @@ fun LoginScreen(
                     text = "회원가입하기",
                     fontSize = 16.sp,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextSecondary
+                    color = colors.textSecondary
                 )
             }
         }
@@ -173,6 +168,7 @@ internal fun EchoOutlinedTextField(
     isError: Boolean = false,
     supportingText: String? = null
 ) {
+    val colors = LocalEchoColors.current
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -180,7 +176,7 @@ internal fun EchoOutlinedTextField(
             Text(
                 text = label,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextTertiary,
+                color = colors.textTertiary,
                 fontSize = 16.sp
             )
         },
@@ -191,13 +187,13 @@ internal fun EchoOutlinedTextField(
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         shape = RoundedCornerShape(12.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = EchoBgCard,
-            unfocusedContainerColor = EchoBgCard,
-            focusedBorderColor = EchoAccentGreen,
-            unfocusedBorderColor = EchoBorderSubtle,
-            focusedTextColor = EchoTextPrimary,
-            unfocusedTextColor = EchoTextPrimary,
-            cursorColor = EchoAccentGreen
+            focusedContainerColor = colors.bgCard,
+            unfocusedContainerColor = colors.bgCard,
+            focusedBorderColor = colors.accentGreen,
+            unfocusedBorderColor = colors.borderSubtle,
+            focusedTextColor = colors.textPrimary,
+            unfocusedTextColor = colors.textPrimary,
+            cursorColor = colors.accentGreen
         ),
         modifier = Modifier.fillMaxWidth()
     )
@@ -207,17 +203,18 @@ internal fun EchoOutlinedTextField(
 @Composable
 private fun LoginScreenPreview() {
     Graduation_projectTheme {
+        val colors = LocalEchoColors.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(EchoBgPage)
+                .background(colors.bgPage)
                 .padding(horizontal = 32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("에코", fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = OutfitFontFamily, color = EchoAccentGreen)
+            Text("에코", fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = OutfitFontFamily, color = colors.accentGreen)
             Spacer(Modifier.height(8.dp))
-            Text("함께 이야기 나눠요", fontSize = 16.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Text("함께 이야기 나눠요", fontSize = 16.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
             Spacer(Modifier.height(48.dp))
             EchoOutlinedTextField("", {}, "아이디")
             Spacer(Modifier.height(16.dp))
@@ -227,12 +224,12 @@ private fun LoginScreenPreview() {
                 onClick = {},
                 modifier = Modifier.fillMaxWidth().height(64.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = EchoAccentGreen)
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accentGreen)
             ) {
                 Text("로그인", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
             }
             Spacer(Modifier.height(12.dp))
-            TextButton({}) { Text("회원가입하기", fontSize = 16.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary) }
+            TextButton({}) { Text("회원가입하기", fontSize = 16.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary) }
         }
     }
 }

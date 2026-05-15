@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +46,7 @@ fun MessageItem(
     message: MessageUiModel,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalEchoColors.current
     // 화면 너비의 85%를 최대 너비로 설정
     val configuration = LocalConfiguration.current
     val maxWidth = (configuration.screenWidthDp * Dimens.MessageBubbleMaxWidth).dp
@@ -81,7 +83,7 @@ fun MessageItem(
             Text(
                 text = senderText,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (message.isFromUser) colors.accentGreen else colors.textSecondary,
                 modifier = Modifier.padding(
                     start = if (!message.isFromUser) Dimens.SpacingSmall else 0.dp,
                     end = if (message.isFromUser) Dimens.SpacingSmall else 0.dp,
@@ -100,23 +102,13 @@ fun MessageItem(
                             bottomEnd = if (message.isFromUser) 4.dp else Dimens.MessageBubbleRadius
                         )
                     )
-                    .background(
-                        if (message.isFromUser) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    )
+                    .background(if (message.isFromUser) colors.accentGreen else colors.bgMuted)
                     .padding(Dimens.MessageBubblePadding)
             ) {
                 Text(
                     text = message.text,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (message.isFromUser) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                    color = if (message.isFromUser) androidx.compose.ui.graphics.Color.White else colors.textPrimary
                 )
             }
 
@@ -124,7 +116,7 @@ fun MessageItem(
             Text(
                 text = timeText,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                color = colors.textTertiary,
                 modifier = Modifier.padding(
                     start = if (!message.isFromUser) Dimens.SpacingSmall else 0.dp,
                     end = if (message.isFromUser) Dimens.SpacingSmall else 0.dp,

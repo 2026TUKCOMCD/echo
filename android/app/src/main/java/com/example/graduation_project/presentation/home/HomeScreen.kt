@@ -24,10 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.presentation.conversation.components.AiCharacterImage
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoBgPage
-import com.example.graduation_project.ui.theme.EchoTextPrimary
-import com.example.graduation_project.ui.theme.EchoTextSecondary
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -49,10 +46,11 @@ private fun HomeScreenContent(
     userName: String,
     onStartConversation: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(EchoBgPage)
+            .background(colors.bgPage)
             .padding(horizontal = 32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -66,7 +64,7 @@ private fun HomeScreenContent(
             fontSize = 26.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = OutfitFontFamily,
-            color = EchoTextPrimary
+            color = colors.textPrimary
         )
 
         Spacer(Modifier.height(8.dp))
@@ -75,7 +73,7 @@ private fun HomeScreenContent(
             text = "함께 이야기 나눠요",
             fontSize = 18.sp,
             fontFamily = OutfitFontFamily,
-            color = EchoTextSecondary
+            color = colors.textSecondary
         )
 
         Spacer(Modifier.height(40.dp))
@@ -87,7 +85,7 @@ private fun HomeScreenContent(
                 .height(64.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = EchoAccentGreen,
+                containerColor = colors.accentGreen,
                 contentColor = Color.White
             )
         ) {
