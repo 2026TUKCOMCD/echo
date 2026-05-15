@@ -61,7 +61,7 @@ fun EchoTabBar(
                 .clip(RoundedCornerShape(36.dp))
                 .border(1.dp, EchoBorderSubtle, RoundedCornerShape(36.dp))
                 .background(EchoBgCard)
-                .height(62.dp),
+                .height(72.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -89,7 +89,7 @@ private fun EchoTabItem(
 
     Column(
         modifier = modifier
-            .height(62.dp)
+            .height(72.dp)
             .padding(horizontal = 4.dp, vertical = 8.dp)
             .clip(pillShape)
             .then(
@@ -104,15 +104,15 @@ private fun EchoTabItem(
             imageVector = tab.icon,
             contentDescription = tab.label,
             tint = if (isActive) Color.White else EchoTabInactive,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(24.dp)
         )
         Text(
             text = tab.label,
             color = if (isActive) Color.White else EchoTabInactive,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
             fontFamily = OutfitFontFamily,
-            lineHeight = 14.sp
+            lineHeight = 16.sp
         )
     }
 }

@@ -546,15 +546,15 @@ private fun PreferenceRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(label, fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
-            Spacer(Modifier.height(2.dp))
+            Text(label, fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = if (!value.isNullOrBlank()) value else "미설정",
-                fontSize = 16.sp,
+                fontSize = 17.sp,
                 fontFamily = OutfitFontFamily,
                 color = if (!value.isNullOrBlank()) EchoTextPrimary else EchoTextTertiary
             )
@@ -579,12 +579,12 @@ private fun PermissionStatusRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(label, fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
-            Spacer(Modifier.height(2.dp))
+            Text(label, fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = if (isGranted) Icons.Filled.Check else Icons.Filled.Close,
@@ -613,15 +613,15 @@ private fun AlarmToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("대화 시간 알림", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
-            Spacer(Modifier.height(2.dp))
+            Text("대화 시간 알림", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = if (enabled) "매일 알림을 받습니다" else "알림 꺼짐",
-                fontSize = 16.sp,
+                fontSize = 17.sp,
                 fontFamily = OutfitFontFamily,
                 color = if (enabled) EchoTextPrimary else EchoTextTertiary
             )

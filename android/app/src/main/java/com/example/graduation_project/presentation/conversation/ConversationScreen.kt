@@ -301,7 +301,7 @@ private fun BottomActionSection(
                 .height(64.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (isSending) EchoBgMuted else EchoAccentRed,
+                containerColor = if (isSending) EchoBgMuted else EchoTextSecondary,
                 contentColor = if (isSending) EchoTextTertiary else Color.White,
                 disabledContainerColor = EchoBgMuted,
                 disabledContentColor = EchoTextTertiary
@@ -365,7 +365,7 @@ private fun FarewellDialog(
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = EchoAccentRed,
+                            containerColor = EchoTextSecondary,
                             contentColor = Color.White
                         )
                     ) {
