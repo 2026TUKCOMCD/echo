@@ -44,6 +44,8 @@ object ApiClient {
         private set
     lateinit var userApi: UserApi
         private set
+    lateinit var weatherApi: WeatherApi
+        private set
 
     fun init(tokenStorage: TokenStorage) {
         val authenticatedClient = OkHttpClient.Builder()
@@ -64,5 +66,6 @@ object ApiClient {
         conversationApi = authenticatedRetrofit.create(ConversationApi::class.java)
         diaryApi = authenticatedRetrofit.create(DiaryApi::class.java)
         userApi = authenticatedRetrofit.create(UserApi::class.java)
+        weatherApi = authenticatedRetrofit.create(WeatherApi::class.java)
     }
 }
