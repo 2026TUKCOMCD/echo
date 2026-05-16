@@ -651,7 +651,9 @@ private fun PermissionStatusRow(
                 )
             }
         }
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
+        if (onClick != null) {
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
+        }
     }
 }
 
