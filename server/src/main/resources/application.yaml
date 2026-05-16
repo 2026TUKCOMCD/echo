@@ -1,6 +1,8 @@
 spring:
   profiles:
     active: local
+
+  # Deploy trigger
   application:
     name: echo
   datasource:
@@ -34,9 +36,38 @@ openai:
     temperature: 0.7
     max-tokens: 1024
 
+kakao:
+  api:
+    url: https://dapi.kakao.com
+    # key는 application-local.yaml에서 설정
+
+# OpenWeatherMap API 설정
+weather:
+  api:
+    url: https://api.openweathermap.org
+    # api-key는 application-local.yaml에서 설정
+
 # Azure Cognitive Services TTS 설정
 azure:
   tts:
     endpoint: https://koreacentral.tts.speech.microsoft.com
     # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)
     default-voice: ko-KR-SunHiNeural  # 기본 음성 (친근하고 따뜻한 여성)
+
+# TTS 프로바이더 설정 (supertone | azure)
+tts:
+  provider: supertone
+
+# JWT 설정
+jwt:
+  # secret은 application-local.yaml(${JWT_SECRET})에서 주입
+  access-token-expiration: 3600000      # 1시간
+  refresh-token-expiration: 2592000000  # 30일
+
+# Supertone Play TTS 설정
+supertone:
+  base-url: https://supertoneapi.com
+  voice-id: 195e1922033a6168f0c90f
+  default-style: serene
+  model: sona_speech_2
+  # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)

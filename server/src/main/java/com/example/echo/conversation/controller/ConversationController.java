@@ -3,10 +3,10 @@ package com.example.echo.conversation.controller;
 import com.example.echo.common.auth.CurrentUser;
 import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
+import com.example.echo.conversation.dto.ConversationStartRequest;
 import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.service.ConversationService;
-import com.example.echo.health.dto.HealthData;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -25,6 +26,7 @@ import java.time.LocalDateTime;
 /**
  * 대화 처리 컨트롤러
  */
+@Slf4j
 @Tag(name = "Conversation", description = "AI 음성 대화 API")
 @RestController
 @RequestMapping("/api/conversations")
@@ -35,7 +37,7 @@ public class ConversationController {
 
     @Operation(
             summary = "대화 시작",
-            description = "AI가 먼저 인사하며 대화를 시작합니다. 건강 데이터를 함께 전송하면 맞춤형 인사를 생성합니다."
+            description = "AI가 먼저 인사하며 대화를 시작합니다. 건강 데이터와 위치 데이터를 함께 전송하면 맞춤형 인사를 생성합니다."
     )
     @ApiResponses({
             @ApiResponse(
@@ -48,9 +50,31 @@ public class ConversationController {
     @PostMapping("/start")
     public ResponseEntity<ConversationStartResponse> startConversation(
             @Parameter(hidden = true) @CurrentUser Long userId,
-            @RequestBody(required = false) HealthData healthData
+            @RequestBody(required = false) ConversationStartRequest request
     ) {
-        ConversationStartResponse response = conversationService.startConversation(userId, healthData);
+        // 입력 데이터 상세 로그
+        log.info("=== 대화 시작 요청 - userId: {} ===", userId);
+        if (request != null && request.getLocationData() != null) {
+            var loc = request.getLocationData();
+            log.info("[입력] 현재좌표: ({}, {}), 총이동거리: {}km",
+                    loc.getCurrentLatitude(), loc.getCurrentLongitude(), loc.getTotalDistanceKm());
+            if (loc.getVisitedPlaces() != null) {
+                log.info("[입력] 방문장소 수: {}", loc.getVisitedPlaces().size());
+                loc.getVisitedPlaces().forEach(place ->
+                    log.debug("[입력] 방문장소 - 좌표: ({}, {}), 시작: {}, 종료: {}, 체류: {}분",
+                            place.getLatitude(), place.getLongitude(),
+                            place.getVisitStartTime(), place.getVisitEndTime(),
+                            place.getStayDurationMinutes()));
+            }
+        } else {
+            log.info("[입력] 위치 데이터 없음");
+        }
+
+        ConversationStartResponse response = conversationService.startConversation(
+                userId,
+                request != null ? request.getHealthData() : null,
+                request != null ? request.getLocationData() : null
+        );
         return ResponseEntity.ok(response);
     }
 

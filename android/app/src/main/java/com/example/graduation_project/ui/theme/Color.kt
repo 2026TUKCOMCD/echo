@@ -2,39 +2,28 @@ package com.example.graduation_project.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Echo Design System Palette
+val EchoBgPage        = Color(0xFFF5F4F1)
+val EchoBgCard        = Color(0xFFFFFFFF)
+val EchoBgMuted       = Color(0xFFEDECEA)
+val EchoAccentGreen   = Color(0xFF3D8A5A)
+val EchoAccentBlue    = Color(0xFF4A90D9)
+val EchoAccentCoral   = Color(0xFFD89575)
+val EchoAccentRed     = Color(0xFFD08068)
+val EchoTextPrimary   = Color(0xFF1A1918)
+val EchoTextSecondary = Color(0xFF6D6C6A)
+val EchoTextTertiary  = Color(0xFF9C9B99)
+val EchoBorderSubtle  = Color(0xFFE5E4E1)
+val EchoTabInactive   = Color(0xFFA8A7A5)
+val EchoAiBubble      = Color(0xFFE0DDD9)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Aliases for RecordingIndicator, PulseEffect backward compat
+val ListeningTeal      = EchoAccentGreen
+val ListeningTealLight = Color(0xFF8EC4A3)
+val PlayingAmber       = EchoAccentCoral
+val PlayingAmberLight  = Color(0xFFEDC4AD)
+val ProcessingGray     = EchoTextTertiary
+val RecordingGreenLight = ListeningTealLight
 
-// Recording state colors
-// 경도인지장애 어르신 접근성: 따뜻한 청록색 (황변화 영향 적고 친근함)
-val ListeningTeal = Color(0xFF00897B)        // Teal 700 - LISTENING + RECORDING 통일
-val ListeningTealLight = Color(0xFF80CBC4)   // Teal 200 - 파동 효과용
-
-// Legacy colors (하위 호환)
-val ListeningBlue = Color(0xFF42A5F5)
-val ListeningBlueLight = Color(0xFFBBDEFB)
-val RecordingGreen = Color(0xFF66BB6A)
-val RecordingGreenLight = Color(0xFFC8E6C9)
-val IdleGray = Color(0xFF9E9E9E)
-val PreparingAmber = Color(0xFFFFA726)
-
-// Playback state colors (T2.3-2)
-// 경도인지장애 어르신 접근성: 따뜻한 앰버색 (눈에 평안하고 친근함)
-val PlayingAmber = Color(0xFFFFA000)         // Amber 700 - 따뜻하고 차분, 눈 피로감 적음
-val PlayingAmberLight = Color(0xFFFFE082)    // Amber 200 - 파동 효과용
-
-// Legacy colors (하위 호환)
-val PlayingGreen = Color(0xFF43A047)
-val PlayingGreenLight = Color(0xFFA5D6A7)
-val PreparingOrange = Color(0xFFF57C00)
-
-// Processing state color
-val ProcessingGray = Color(0xFF757575)
-
-// Character video background color (영상 배경색과 동일)
+// Used by ActiveConversationView for video background
 val CharacterVideoBgColor = Color(0xFF5A5A5A)

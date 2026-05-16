@@ -1,7 +1,7 @@
 package com.example.graduation_project.presentation.conversation
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,33 +9,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -43,74 +35,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.graduation_project.presentation.character.AnimationMode
-import com.example.graduation_project.presentation.character.CharacterAnimationManager
-import com.example.graduation_project.presentation.settings.VoiceSettingsDialog
-import com.example.graduation_project.presentation.conversation.components.ActiveConversationView
-import com.example.graduation_project.presentation.conversation.components.ConversationControls
-import com.example.graduation_project.presentation.conversation.components.EmptyConversationView
+import com.example.graduation_project.R
+import kotlinx.coroutines.delay
+import com.example.graduation_project.presentation.conversation.components.AnimatedWebpImage
+import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
-import com.example.graduation_project.presentation.model.MessageUiModel
-import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.presentation.permission.MicrophonePermissionHandler
-import com.example.graduation_project.presentation.permission.PermissionSettingsDialog
-import com.example.graduation_project.domain.permission.PermissionState
-import com.example.graduation_project.presentation.health.HealthConnectPermissionHandler
+import com.example.graduation_project.presentation.permission.UnifiedPermissionHandler
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
+import com.example.graduation_project.ui.theme.LocalEchoColors
+import com.example.graduation_project.ui.theme.OutfitFontFamily
 
-/**
- * 대화 메인 화면
- *
- * ## 화면 구성
- * ┌─────────────────────────┐
- * │   [조건부 표시]          │
- * │   - 대화 시작 전:        │
- * │     EmptyConversationView│  <- AI 아이콘 + 인사 메시지
- * │   - 대화 중:             │
- * │     ActiveConversationView│ <- 상태 + AI응답 + 동심원 애니메이션
- * ├─────────────────────────┤
- * │  ConversationControls  │  <- 시작/종료 버튼
- * └─────────────────────────┘
- *
- * ## 상태 관리
- * - ViewModel에서 상태를 관리
- * - collectAsState()로 상태 변화 감지
- * - 상태가 바뀌면 자동으로 UI 업데이트
- */
 @Composable
 fun ConversationScreen(
+    onLogout: () -> Unit = {},
+    onBack: () -> Unit = {},
     viewModel: ConversationViewModel = viewModel(factory = ConversationViewModel.Factory)
 ) {
-    // ViewModel의 상태를 Compose State로 변환
     val uiState by viewModel.uiState.collectAsState()
-
-    // Snackbar 상태 (에러 메시지 표시용)
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 캐릭터 애니메이션 관리자
-    val context = LocalContext.current
-    val animationManager = remember {
-        CharacterAnimationManager(context, AnimationMode.LEGACY).apply {
-            onFarewellFinished = {
-                viewModel.onFarewellAnimationFinished()
-            }
-        }
-    }
-
-    // ConversationState 및 currentError 변경 시 캐릭터 애니메이션 전환
-    LaunchedEffect(uiState.conversationState, uiState.currentError) {
-        animationManager.changeState(uiState.conversationState, uiState.currentError)
-    }
-
-    // 애니메이션 관리자 해제
-    DisposableEffect(animationManager) {
-        onDispose {
-            animationManager.release()
-        }
-    }
-
-    // 에러 메시지가 있으면 Snackbar 표시
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { message ->
             snackbarHostState.showSnackbar(message)
@@ -118,53 +62,29 @@ fun ConversationScreen(
         }
     }
 
-    // 설정 다이얼로그 상태
-    var showSettingsDialog by remember { mutableStateOf(false) }
+    // 화면 진입 시 자동으로 대화 시작
+    LaunchedEffect(Unit) {
+        viewModel.startConversation()
+    }
 
-    // Health Connect 권한 처리 (graceful degradation)
-    HealthConnectPermissionHandler {
-        // 마이크 권한 처리
-        MicrophonePermissionHandler(
-            onPermissionResult = { /* 권한 결과 로깅 등 */ }
-        ) { permissionState, requestPermission, openSettings ->
-
-            // 권한에 따른 대화 시작 처리
-            val handleStartClick: () -> Unit = {
-                when (permissionState) {
-                    PermissionState.Granted -> viewModel.startConversation()
-                    PermissionState.NotRequested, PermissionState.Denied -> requestPermission()
-                    PermissionState.PermanentlyDenied -> openSettings()
-                }
-            }
-
-            // 화면 구성
-            ConversationScreenContent(
-                uiState = uiState,
-                snackbarHostState = snackbarHostState,
-                animationManager = animationManager,
-                onStartClick = handleStartClick,
-                onEndClick = viewModel::onFarewellButtonClicked,
-                onSettingsClick = { showSettingsDialog = true },
-                onRetryClick = viewModel::onUserRetryClicked,
-                onContactSupportClick = { /* TODO: 고객센터 연결 */ }
-            )
-
-            // 권한 영구 거부 시 설정 안내 다이얼로그 표시
-            if (permissionState == PermissionState.PermanentlyDenied) {
-                PermissionSettingsDialog(
-                    onOpenSettings = openSettings,
-                    onDismiss = { /* 다이얼로그 닫기 */ }
-                )
-            }
+    // Ended 상태가 되면 웨이브 애니메이션 + 작별 메시지를 보여준 후 뒤로 이동
+    LaunchedEffect(uiState.conversationState) {
+        if (uiState.conversationState is ConversationState.Ended) {
+            delay(2000L)
+            onBack()
         }
     }
 
-    // 음성 설정 다이얼로그
-    if (showSettingsDialog) {
-        VoiceSettingsDialog(onDismiss = { showSettingsDialog = false })
+    UnifiedPermissionHandler {
+        ConversationScreenContent(
+            uiState = uiState,
+            snackbarHostState = snackbarHostState,
+            onStartClick = viewModel::startConversation,
+            onEndClick = viewModel::onFarewellButtonClicked,
+            onRetryClick = viewModel::onUserRetryClicked
+        )
     }
 
-    // 종료 확인 다이얼로그
     if (uiState.showFarewellDialog) {
         FarewellDialog(
             onConfirm = viewModel::onFarewellConfirmed,
@@ -173,267 +93,233 @@ fun ConversationScreen(
     }
 }
 
-/**
- * 화면 내용 (상태를 받아서 UI 렌더링)
- * - 테스트와 미리보기를 위해 분리
- */
 @Composable
 private fun ConversationScreenContent(
     uiState: ConversationUiState,
     snackbarHostState: SnackbarHostState,
-    animationManager: CharacterAnimationManager? = null,
     onStartClick: () -> Unit,
     onEndClick: () -> Unit,
-    onSettingsClick: () -> Unit = {},
-    onRetryClick: () -> Unit = {},
-    onContactSupportClick: () -> Unit = {}
+    onRetryClick: () -> Unit = {}
 ) {
-    // 따뜻한 느낌 + 고대비 색상 (어르신 접근성 고려)
-    val backgroundColor = Color(0xFFFFFDF9)  // 아주 연한 아이보리
-
+    val colors = LocalEchoColors.current
     Scaffold(
-        containerColor = backgroundColor,
-        // 스낵바 (에러 메시지 표시)
+        containerColor = colors.bgPage,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 메인 콘텐츠 영역 (조건부 표시)
-            Box(
-                modifier = Modifier.weight(1f)
-            ) {
-                // 대화 시작 전: 설정 버튼 (우측 상단)
-                if (!uiState.isConversationActive) {
-                    IconButton(
-                        onClick = onSettingsClick,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(16.dp)
-                            .height(48.dp),
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = Color(0xFF666666)
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "음성 설정"
-                        )
-                    }
-                }
+            Spacer(Modifier.weight(1f))
 
-                if (uiState.isConversationActive) {
-                    // 대화 중: AI 캐릭터 + 상태 표시 + 동심원 애니메이션
-                    // [T2.3-3] 음성 재생 실패 시 텍스트 폴백 표시
-                    val currentAiMessage = uiState.messages
-                        .lastOrNull { !it.isFromUser }
-                        ?.text
+            // 캐릭터 이미지 영역
+            CharacterWebpSection(
+                state = uiState.conversationState,
+                error = uiState.currentError,
+                modifier = Modifier.size(240.dp)
+            )
 
-                    ActiveConversationView(
-                        conversationState = uiState.conversationState,
-                        playbackStatus = uiState.playbackStatus,
-                        isSpeechDetected = uiState.isSpeechDetected,
-                        isRecordingPreparing = uiState.isRecordingPreparing,
-                        currentAiMessage = currentAiMessage,
-                        currentUserSpeech = uiState.currentUserSpeech,
-                        voiceAmplitude = uiState.voiceAmplitude,
-                        showAudioFallbackText = uiState.showAudioFallbackText,  // [T2.3-3]
-                        audioFallbackText = uiState.audioFallbackText,          // [T2.3-3]
-                        retryProgress = uiState.retryProgress,                  // [T2.3-3]
-                        // 캐릭터 애니메이션 관련
-                        animationManager = animationManager,
-                        currentError = uiState.currentError,
-                        // PROCESSING 오버레이 관련
-                        processingMessage = uiState.processingMessage,
-                        // 발화 인식 오류 관련
-                        speechErrorMessage = uiState.speechErrorMessage,
-                        speechErrorHint = uiState.speechErrorHint,
-                        // 재시도 관련
-                        isRetryButtonEnabled = uiState.isRetryButtonEnabled,
-                        showContactSupport = uiState.showContactSupport,
-                        onRetryClick = onRetryClick,
-                        onContactSupportClick = onContactSupportClick
-                    )
-                } else {
-                    // 대화 시작 전: 캐릭터 영상 + 인사 메시지
-                    EmptyConversationView(
-                        userName = uiState.userName,
-                        animationManager = animationManager
-                    )
-                }
-            }
+            Spacer(Modifier.height(32.dp))
 
+            // 상태 텍스트
+            StateTextSection(
+                state = uiState.conversationState,
+                currentAiMessage = uiState.messages.lastOrNull { !it.isFromUser }?.text,
+                currentUserSpeech = uiState.currentUserSpeech
+            )
 
+            Spacer(Modifier.weight(1f))
 
-            // 대화 제어 버튼
-            ConversationControls(
-                isConversationActive = uiState.isConversationActive,
+            // 하단 버튼 영역
+            BottomActionSection(
+                state = uiState.conversationState,
                 isLoading = uiState.isLoading,
                 onStartClick = onStartClick,
                 onEndClick = onEndClick
             )
+
+            Spacer(Modifier.height(32.dp))
         }
     }
 }
 
-// 미리보기: 초기 상태 (사용자 이름 포함)
-@Preview(showBackground = true, showSystemUi = true)
 @Composable
-private fun ConversationScreenPreview_Initial() {
-    Graduation_projectTheme {
-        ConversationScreenContent(
-            uiState = ConversationUiState(userName = "홍길동"),
-            snackbarHostState = SnackbarHostState(),
-            onStartClick = {},
-            onEndClick = {}
+private fun CharacterWebpSection(
+    state: ConversationState,
+    error: ConversationError?,
+    modifier: Modifier = Modifier
+) {
+    val resId = when {
+        error != null                      -> R.raw.echo_02_empathy
+        state is ConversationState.Playing -> R.raw.echo_new
+        state is ConversationState.Idle ||
+        state is ConversationState.Ended   -> R.raw.echo_05_greeting
+        else                               -> R.raw.echo_02_empathy
+    }
+    AnimatedWebpImage(resId = resId, modifier = modifier)
+}
+
+@Composable
+private fun StateTextSection(
+    state: ConversationState,
+    currentAiMessage: String?,
+    currentUserSpeech: String?
+) {
+    val colors = LocalEchoColors.current
+    val stateLabel = when (state) {
+        is ConversationState.Idle -> "대화를 시작해보세요"
+        is ConversationState.Sending -> "처리 중..."
+        is ConversationState.Playing -> "에코가 말하고 있어요"
+        is ConversationState.Recording -> "말씀해주세요"
+        is ConversationState.Listening -> "듣고 있어요"
+        is ConversationState.Ended -> "오늘 대화가 저장되었으니, 내일 또 봐요"
+    }
+
+    Text(
+        text = stateLabel,
+        fontSize = 22.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = OutfitFontFamily,
+        color = colors.textPrimary,
+        textAlign = TextAlign.Center
+    )
+
+    val subText = when {
+        state is ConversationState.Playing && !currentAiMessage.isNullOrBlank() ->
+            currentAiMessage.take(80) + if (currentAiMessage.length > 80) "…" else ""
+        state is ConversationState.Listening && !currentUserSpeech.isNullOrBlank() ->
+            currentUserSpeech
+        else -> null
+    }
+
+    if (subText != null) {
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = subText,
+            fontSize = 18.sp,
+            fontFamily = OutfitFontFamily,
+            color = colors.textSecondary,
+            textAlign = TextAlign.Center,
+            lineHeight = 26.sp
         )
     }
 }
 
-// 미리보기: 대화 진행 중 (듣고 있는 상태)
-@Preview(showBackground = true, showSystemUi = true)
 @Composable
-private fun ConversationScreenPreview_Listening() {
-    Graduation_projectTheme {
-        ConversationScreenContent(
-            uiState = ConversationUiState(
-                conversationState = ConversationState.Listening,
-                currentUserSpeech = "오늘 공원에서 산책을...",
-                messages = listOf(
-                    MessageUiModel(
-                        id = "1",
-                        text = "안녕하세요! 오늘 하루는 어떠셨나요?",
-                        isFromUser = false,
-                        timestamp = System.currentTimeMillis() - 60000
-                    )
+private fun BottomActionSection(
+    state: ConversationState,
+    isLoading: Boolean,
+    onStartClick: () -> Unit,
+    onEndClick: () -> Unit
+) {
+    val colors = LocalEchoColors.current
+
+    when {
+        state is ConversationState.Ended -> { /* 종료 후 대기 중 — 버튼 없음 */ }
+        state is ConversationState.Idle -> {
+            Button(
+                onClick = onStartClick,
+                enabled = !isLoading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accentGreen,
+                    contentColor = Color.White
                 )
-            ),
-            snackbarHostState = SnackbarHostState(),
-            onStartClick = {},
-            onEndClick = {}
-        )
-    }
-}
-
-// 미리보기: AI가 말하고 있는 상태
-@Preview(showBackground = true, showSystemUi = true)
-@Composable
-private fun ConversationScreenPreview_Playing() {
-    Graduation_projectTheme {
-        ConversationScreenContent(
-            uiState = ConversationUiState(
-                conversationState = ConversationState.Playing,
-                playbackStatus = PlaybackStatus.PLAYING,
-                messages = listOf(
-                    MessageUiModel(
-                        id = "1",
-                        text = "산책하셨군요! 어디로 산책을 가셨나요? 날씨가 좋았으면 기분도 좋으셨겠어요.",
-                        isFromUser = false,
-                        timestamp = System.currentTimeMillis()
-                    )
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
+                } else {
+                    Text("대화 시작", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
+                }
+            }
+        }
+        else -> {
+            val isSending = state is ConversationState.Sending
+            Button(
+                onClick = onEndClick,
+                enabled = !isSending,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSending) colors.bgMuted else colors.accentRed,
+                    contentColor = if (isSending) colors.textTertiary else Color.White,
+                    disabledContainerColor = colors.bgMuted,
+                    disabledContentColor = colors.textTertiary
                 )
-            ),
-            snackbarHostState = SnackbarHostState(),
-            onStartClick = {},
-            onEndClick = {}
-        )
+            ) {
+                Text("대화 종료", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
+            }
+        }
     }
 }
 
-// 미리보기: 전송 중 (로딩)
-@Preview(showBackground = true, showSystemUi = true)
-@Composable
-private fun ConversationScreenPreview_Sending() {
-    Graduation_projectTheme {
-        ConversationScreenContent(
-            uiState = ConversationUiState(conversationState = ConversationState.Sending),
-            snackbarHostState = SnackbarHostState(),
-            onStartClick = {},
-            onEndClick = {}
-        )
-    }
-}
-
-/**
- * 종료 확인 다이얼로그
- *
- * ## 디자인 특징
- * - 어르신 접근성 고려: 큰 버튼, 명확한 메시지
- * - 긍정적 톤: "대화를 마치시겠어요?"
- * - 명확한 버튼 구분: 확인(빨간색), 취소(회색)
- */
 @Composable
 private fun FarewellDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 8.dp
+            shape = RoundedCornerShape(20.dp),
+            color = colors.bgCard
         ) {
             Column(
                 modifier = Modifier
-                    .padding(28.dp)
+                    .padding(32.dp)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = "대화를 마치시겠어요?",
-                    fontSize = 24.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = OutfitFontFamily,
+                    color = colors.textPrimary,
                     textAlign = TextAlign.Center
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = "오늘 대화 내용은 일기로 저장됩니다",
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 15.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = colors.textSecondary,
                     textAlign = TextAlign.Center
                 )
-
-                Spacer(modifier = Modifier.height(28.dp))
-
+                Spacer(Modifier.height(28.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // 취소 버튼
                     OutlinedButton(
                         onClick = onDismiss,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp)
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = colors.textSecondary
+                        ),
+                        border = BorderStroke(1.dp, colors.borderSubtle)
                     ) {
-                        Text(
-                            text = "이어하기",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Text("이어하기", fontSize = 17.sp, fontFamily = OutfitFontFamily)
                     }
-
-                    // 확인 버튼
                     Button(
                         onClick = onConfirm,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFD32F2F)
+                            containerColor = colors.accentRed,
+                            contentColor = Color.White
                         )
                     ) {
-                        Text(
-                            text = "마치기",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White
-                        )
+                        Text("마치기", fontSize = 17.sp, fontFamily = OutfitFontFamily)
                     }
                 }
             }
@@ -441,14 +327,39 @@ private fun FarewellDialog(
     }
 }
 
-// 미리보기: 종료 확인 다이얼로그
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ConversationIdlePreview() {
+    Graduation_projectTheme {
+        ConversationScreenContent(
+            uiState = ConversationUiState(),
+            snackbarHostState = SnackbarHostState(),
+            onStartClick = {},
+            onEndClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun ConversationListeningPreview() {
+    Graduation_projectTheme {
+        ConversationScreenContent(
+            uiState = ConversationUiState(
+                conversationState = ConversationState.Listening,
+                currentUserSpeech = "오늘 공원에서 산책을..."
+            ),
+            snackbarHostState = SnackbarHostState(),
+            onStartClick = {},
+            onEndClick = {}
+        )
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun FarewellDialogPreview() {
     Graduation_projectTheme {
-        FarewellDialog(
-            onConfirm = {},
-            onDismiss = {}
-        )
+        FarewellDialog(onConfirm = {}, onDismiss = {})
     }
 }

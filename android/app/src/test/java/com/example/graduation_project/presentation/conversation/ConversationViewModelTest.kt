@@ -2,23 +2,30 @@ package com.example.graduation_project.presentation.conversation
 
 import android.app.Application
 import android.util.Log
+import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.location.LocationCollectionService
+import com.example.graduation_project.data.location.LocationDataManager
 import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
-import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.voice.AudioRecordManager
-import com.example.graduation_project.domain.usecase.GetHealthDataUseCase
+import com.example.graduation_project.domain.health.HealthConnectAvailability
+import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.presentation.model.ConversationState
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.mockkObject
 import io.mockk.mockkStatic
+import io.mockk.unmockkObject
 import io.mockk.unmockkStatic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -62,7 +69,8 @@ class ConversationViewModelTest {
     private val mockApplication = mockk<Application>(relaxed = true)
     private val mockAudioRecordState = MutableStateFlow<AudioRecordState>(AudioRecordState.Idle)
     private val mockAudioRecordManager = mockk<AudioRecordManager>(relaxed = true)
-    private val mockGetHealthDataUseCase = mockk<GetHealthDataUseCase>()
+    private val mockHealthRepository = mockk<IHealthRepository>(relaxed = true)
+    private val mockLocationDataManager = mockk<LocationDataManager>(relaxed = true)
 
     private lateinit var viewModel: ConversationViewModel
 
@@ -74,21 +82,35 @@ class ConversationViewModelTest {
         every { Log.w(any(), any<String>()) } returns 0
         every { Log.e(any(), any<String>()) } returns 0
         every { Log.e(any(), any<String>(), any()) } returns 0
+
+        // LocationCollectionService companion object mock
+        mockkObject(LocationCollectionService)
+        every { LocationCollectionService.stop(any()) } just Runs
+        every { LocationCollectionService.start(any()) } just Runs
+
+        // ConversationAlarmReceiver companion object mock
+        mockkObject(ConversationAlarmReceiver)
+        every { ConversationAlarmReceiver.cancelNotification(any()) } just Runs
+        every { ConversationAlarmReceiver.showFarewellNotification(any()) } just Runs
+
         every { mockAudioRecordManager.state } returns mockAudioRecordState
-        coEvery { mockGetHealthDataUseCase() } returns HealthData()
+        every { mockHealthRepository.getAvailability() } returns HealthConnectAvailability.NotSupported
 
         viewModel = ConversationViewModel(
             application = mockApplication,
             repository = mockRepository,
             messageDao = mockMessageDao,
             audioRecordManager = mockAudioRecordManager,
-            getHealthDataUseCase = mockGetHealthDataUseCase
+            healthRepository = mockHealthRepository,
+            locationDataManager = mockLocationDataManager
         )
     }
 
     @After
     fun tearDown() {
         unmockkStatic(Log::class)
+        unmockkObject(LocationCollectionService)
+        unmockkObject(ConversationAlarmReceiver)
     }
 
     // ===== 중복 요청 방지 테스트 =====
@@ -97,7 +119,7 @@ class ConversationViewModelTest {
     fun `startConversation 중복 호출 시 repository는 1번만 호출된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             // 진행 중(Sending) 상태가 유지되도록 delay로 첫 번째 호출을 지연
-            coEvery { mockRepository.startConversation(any()) } coAnswers {
+            coEvery { mockRepository.startConversation(any(), any()) } coAnswers {
                 delay(1_000)
                 ApiResult.Success(ConversationStartResponse(message = "안녕하세요"))
             }
@@ -106,7 +128,7 @@ class ConversationViewModelTest {
             viewModel.startConversation()  // Sending → Sending 전이 실패 → return@launch
             advanceUntilIdle()
 
-            coVerify(exactly = 1) { mockRepository.startConversation(any()) }
+            coVerify(exactly = 1) { mockRepository.startConversation(any(), any()) }
         }
 
     @Test
@@ -149,7 +171,7 @@ class ConversationViewModelTest {
     @Test
     fun `startConversation 실패 시 Idle로 복구된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            coEvery { mockRepository.startConversation(any()) } returns
+            coEvery { mockRepository.startConversation(any(), any()) } returns
                 ApiResult.Error(ApiException.NetworkError())
 
             viewModel.startConversation()
@@ -209,7 +231,7 @@ class ConversationViewModelTest {
      * advanceUntilIdle()은 TestScope의 확장 함수이므로 TestScope 수신자로 선언
      */
     private fun TestScope.setupListeningState() {
-        coEvery { mockRepository.startConversation(any()) } returns
+        coEvery { mockRepository.startConversation(any(), any()) } returns
             ApiResult.Success(ConversationStartResponse(message = "안녕하세요"))
 
         viewModel.startConversation()

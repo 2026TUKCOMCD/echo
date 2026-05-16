@@ -42,7 +42,6 @@ import com.example.graduation_project.presentation.component.RecordingIndicator
 import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.ui.theme.CharacterVideoBgColor
 import com.example.graduation_project.ui.theme.Dimens
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 
@@ -148,8 +147,8 @@ fun ActiveConversationView(
                 // 정적 이미지 (Idle/Ended 또는 animationManager 없음)
                 AiCharacterImage(
                     size = 240.dp,
-                    enableFloatingAnimation = conversationState is ConversationState.Playing
-                            && playbackStatus == PlaybackStatus.PLAYING
+                    conversationState = conversationState,
+                    enableFloatingAnimation = true
                 )
             }
 

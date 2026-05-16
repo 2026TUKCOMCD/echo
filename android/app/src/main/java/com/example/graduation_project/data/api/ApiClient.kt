@@ -1,6 +1,7 @@
 package com.example.graduation_project.data.api
 
 import com.example.graduation_project.BuildConfig
+import com.example.graduation_project.data.local.TokenStorage
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -18,35 +19,53 @@ object ApiClient {
     }
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = if (BuildConfig.DEBUG) {
-            HttpLoggingInterceptor.Level.BODY
-        } else {
-            HttpLoggingInterceptor.Level.NONE
-        }
+        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
+        else HttpLoggingInterceptor.Level.NONE
     }
 
-    private val okHttpClient = OkHttpClient.Builder()
-        .addInterceptor(loggingInterceptor)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
-
-    private val retrofit = Retrofit.Builder()
+    private val authRetrofit = Retrofit.Builder()
         .baseUrl(BuildConfig.BASE_URL)
-        .client(okHttpClient)
+        .client(
+            OkHttpClient.Builder()
+                .addInterceptor(loggingInterceptor)
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .build()
+        )
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
 
-    val conversationApi: ConversationApi by lazy {
-        retrofit.create(ConversationApi::class.java)
-    }
+    val authApi: AuthApi by lazy { authRetrofit.create(AuthApi::class.java) }
 
-    val diaryApi: DiaryApi by lazy {
-        retrofit.create(DiaryApi::class.java)
-    }
+    lateinit var conversationApi: ConversationApi
+        private set
+    lateinit var diaryApi: DiaryApi
+        private set
+    lateinit var userApi: UserApi
+        private set
+    lateinit var weatherApi: WeatherApi
+        private set
 
-    val userApi: UserApi by lazy {
-        retrofit.create(UserApi::class.java)
+    fun init(tokenStorage: TokenStorage) {
+        val authenticatedClient = OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            .addInterceptor(AuthInterceptor(tokenStorage))
+            .authenticator(TokenAuthenticator(tokenStorage, authApi))
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+
+        val authenticatedRetrofit = Retrofit.Builder()
+            .baseUrl(BuildConfig.BASE_URL)
+            .client(authenticatedClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+
+        conversationApi = authenticatedRetrofit.create(ConversationApi::class.java)
+        diaryApi = authenticatedRetrofit.create(DiaryApi::class.java)
+        userApi = authenticatedRetrofit.create(UserApi::class.java)
+        weatherApi = authenticatedRetrofit.create(WeatherApi::class.java)
     }
 }

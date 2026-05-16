@@ -1,11 +1,15 @@
 package com.example.echo.context.service;
 
 import com.example.echo.common.client.WeatherClient;
+import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
+import com.example.echo.location.dto.LocationData;
+import com.example.echo.location.dto.RawLocationData;
+import com.example.echo.location.service.LocationService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -27,21 +31,23 @@ public class ContextService {
     private final UserService userService;
     private final HealthDataService healthDataService;
     private final WeatherClient weatherClient;
+    private final LocationService locationService;
 
     /**
-     * 컨텍스트 초기화
+     * 컨텍스트 초기화 (위치 데이터 포함)
      *
-     * 세션 관리만 담당 (건강 데이터 저장은 ConversationService에서 처리)
+     * HealthConnect 데이터 캐싱 패턴과 동일하게:
+     * 1. 사용자 선호도 조회
+     * 2. EnrichedHealthData 생성
+     * 3. RawLocationData → LocationService → LocationData 변환
+     * 4. UserContext 생성 후 contextStore에 저장 (세션 동안 재사용)
      *
-     * 1. 사용자 선호도 조회 (DB 읽기 1회)
-     * 2. EnrichedHealthData 생성 (7일치 배치 조회 1회 + 서버 평균 계산)
-     * 3. 컨텍스트 생성 및 저장
-     *
-     * @param userId 사용자 ID
-     * @param healthData 오늘 건강 데이터 (null이면 DB에서 조회)
+     * @param userId          사용자 ID
+     * @param healthData      오늘 건강 데이터 (null이면 DB에서 조회)
+     * @param rawLocationData 앱에서 전송된 원시 위치 데이터 (null 허용)
      * @return 초기화된 UserContext
      */
-    public UserContext initializeContext(Long userId, HealthData healthData) {
+    public UserContext initializeContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         log.info("컨텍스트 초기화 시작 - userId: {}", userId);
 
         // 1. 사용자 선호도 조회
@@ -55,37 +61,65 @@ public class ContextService {
             effectiveHealthData = healthDataService.getTodayHealthData(userId);
         }
 
-        // 3. EnrichedHealthData 생성 (7일치 배치 조회 + 서버 평균 계산)
+        // 3. EnrichedHealthData 생성
         EnrichedHealthData enrichedHealthData = healthDataService.buildEnrichedHealthData(
                 effectiveHealthData, userId, preferredSleepHours);
 
-        // 4. 컨텍스트 생성
+        // 4. 위치 데이터 변환: RawLocationData → LocationService → LocationData
+        //    변환 결과는 contextStore에 저장되어 세션 동안 재사용 (API 재호출 없음)
+        LocationData locationData = locationService.enrichLocationData(rawLocationData);
+
+        // 5. 컨텍스트 생성 및 저장
+        WeatherData weather = weatherClient.getCachedUserWeather(userId);
+        if (weather == null) {
+            Double lat = rawLocationData != null ? rawLocationData.getCurrentLatitude() : null;
+            Double lon = rawLocationData != null ? rawLocationData.getCurrentLongitude() : null;
+            weather = weatherClient.getCurrentWeather(lat, lon);
+            log.info("[컨텍스트] per-user 캐시 미스 → 좌표 fallback fetch (userId={})", userId);
+        } else {
+            log.info("[컨텍스트] per-user 캐시 hit (userId={})", userId);
+        }
         UserContext context = UserContext.builder()
                 .userId(userId)
                 .date(LocalDate.now())
                 .conversationHistory(new ArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
                 .preferences(preferences)
-                .todayWeather(weatherClient.getCurrentWeather())
+                .todayWeather(weather)
+                .locationData(locationData)
                 .lastAccessTime(LocalDateTime.now())
                 .isActive(true)
                 .build();
 
         contextStore.put(userId, context);
+        log.info("[컨텍스트] 저장 완료 - userId: {}, currentCity: {}, 방문장소 수: {}",
+                userId,
+                locationData != null ? locationData.getCurrentCity() : "null",
+                locationData != null && locationData.getVisitedPlaces() != null
+                        ? locationData.getVisitedPlaces().size() : 0);
+        // 방문 장소 상세 로그
+        if (locationData != null && locationData.getVisitedPlaces() != null) {
+            locationData.getVisitedPlaces().forEach(place ->
+                log.debug("[컨텍스트] 방문장소 - placeName: {}, address: {}, 체류: {}분, 날씨: {}",
+                        place.getPlaceName(), place.getAddress(), place.getStayDurationMinutes(),
+                        place.getWeather() != null ? place.getWeather().getDescription() : "null"));
+        }
         log.info("컨텍스트 초기화 완료 - userId: {}", userId);
         return context;
     }
 
     /**
-     * 컨텍스트 초기화 (건강 데이터 없이)
-     *
-     * DB에서 오늘 건강 데이터를 조회하여 사용
-     *
-     * @param userId 사용자 ID
-     * @return 초기화된 UserContext
+     * 컨텍스트 초기화 (위치 데이터 없이)
+     */
+    public UserContext initializeContext(Long userId, HealthData healthData) {
+        return initializeContext(userId, healthData, null);
+    }
+
+    /**
+     * 컨텍스트 초기화 (건강 데이터, 위치 데이터 없이)
      */
     public UserContext initializeContext(Long userId) {
-        return initializeContext(userId, null);
+        return initializeContext(userId, null, null);
     }
 
     public UserContext getContext(Long userId) {
@@ -112,7 +146,7 @@ public class ContextService {
     public void finalizeContext(Long userId) {
         log.info("컨텍스트 정리 시작 - userId: {}", userId);
 
-        UserContext removed = contextStore.remove(userId); //removed 변수 추가
+        UserContext removed = contextStore.remove(userId);
         if (removed != null) {
             log.info("컨텍스트 정리 완료 - userId: {}, 총 대화 턴: {}",
                     userId, removed.getConversationHistory().size());

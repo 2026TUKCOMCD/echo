@@ -21,8 +21,26 @@ openai:
   api:
     key: ${OPENAI_API_KEY}
 
+kakao:
+  api:
+    key: ${KAKAO_API_KEY}
+
 azure:
   tts:
     endpoint: https://koreacentral.tts.speech.microsoft.com
     api-key: ${AZURE_TTS_API_KEY}
     default-voice: ko-KR-SunHiNeural
+
+tts:
+  provider: supertone
+
+supertone:
+  base-url: https://supertoneapi.com
+  voice-id: 195e1922033a6168f0c90f
+  default-style: serene
+  model: sona_speech_2
+  api-key: ${SUPERTONE_API_KEY}
+
+logging:
+  level:
+    com.example.echo.location: DEBUG

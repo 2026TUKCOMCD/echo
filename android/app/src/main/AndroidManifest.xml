@@ -2,9 +2,30 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- 네트워크 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- 마이크 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- 위치 권한 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Foreground Service (위치 수집) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- 부팅 시 자동 시작 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 정확한 알람 (Android 12+) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- 알림 권한 (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Health Connect 읽기 권한 -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
@@ -12,6 +33,7 @@
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTE" />
 
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
@@ -21,6 +43,7 @@
     </queries>
 
     <application
+        android:name=".App"
         android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -30,6 +53,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Graduation_project">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -37,7 +61,6 @@
             android:theme="@style/Theme.Graduation_project">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
@@ -53,6 +76,32 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+
+        <!-- 백그라운드 GPS 위치 수집 서비스 -->
+        <service
+            android:name=".data.location.LocationCollectionService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+
+        <!-- 부팅 시 서비스/알람 자동 시작 -->
+        <receiver
+            android:name=".data.receiver.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 매일 아침 6시 위치 수집 서비스 시작 -->
+        <receiver
+            android:name=".data.location.MorningAlarmReceiver"
+            android:exported="false" />
+
+        <!-- 대화 시간 알람 -->
+        <receiver
+            android:name=".data.alarm.ConversationAlarmReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>

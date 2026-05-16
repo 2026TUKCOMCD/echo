@@ -9,19 +9,24 @@ package com.example.echo.prompt.service;
  *    - buildConversationPrompt, buildHistory 제거
  *    - AIService에서 messages 배열로 직접 대화 히스토리 전송
  */
+import com.example.echo.common.dto.VisitWeather;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
+import com.example.echo.location.dto.LocationData;
+import com.example.echo.location.dto.VisitedPlace;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -34,6 +39,7 @@ import java.util.Map;
  *
  * 일기 프롬프트는 DiaryService에서 담당 (단일 책임 원칙)
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PromptService {
@@ -48,16 +54,14 @@ public class PromptService {
      *
      * [최적화] Context에서 EnrichedHealthData 직접 사용 - DB 재조회 없음
      *
-     * 템플릿 변수 (v6):
+     * 템플릿 변수 (v7):
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
      * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}, {{preferredSleepHours}}
-     * - 날씨: {{weather}}, {{temperature}}
+     * - 현재 날씨: {{weather}}, {{temperature}}
+     * - 위치: {{currentCity}}, {{visitedPlacesText}}
      * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{activityList}}
      * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}
      * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
-     *
-     * 참고: v5 대비 제거된 변수 — {{sleepInfo}} (sleepDuration과 중복)
-     * (PromptService는 여전히 map에 sleepInfo를 추가하나 v6 템플릿에서 사용하지 않으므로 무해하게 무시됨)
      *
      * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
@@ -113,8 +117,91 @@ public class PromptService {
         variables.put("stepsEvaluation", healthData != null ? healthData.getStepsEvaluation() : "");
         variables.put("wakeTimeEvaluation", healthData != null ? healthData.getWakeTimeEvaluation() : "");
 
+        // 4-7. 위치 정보 (방문 시점 날씨 포함)
+        LocationData locationData = context.getLocationData();
+        if (locationData != null) {
+            variables.put("currentCity", locationData.getCurrentCity() != null
+                    ? locationData.getCurrentCity() : "");
+            String visitedPlacesText = buildVisitedPlacesText(locationData.getVisitedPlaces());
+            variables.put("visitedPlacesText", visitedPlacesText);
+
+            // 프롬프트에 들어가는 위치 정보 로그
+            log.info("[프롬프트] currentCity: {}", variables.get("currentCity"));
+            log.debug("[프롬프트] visitedPlacesText:\n{}", visitedPlacesText);
+        } else {
+            variables.put("currentCity", "");
+            variables.put("visitedPlacesText", "오늘 방문한 장소 정보가 없습니다.");
+            log.info("[프롬프트] 위치 데이터 없음");
+        }
+
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
+    }
+
+    /**
+     * 방문 장소 목록을 텍스트로 변환
+     *
+     * 체류 시간이 긴 장소부터 정렬하여 대화 주제 우선순위 결정
+     * 각 장소의 방문 시점 날씨 정보도 함께 표시
+     *
+     * @param places 방문 장소 목록
+     * @return 포맷팅된 방문 장소 텍스트 (체류 시간 내림차순 정렬)
+     */
+    private String buildVisitedPlacesText(List<VisitedPlace> places) {
+        if (places == null || places.isEmpty()) {
+            return "오늘 방문한 장소가 없습니다.";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        places.stream()
+                .sorted((a, b) -> Integer.compare(
+                        b.getStayDurationMinutes() != null ? b.getStayDurationMinutes() : 0,
+                        a.getStayDurationMinutes() != null ? a.getStayDurationMinutes() : 0))
+                .forEach(place -> {
+                    sb.append(String.format("- %s", place.getPlaceName()));
+
+                    // 방문 시간 및 체류 시간 추가
+                    if (place.getVisitStartTime() != null && place.getVisitEndTime() != null) {
+                        sb.append(String.format(" (%s~%s",
+                                formatTime(place.getVisitStartTime()),
+                                formatTime(place.getVisitEndTime())));
+                        if (place.getStayDurationMinutes() != null) {
+                            sb.append(String.format(", %d분 체류", place.getStayDurationMinutes()));
+                        }
+                        sb.append(")");
+                    }
+
+                    // 방문 시점 날씨 정보 추가
+                    VisitWeather weather = place.getWeather();
+                    if (weather != null && weather.getDescription() != null) {
+                        sb.append(String.format(" (날씨: %s", weather.getDescription()));
+                        if (weather.getTemperature() != null) {
+                            sb.append(String.format(", %d°C", weather.getTemperature()));
+                        }
+                        sb.append(")");
+                    }
+
+                    sb.append("\n");
+                });
+
+        return sb.toString().trim();
+    }
+
+    /**
+     * LocalTime을 "오전/오후 H시 mm분" 형식으로 포맷팅
+     */
+    private String formatTime(java.time.LocalTime time) {
+        if (time == null) return "";
+        int hour = time.getHour();
+        int minute = time.getMinute();
+        String period = hour < 12 ? "오전" : "오후";
+        int displayHour = hour <= 12 ? hour : hour - 12;
+        if (displayHour == 0) displayHour = 12;
+
+        if (minute == 0) {
+            return String.format("%s %d시", period, displayHour);
+        }
+        return String.format("%s %d시 %d분", period, displayHour, minute);
     }
 
     /**

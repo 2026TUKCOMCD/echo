@@ -68,6 +68,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.ui.text.google.fonts)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
 
@@ -81,6 +82,7 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // ViewModel
     implementation(libs.androidx.lifecycle.viewmodel)
@@ -88,6 +90,9 @@ dependencies {
 
     // VAD (Voice Activity Detection)
     implementation(libs.android.vad.silero)
+
+    // Location
+    implementation(libs.play.services.location)
 
     // Room
     implementation(libs.room.runtime)
@@ -100,6 +105,15 @@ dependencies {
 
     // Health Connect
     implementation(libs.health.connect.client)
+
+    // Location
+    implementation(libs.play.services.location)
+
+    // Navigation
+    implementation(libs.androidx.navigation.compose)
+
+    // Security (EncryptedSharedPreferences)
+    implementation(libs.androidx.security.crypto)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

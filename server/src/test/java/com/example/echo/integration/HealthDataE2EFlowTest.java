@@ -93,23 +93,25 @@ class HealthDataE2EFlowTest {
         @Order(1)
         @DisplayName("앱에서 전송한 건강 데이터가 DB에 저장되어야 한다")
         void healthData_shouldBeSavedToDatabase() throws Exception {
-            // Given - 앱에서 수집한 건강 데이터
-            String healthDataJson = """
+            // Given - 앱에서 수집한 건강 데이터 (ConversationStartRequest 형식)
+            String requestJson = """
                 {
-                    "steps": 6500,
-                    "sleepDurationMinutes": 420,
-                    "sleepStartTime": "23:00:00",
-                    "wakeUpTime": "06:00:00",
-                    "exerciseDistanceKm": 3.5,
-                    "exerciseActivity": "아침 산책",
-                    "activityList": "산책,스트레칭"
+                    "healthData": {
+                        "steps": 6500,
+                        "sleepDurationMinutes": 420,
+                        "sleepStartTime": "23:00:00",
+                        "wakeUpTime": "06:00:00",
+                        "exerciseDistanceKm": 3.5,
+                        "exerciseActivity": "아침 산책",
+                        "activityList": "산책,스트레칭"
+                    }
                 }
                 """;
 
             // When - 대화 시작 API 호출
             mockMvc.perform(post("/api/conversations/start")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(healthDataJson))
+                            .content(requestJson))
                     .andExpect(status().isOk());
 
             // Then - DB에 건강 데이터 저장 확인
@@ -187,20 +189,22 @@ class HealthDataE2EFlowTest {
         @Order(3)
         @DisplayName("시스템 프롬프트에 건강 데이터가 반영되어야 한다")
         void systemPrompt_shouldContainHealthData() throws Exception {
-            // Given - 건강 데이터와 함께 대화 시작
-            String healthDataJson = """
+            // Given - 건강 데이터와 함께 대화 시작 (ConversationStartRequest 형식)
+            String requestJson = """
                 {
-                    "steps": 7500,
-                    "sleepDurationMinutes": 450,
-                    "wakeUpTime": "07:30:00",
-                    "exerciseActivity": "공원 산책"
+                    "healthData": {
+                        "steps": 7500,
+                        "sleepDurationMinutes": 450,
+                        "wakeUpTime": "07:30:00",
+                        "exerciseActivity": "공원 산책"
+                    }
                 }
                 """;
 
             // When - 대화 시작하여 컨텍스트 생성
             mockMvc.perform(post("/api/conversations/start")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(healthDataJson))
+                            .content(requestJson))
                     .andExpect(status().isOk());
 
             // Then - 컨텍스트에서 시스템 프롬프트 확인
@@ -240,21 +244,23 @@ class HealthDataE2EFlowTest {
             // ========================================
             System.out.println("[1단계] 건강 데이터와 함께 대화 시작...");
 
-            String healthDataJson = """
+            String requestJson = """
                 {
-                    "steps": 5500,
-                    "sleepDurationMinutes": 390,
-                    "sleepStartTime": "00:30:00",
-                    "wakeUpTime": "07:00:00",
-                    "exerciseDistanceKm": 2.8,
-                    "exerciseActivity": "아침 걷기",
-                    "activityList": "걷기"
+                    "healthData": {
+                        "steps": 5500,
+                        "sleepDurationMinutes": 390,
+                        "sleepStartTime": "00:30:00",
+                        "wakeUpTime": "07:00:00",
+                        "exerciseDistanceKm": 2.8,
+                        "exerciseActivity": "아침 걷기",
+                        "activityList": "걷기"
+                    }
                 }
                 """;
 
             MvcResult startResult = mockMvc.perform(post("/api/conversations/start")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(healthDataJson))
+                            .content(requestJson))
                     .andDo(print())
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").isNotEmpty())

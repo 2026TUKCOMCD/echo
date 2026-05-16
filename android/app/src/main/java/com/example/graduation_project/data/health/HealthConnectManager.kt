@@ -14,6 +14,7 @@ import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.SleepSummary
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -196,6 +197,10 @@ class HealthConnectManager(private val context: Context) {
         ExerciseSessionRecord.EXERCISE_TYPE_BADMINTON -> "배드민턴"
         else -> "운동"
     }
+
+    // TODO: ExerciseRoute GPS 데이터 활용 기능 추후 재도입 예정
+    // 참고: feature/US5.5-healthconnect-route-tracking 브랜치, commit 1feb261
+    // 삭제된 메서드: readTodayExerciseRoutes(), readExerciseSessionLocations()
 
     /**
      * NotInstalled 상태일 때 Play Store로 연결.
