@@ -106,7 +106,7 @@ private fun ConversationCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(20.dp)
         ) {
             Text(
                 text = summary.date,
@@ -119,18 +119,18 @@ private fun ConversationCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = summary.timeRange,
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     fontFamily = OutfitFontFamily,
                     color = colors.textTertiary
                 )
                 Text(
                     text = "·",
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     color = colors.textTertiary
                 )
                 Text(
                     text = "${summary.durationMin}분",
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     fontFamily = OutfitFontFamily,
                     color = colors.textTertiary
                 )
@@ -138,11 +138,11 @@ private fun ConversationCard(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = summary.previewText,
-                fontSize = 16.sp,
+                fontSize = 18.sp,
                 fontFamily = OutfitFontFamily,
                 color = colors.textSecondary,
                 maxLines = 2,
-                lineHeight = 22.sp
+                lineHeight = 26.sp
             )
         }
     }

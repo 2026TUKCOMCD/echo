@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 
 data class HomeUiState(
     val userName: String = "",
+    val conversationTime: String? = null,
     val isLoading: Boolean = true
 )
 
@@ -31,6 +32,7 @@ class HomeViewModel(
                 is ApiResult.Success -> {
                     _uiState.value = HomeUiState(
                         userName = result.data.name ?: "",
+                        conversationTime = result.data.conversationTime,
                         isLoading = false
                     )
                 }

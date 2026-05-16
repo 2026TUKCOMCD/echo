@@ -37,6 +37,7 @@ fun HomeScreen(
 
     HomeScreenContent(
         userName = uiState.userName,
+        conversationTime = uiState.conversationTime,
         onStartConversation = onStartConversation
     )
 }
@@ -44,6 +45,7 @@ fun HomeScreen(
 @Composable
 private fun HomeScreenContent(
     userName: String,
+    conversationTime: String? = null,
     onStartConversation: () -> Unit
 ) {
     val colors = LocalEchoColors.current
@@ -76,6 +78,16 @@ private fun HomeScreenContent(
             color = colors.textSecondary
         )
 
+        if (!conversationTime.isNullOrBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "오늘 대화 시간: ${formatConversationTime(conversationTime)}",
+                fontSize = 16.sp,
+                fontFamily = OutfitFontFamily,
+                color = colors.textTertiary
+            )
+        }
+
         Spacer(Modifier.height(40.dp))
 
         Button(
@@ -99,10 +111,19 @@ private fun HomeScreenContent(
     }
 }
 
+private fun formatConversationTime(time: String): String {
+    return try {
+        val (h, m) = time.split(":").map { it.toInt() }
+        val amPm = if (h < 12) "오전" else "오후"
+        val displayHour = if (h % 12 == 0) 12 else h % 12
+        "$amPm ${displayHour}:${m.toString().padStart(2, '0')}"
+    } catch (e: Exception) { time }
+}
+
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun HomeScreenPreview() {
     Graduation_projectTheme {
-        HomeScreenContent(userName = "김순자", onStartConversation = {})
+        HomeScreenContent(userName = "김순자", conversationTime = "09:00", onStartConversation = {})
     }
 }

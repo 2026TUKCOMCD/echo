@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import androidx.compose.ui.Alignment
@@ -108,7 +109,7 @@ fun MessageItem(
                 Text(
                     text = message.text,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (message.isFromUser) androidx.compose.ui.graphics.Color.White else colors.textPrimary
+                    color = if (message.isFromUser) Color.White else colors.textPrimary
                 )
             }
 
