@@ -82,6 +82,7 @@ import com.example.graduation_project.presentation.common.buildBirthdayString
 import com.example.graduation_project.presentation.common.parseBirthday
 import com.example.graduation_project.presentation.health.openHealthConnectSettings
 import com.example.graduation_project.data.local.DisplaySettingsStorage
+import com.example.graduation_project.presentation.permission.PermissionChecker
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -390,8 +391,7 @@ fun SettingsScreen(
                         label = "건강 데이터 권한",
                         isGranted = uiState.hasHealthConnectPermission,
                         grantedText = "허용됨",
-                        deniedText = "탭하여 설정",
-                        onClick = { openHealthConnectSettings(context) }
+                        deniedText = "허용 필요"
                     )
                 }
             }
@@ -416,13 +416,14 @@ fun SettingsScreen(
                         label = "위치 권한",
                         isGranted = uiState.hasBackgroundLocationPermission,
                         grantedText = "항상 허용됨",
-                        deniedText = "탭하여 설정",
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.fromParts("package", context.packageName, null)
-                            }
-                            context.startActivity(intent)
-                        }
+                        deniedText = "허용 필요"
+                    )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    // 위치 수집 상태 토글
+                    LocationCollectionToggleRow(
+                        isRunning = uiState.isLocationCollectionRunning,
+                        hasPermission = uiState.hasBackgroundLocationPermission,
+                        onToggle = { viewModel.toggleLocationCollection() }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
@@ -449,22 +450,12 @@ fun SettingsScreen(
                         title = "앱 설정",
                         iconTint = colors.textSecondary
                     )
-                    // 앱 알림 설정
-                    NavigationRow(
-                        label = "앱 알림 설정",
-                        description = "시스템 알림 설정으로 이동",
-                        onClick = {
-                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                }
-                            } else {
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                    data = Uri.fromParts("package", context.packageName, null)
-                                }
-                            }
-                            context.startActivity(intent)
-                        }
+                    // 알림 권한 표시
+                    PermissionStatusRow(
+                        label = "알림 권한",
+                        isGranted = uiState.hasNotificationPermission,
+                        grantedText = "허용됨",
+                        deniedText = "허용 필요"
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     // 앱 권한 설정
@@ -631,13 +622,13 @@ private fun PermissionStatusRow(
     isGranted: Boolean,
     grantedText: String,
     deniedText: String,
-    onClick: () -> Unit
+    onClick: (() -> Unit)? = null
 ) {
     val colors = LocalEchoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -689,6 +680,54 @@ private fun AlarmToggleRow(
         Switch(
             checked = enabled,
             onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = colors.accentGreen,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = colors.bgMuted
+            )
+        )
+    }
+}
+
+@Composable
+private fun LocationCollectionToggleRow(
+    isRunning: Boolean,
+    hasPermission: Boolean,
+    onToggle: () -> Unit
+) {
+    val colors = LocalEchoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("위치 수집 상태", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+            Spacer(Modifier.height(3.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .background(
+                            color = if (isRunning) colors.accentGreen else colors.textTertiary,
+                            shape = androidx.compose.foundation.shape.CircleShape
+                        )
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (isRunning) "수집 중" else "중지됨",
+                    fontSize = 17.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = if (isRunning) colors.accentGreen else colors.textTertiary
+                )
+            }
+        }
+        Switch(
+            checked = isRunning,
+            onCheckedChange = { onToggle() },
+            enabled = hasPermission,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = colors.accentGreen,
