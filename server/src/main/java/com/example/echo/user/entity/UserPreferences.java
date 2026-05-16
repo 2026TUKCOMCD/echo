@@ -108,4 +108,55 @@ public class UserPreferences {
         this.preferredSleepHours = preferredSleepHours;
         this.updatedAt = LocalDateTime.now();
     }
+
+    public void updateBirthday(LocalDate birthday) {
+        this.birthday = birthday;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateLocation(String location) {
+        this.location = location;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateFamilyInfo(String familyInfo) {
+        this.familyInfo = familyInfo;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateGuardianEmail(String guardianEmail) {
+        this.guardianEmail = guardianEmail;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateOccupation(String occupation) {
+        this.occupation = occupation;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateHobbies(String hobbies) {
+        this.hobbies = hobbies;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updatePreferredTopics(String preferredTopics) {
+        this.preferredTopics = preferredTopics;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateVoiceSettings(Double voiceSpeed, String voiceTone) {
+        this.voiceSpeed = voiceSpeed;
+        this.voiceTone = voiceTone;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateConversationTime(LocalTime conversationTime) {
+        this.conversationTime = conversationTime;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updatePreferredSleepHours(Integer preferredSleepHours) {
+        this.preferredSleepHours = preferredSleepHours;
+        this.updatedAt = LocalDateTime.now();
+    }
 }

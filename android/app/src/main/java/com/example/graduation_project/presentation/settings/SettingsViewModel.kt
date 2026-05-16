@@ -154,19 +154,39 @@ class SettingsViewModel(
         _uiState.update { it.copy(savedMessage = "위치 수집 시간이 설정되었습니다") }
     }
 
-    fun savePreferences(preferences: UserPreferences) {
+    fun updateBirthday(birthday: String?) = updateField { userRepository.updateBirthday(birthday) }
+    fun updateLocation(location: String?) = updateField { userRepository.updateLocation(location) }
+    fun updateFamilyInfo(familyInfo: String?) = updateField { userRepository.updateFamilyInfo(familyInfo) }
+    fun updateGuardianEmail(guardianEmail: String?) = updateField { userRepository.updateGuardianEmail(guardianEmail) }
+    fun updateOccupation(occupation: String?) = updateField { userRepository.updateOccupation(occupation) }
+    fun updateHobbies(hobbies: String?) = updateField { userRepository.updateHobbies(hobbies) }
+    fun updatePreferredTopics(preferredTopics: String?) = updateField { userRepository.updatePreferredTopics(preferredTopics) }
+    fun updateVoiceSettings(voiceSpeed: Double, voiceTone: String) = updateField { userRepository.updateVoiceSettings(voiceSpeed, voiceTone) }
+    fun updatePreferredSleepHours(hours: Int?) = updateField { userRepository.updatePreferredSleepHours(hours) }
+
+    fun updateConversationTime(time: String?) {
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true) }
-            when (val result = userRepository.updatePreferences(preferences)) {
+            when (val result = userRepository.updateConversationTime(time)) {
                 is ApiResult.Success -> {
-                    _uiState.update {
-                        applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다")
-                    }
+                    val savedTime = result.data.conversationTime
+                    alarmStorage.saveConversationTime(savedTime)
+                    updateAlarmSchedule(savedTime)
+                    _uiState.update { applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다") }
+                }
+                is ApiResult.Error -> _uiState.update {
+                    it.copy(isSaving = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
+                }
+            }
+        }
+    }
 
-                    // 대화 시간 로컬 저장 및 알람 스케줄링
-                    val time = result.data.conversationTime
-                    alarmStorage.saveConversationTime(time)
-                    updateAlarmSchedule(time)
+    private fun updateField(apiCall: suspend () -> ApiResult<UserPreferences>) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true) }
+            when (val result = apiCall()) {
+                is ApiResult.Success -> _uiState.update {
+                    applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다")
                 }
                 is ApiResult.Error -> _uiState.update {
                     it.copy(isSaving = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
@@ -189,19 +209,7 @@ class SettingsViewModel(
 
             // 서버에도 기본 시간 저장
             viewModelScope.launch {
-                val currentState = _uiState.value
-                val preferences = UserPreferences(
-                    birthday = currentState.birthday,
-                    familyInfo = currentState.familyInfo,
-                    guardianEmail = currentState.guardianEmail,
-                    location = currentState.location,
-                    occupation = currentState.occupation,
-                    hobbies = currentState.hobbies,
-                    preferredTopics = currentState.preferredTopics,
-                    conversationTime = time,
-                    preferredSleepHours = currentState.preferredSleepHours
-                )
-                userRepository.updatePreferences(preferences)
+                userRepository.updateConversationTime(time)
             }
         }
 

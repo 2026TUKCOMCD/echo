@@ -100,6 +100,81 @@ public class UserService {
         return getPreferences(userId);
     }
 
+    @Transactional
+    public UserPreferences updateBirthday(Long userId, java.time.LocalDate birthday) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateBirthday(birthday);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updateLocation(Long userId, String location) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateLocation(location);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updateFamilyInfo(Long userId, String familyInfo) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateFamilyInfo(familyInfo);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updateGuardianEmail(Long userId, String guardianEmail) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateGuardianEmail(guardianEmail);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updateOccupation(Long userId, String occupation) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateOccupation(occupation);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updateHobbies(Long userId, String hobbies) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateHobbies(hobbies);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updatePreferredTopics(Long userId, String preferredTopics) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updatePreferredTopics(preferredTopics);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updateVoiceSettings(Long userId, Double voiceSpeed, String voiceTone) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateVoiceSettings(voiceSpeed, voiceTone);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updateConversationTime(Long userId, java.time.LocalTime conversationTime) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateConversationTime(conversationTime);
+        return getPreferences(userId);
+    }
+
+    @Transactional
+    public UserPreferences updatePreferredSleepHours(Long userId, Integer preferredSleepHours) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updatePreferredSleepHours(preferredSleepHours);
+        return getPreferences(userId);
+    }
+
+    private com.example.echo.user.entity.UserPreferences getPreferencesEntity(Long userId) {
+        return userPreferencesRepository.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("온보딩이 완료되지 않았습니다."));
+    }
+
     @Transactional(readOnly = true)
     public boolean isOnboardingCompleted(Long userId) {
         return userPreferencesRepository.findByUserId(userId)
