@@ -30,13 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.presentation.model.ConversationSummary
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoBgCard
-import com.example.graduation_project.ui.theme.EchoBgPage
-import com.example.graduation_project.ui.theme.EchoBorderSubtle
-import com.example.graduation_project.ui.theme.EchoTextPrimary
-import com.example.graduation_project.ui.theme.EchoTextSecondary
-import com.example.graduation_project.ui.theme.EchoTextTertiary
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -47,30 +41,31 @@ fun ConversationHistoryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    val colors = LocalEchoColors.current
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(EchoBgPage)
+            .background(colors.bgPage)
     ) {
         Text(
             text = "대화 기록",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = OutfitFontFamily,
-            color = EchoTextPrimary,
+            color = colors.textPrimary,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
         )
 
         if (uiState.isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = EchoAccentGreen)
+                CircularProgressIndicator(color = colors.accentGreen)
             }
         } else if (uiState.summaries.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = "아직 대화 기록이 없어요",
                     fontSize = 18.sp,
-                    color = EchoTextTertiary,
+                    color = colors.textTertiary,
                     fontFamily = OutfitFontFamily
                 )
             }
@@ -98,13 +93,14 @@ private fun ConversationCard(
     summary: ConversationSummary,
     onClick: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(2.dp, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        color = EchoBgCard,
+        color = colors.bgCard,
         tonalElevation = 0.dp
     ) {
         Column(
@@ -117,7 +113,7 @@ private fun ConversationCard(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextPrimary
+                color = colors.textPrimary
             )
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -125,18 +121,18 @@ private fun ConversationCard(
                     text = summary.timeRange,
                     fontSize = 16.sp,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextTertiary
+                    color = colors.textTertiary
                 )
                 Text(
                     text = "·",
                     fontSize = 16.sp,
-                    color = EchoTextTertiary
+                    color = colors.textTertiary
                 )
                 Text(
                     text = "${summary.durationMin}분",
                     fontSize = 16.sp,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextTertiary
+                    color = colors.textTertiary
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -144,7 +140,7 @@ private fun ConversationCard(
                 text = summary.previewText,
                 fontSize = 18.sp,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextSecondary,
+                color = colors.textSecondary,
                 maxLines = 2,
                 lineHeight = 26.sp
             )
@@ -156,17 +152,18 @@ private fun ConversationCard(
 @Composable
 private fun HistoryScreenPreview() {
     Graduation_projectTheme {
+        val colors = LocalEchoColors.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(EchoBgPage)
+                .background(colors.bgPage)
         ) {
             Text(
                 text = "대화 기록",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextPrimary,
+                color = colors.textPrimary,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
             )
             LazyColumn(

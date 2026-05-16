@@ -42,7 +42,6 @@ import com.example.graduation_project.presentation.component.RecordingIndicator
 import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.PlaybackStatus
-import com.example.graduation_project.ui.theme.CharacterVideoBgColor
 import com.example.graduation_project.ui.theme.Dimens
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 

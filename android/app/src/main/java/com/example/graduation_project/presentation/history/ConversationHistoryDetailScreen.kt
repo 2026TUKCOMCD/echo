@@ -37,11 +37,7 @@ import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.presentation.conversation.components.MessageItem
 import com.example.graduation_project.presentation.model.MessageUiModel
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoBgPage
-import com.example.graduation_project.ui.theme.EchoTextPrimary
-import com.example.graduation_project.ui.theme.EchoTextSecondary
-import com.example.graduation_project.ui.theme.EchoTextTertiary
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -136,10 +132,11 @@ fun ConversationHistoryDetailScreen(
     )
     val uiState by vm.uiState.collectAsState()
 
+    val colors = LocalEchoColors.current
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(EchoBgPage)
+            .background(colors.bgPage)
     ) {
         // Top bar
         Row(
@@ -152,7 +149,7 @@ fun ConversationHistoryDetailScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "뒤로 가기",
-                    tint = EchoTextPrimary
+                    tint = colors.textPrimary
                 )
             }
             Column(modifier = Modifier.padding(start = 8.dp)) {
@@ -162,22 +159,22 @@ fun ConversationHistoryDetailScreen(
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = OutfitFontFamily,
-                        color = EchoTextPrimary
+                        color = colors.textPrimary
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = uiState.timeRange,
                             fontSize = 13.sp,
                             fontFamily = OutfitFontFamily,
-                            color = EchoTextTertiary
+                            color = colors.textTertiary
                         )
                         if (uiState.durationMin > 0) {
-                            Text("·", fontSize = 13.sp, color = EchoTextTertiary)
+                            Text("·", fontSize = 13.sp, color = colors.textTertiary)
                             Text(
                                 text = "${uiState.durationMin}분",
                                 fontSize = 13.sp,
                                 fontFamily = OutfitFontFamily,
-                                color = EchoTextTertiary
+                                color = colors.textTertiary
                             )
                         }
                     }
@@ -187,14 +184,14 @@ fun ConversationHistoryDetailScreen(
 
         if (uiState.isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = EchoAccentGreen)
+                CircularProgressIndicator(color = colors.accentGreen)
             }
         } else if (uiState.messages.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = "메시지가 없습니다",
                     fontSize = 18.sp,
-                    color = EchoTextTertiary,
+                    color = colors.textTertiary,
                     fontFamily = OutfitFontFamily
                 )
             }

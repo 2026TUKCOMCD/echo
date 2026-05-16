@@ -33,9 +33,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoBgPage
-import com.example.graduation_project.ui.theme.EchoTextSecondary
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -58,14 +56,15 @@ fun SignupScreen(
         }
     }
 
+    val colors = LocalEchoColors.current
     Scaffold(
-        containerColor = EchoBgPage,
+        containerColor = colors.bgPage,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(EchoBgPage)
+                .background(colors.bgPage)
                 .padding(padding)
                 .padding(horizontal = 32.dp)
                 .verticalScroll(rememberScrollState()),
@@ -77,7 +76,7 @@ fun SignupScreen(
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = OutfitFontFamily,
-                color = EchoAccentGreen
+                color = colors.accentGreen
             )
 
             Spacer(Modifier.height(8.dp))
@@ -86,7 +85,7 @@ fun SignupScreen(
                 text = "계정을 만들어보세요",
                 fontSize = 16.sp,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextSecondary
+                color = colors.textSecondary
             )
 
             Spacer(Modifier.height(40.dp))
@@ -132,9 +131,9 @@ fun SignupScreen(
                     .height(64.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = EchoAccentGreen,
+                    containerColor = colors.accentGreen,
                     contentColor = Color.White,
-                    disabledContainerColor = EchoAccentGreen.copy(alpha = 0.6f)
+                    disabledContainerColor = colors.accentGreen.copy(alpha = 0.6f)
                 )
             ) {
                 if (uiState.isLoading) {
@@ -160,17 +159,18 @@ fun SignupScreen(
 @Composable
 private fun SignupScreenPreview() {
     Graduation_projectTheme {
+        val colors = LocalEchoColors.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(EchoBgPage)
+                .background(colors.bgPage)
                 .padding(horizontal = 32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("에코", fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = OutfitFontFamily, color = EchoAccentGreen)
+            Text("에코", fontSize = 32.sp, fontWeight = FontWeight.Bold, fontFamily = OutfitFontFamily, color = colors.accentGreen)
             Spacer(Modifier.height(8.dp))
-            Text("계정을 만들어보세요", fontSize = 16.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Text("계정을 만들어보세요", fontSize = 16.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
             Spacer(Modifier.height(40.dp))
             EchoOutlinedTextField("", {}, "이름")
             Spacer(Modifier.height(12.dp))
@@ -182,7 +182,7 @@ private fun SignupScreenPreview() {
                 onClick = {},
                 modifier = Modifier.fillMaxWidth().height(64.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = EchoAccentGreen)
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accentGreen)
             ) {
                 Text("가입하기", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
             }

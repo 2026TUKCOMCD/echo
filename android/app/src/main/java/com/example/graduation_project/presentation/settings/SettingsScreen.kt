@@ -81,16 +81,8 @@ import com.example.graduation_project.presentation.common.EchoTimePickerContent
 import com.example.graduation_project.presentation.common.buildBirthdayString
 import com.example.graduation_project.presentation.common.parseBirthday
 import com.example.graduation_project.presentation.health.openHealthConnectSettings
-import com.example.graduation_project.ui.theme.EchoAccentBlue
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoAccentRed
-import com.example.graduation_project.ui.theme.EchoBgCard
-import com.example.graduation_project.ui.theme.EchoBgMuted
-import com.example.graduation_project.ui.theme.EchoBgPage
-import com.example.graduation_project.ui.theme.EchoBorderSubtle
-import com.example.graduation_project.ui.theme.EchoTextPrimary
-import com.example.graduation_project.ui.theme.EchoTextSecondary
-import com.example.graduation_project.ui.theme.EchoTextTertiary
+import com.example.graduation_project.data.local.DisplaySettingsStorage
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
 private val EMAIL_REGEX = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
@@ -124,9 +116,11 @@ private fun buildPreferences(
 @Composable
 fun SettingsScreen(
     onLogout: () -> Unit,
-    viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)
+    viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
+    displayViewModel: DisplaySettingsViewModel = viewModel(factory = DisplaySettingsViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val displaySettings by displayViewModel.settings.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingField by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -157,11 +151,12 @@ fun SettingsScreen(
         }
     }
 
+    val colors = LocalEchoColors.current
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(EchoBgPage)
+                .background(colors.bgPage)
                 .verticalScroll(rememberScrollState())
         ) {
             Text(
@@ -169,7 +164,7 @@ fun SettingsScreen(
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextPrimary,
+                color = colors.textPrimary,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
             )
 
@@ -179,18 +174,18 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
                 shape = RoundedCornerShape(16.dp),
-                color = EchoBgCard
+                color = colors.bgCard
             ) {
                 Row(
                     modifier = Modifier.padding(20.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Surface(modifier = Modifier.size(56.dp), shape = CircleShape, color = EchoBgMuted) {
+                    Surface(modifier = Modifier.size(56.dp), shape = CircleShape, color = colors.bgMuted) {
                         Icon(
                             imageVector = Icons.Outlined.Person,
                             contentDescription = null,
-                            tint = EchoTextSecondary,
+                            tint = colors.textSecondary,
                             modifier = Modifier.padding(12.dp)
                         )
                     }
@@ -200,14 +195,14 @@ fun SettingsScreen(
                             fontSize = 20.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = OutfitFontFamily,
-                            color = EchoTextPrimary
+                            color = colors.textPrimary
                         )
                         if (uiState.age != null) {
                             Text(
                                 text = "${uiState.age}세",
                                 fontSize = 15.sp,
                                 fontFamily = OutfitFontFamily,
-                                color = EchoTextSecondary
+                                color = colors.textSecondary
                             )
                         }
                     }
@@ -218,13 +213,75 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
+            // ===== 화면 설정 섹션 =====
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = colors.bgCard
+            ) {
+                Column {
+                    CardHeader(
+                        icon = Icons.Outlined.Settings,
+                        title = "화면 설정"
+                    )
+                    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                        Text("글씨 크기", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                "소" to DisplaySettingsStorage.SCALE_SMALL,
+                                "중" to DisplaySettingsStorage.SCALE_MEDIUM,
+                                "대" to DisplaySettingsStorage.SCALE_LARGE
+                            ).forEach { (label, scale) ->
+                                FilterChip(
+                                    selected = displaySettings.fontScale == scale,
+                                    onClick = { displayViewModel.setFontScale(scale) },
+                                    label = { Text(label, fontSize = 14.sp, fontFamily = OutfitFontFamily) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = colors.accentGreen,
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text("색상 테마", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !displaySettings.isHighContrast,
+                                onClick = { displayViewModel.setHighContrast(false) },
+                                label = { Text("기본", fontSize = 14.sp, fontFamily = OutfitFontFamily) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = colors.accentGreen,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                            FilterChip(
+                                selected = displaySettings.isHighContrast,
+                                onClick = { displayViewModel.setHighContrast(true) },
+                                label = { Text("높은 대비", fontSize = 14.sp, fontFamily = OutfitFontFamily) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = colors.accentGreen,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
             // ===== 대화 설정 섹션 =====
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
                 shape = RoundedCornerShape(16.dp),
-                color = EchoBgCard
+                color = colors.bgCard
             ) {
                 Column {
                     CardHeader(
@@ -232,12 +289,12 @@ fun SettingsScreen(
                         title = "대화 설정"
                     )
                     PreferenceRow("대화 시간", uiState.conversationTime, enabled = enabled) { editingField = "conversationTime" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     AlarmToggleRow(
                         enabled = uiState.alarmEnabled,
                         onToggle = { viewModel.setAlarmEnabled(it) }
                     )
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
                         label = "음성 설정",
                         value = "${String.format("%.1f", uiState.voiceSpeed)}x · ${
@@ -249,7 +306,7 @@ fun SettingsScreen(
                         }",
                         enabled = enabled
                     ) { editingField = "voiceSettings" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("선호 대화 주제", uiState.preferredTopics, enabled = enabled) { editingField = "preferredTopics" }
                 }
             }
@@ -262,20 +319,20 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
                 shape = RoundedCornerShape(16.dp),
-                color = EchoBgCard
+                color = colors.bgCard
             ) {
                 Column {
                     CardHeader(
                         icon = Icons.Outlined.Person,
                         title = "내 정보",
-                        iconTint = EchoAccentBlue
+                        iconTint = colors.accentBlue
                     )
                     PreferenceRow("생년월일", uiState.birthday, enabled = enabled) { editingField = "birthday" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("거주 지역", uiState.location, enabled = enabled) { editingField = "location" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("직업", uiState.occupation, enabled = enabled) { editingField = "occupation" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("취미", uiState.hobbies, enabled = enabled) { editingField = "hobbies" }
                 }
             }
@@ -288,13 +345,13 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
                 shape = RoundedCornerShape(16.dp),
-                color = EchoBgCard
+                color = colors.bgCard
             ) {
                 Column {
                     CardHeader(
                         icon = Icons.Outlined.People,
                         title = "보호자 연결",
-                        iconTint = Color(0xFFFF9800) // Orange
+                        iconTint = Color(0xFFFF9800)
                     )
                     PreferenceRow(
                         label = "보호자 이메일",
@@ -302,7 +359,7 @@ fun SettingsScreen(
                         showWarning = uiState.guardianEmail.isNullOrBlank(),
                         enabled = enabled
                     ) { editingField = "guardianEmail" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("가족 관계", uiState.familyInfo, enabled = enabled) { editingField = "familyInfo" }
                 }
             }
@@ -315,20 +372,20 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
                 shape = RoundedCornerShape(16.dp),
-                color = EchoBgCard
+                color = colors.bgCard
             ) {
                 Column {
                     CardHeader(
                         icon = Icons.Outlined.Favorite,
                         title = "건강 정보",
-                        iconTint = EchoAccentRed
+                        iconTint = colors.accentRed
                     )
                     PreferenceRow(
                         label = "선호 수면 시간",
                         value = uiState.preferredSleepHours?.let { "${it}시간" },
                         enabled = enabled
                     ) { editingField = "sleepHours" }
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PermissionStatusRow(
                         label = "건강 데이터 권한",
                         isGranted = uiState.hasHealthConnectPermission,
@@ -347,13 +404,13 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
                 shape = RoundedCornerShape(16.dp),
-                color = EchoBgCard
+                color = colors.bgCard
             ) {
                 Column {
                     CardHeader(
                         icon = Icons.Outlined.LocationOn,
                         title = "위치 수집",
-                        iconTint = EchoAccentBlue
+                        iconTint = colors.accentBlue
                     )
                     PermissionStatusRow(
                         label = "위치 권한",
@@ -367,7 +424,7 @@ fun SettingsScreen(
                             context.startActivity(intent)
                         }
                     )
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
                         label = "수집 시작 시간",
                         value = uiState.locationCollectionStartTime,
@@ -384,13 +441,13 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
                 shape = RoundedCornerShape(16.dp),
-                color = EchoBgCard
+                color = colors.bgCard
             ) {
                 Column {
                     CardHeader(
-                        icon = Icons.Outlined.Settings,
+                        icon = Icons.Outlined.Notifications,
                         title = "앱 설정",
-                        iconTint = EchoTextSecondary
+                        iconTint = colors.textSecondary
                     )
                     // 앱 알림 설정
                     NavigationRow(
@@ -409,7 +466,7 @@ fun SettingsScreen(
                             context.startActivity(intent)
                         }
                     )
-                    HorizontalDivider(color = EchoBorderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     // 앱 권한 설정
                     NavigationRow(
                         label = "앱 권한 설정",
@@ -434,7 +491,7 @@ fun SettingsScreen(
                     .padding(horizontal = 24.dp)
                     .height(56.dp),
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = EchoAccentRed, contentColor = Color.White)
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accentRed, contentColor = Color.White)
             ) {
                 Text("로그아웃", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
             }
@@ -542,6 +599,7 @@ private fun PreferenceRow(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -550,20 +608,20 @@ private fun PreferenceRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(label, fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Text(label, fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
             Spacer(Modifier.height(3.dp))
             Text(
                 text = if (!value.isNullOrBlank()) value else "미설정",
                 fontSize = 17.sp,
                 fontFamily = OutfitFontFamily,
-                color = if (!value.isNullOrBlank()) EchoTextPrimary else EchoTextTertiary
+                color = if (!value.isNullOrBlank()) colors.textPrimary else colors.textTertiary
             )
         }
         if (showWarning) {
-            Icon(Icons.Outlined.Warning, contentDescription = "필수 항목 미설정", tint = EchoAccentRed, modifier = Modifier.size(18.dp))
+            Icon(Icons.Outlined.Warning, contentDescription = "필수 항목 미설정", tint = colors.accentRed, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
         }
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
     }
 }
 
@@ -575,6 +633,7 @@ private fun PermissionStatusRow(
     deniedText: String,
     onClick: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -583,13 +642,13 @@ private fun PermissionStatusRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(label, fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Text(label, fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = if (isGranted) Icons.Filled.Check else Icons.Filled.Close,
                     contentDescription = null,
-                    tint = if (isGranted) EchoAccentBlue else EchoAccentRed,
+                    tint = if (isGranted) colors.accentBlue else colors.accentRed,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(4.dp))
@@ -597,11 +656,11 @@ private fun PermissionStatusRow(
                     text = if (isGranted) grantedText else deniedText,
                     fontSize = 16.sp,
                     fontFamily = OutfitFontFamily,
-                    color = if (isGranted) EchoAccentBlue else EchoAccentRed
+                    color = if (isGranted) colors.accentBlue else colors.accentRed
                 )
             }
         }
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
     }
 }
 
@@ -610,6 +669,7 @@ private fun AlarmToggleRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -617,13 +677,13 @@ private fun AlarmToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("대화 시간 알림", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+            Text("대화 시간 알림", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
             Spacer(Modifier.height(3.dp))
             Text(
                 text = if (enabled) "매일 알림을 받습니다" else "알림 꺼짐",
                 fontSize = 17.sp,
                 fontFamily = OutfitFontFamily,
-                color = if (enabled) EchoTextPrimary else EchoTextTertiary
+                color = if (enabled) colors.textPrimary else colors.textTertiary
             )
         }
         Switch(
@@ -631,9 +691,9 @@ private fun AlarmToggleRow(
             onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = EchoAccentGreen,
+                checkedTrackColor = colors.accentGreen,
                 uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = EchoBgMuted
+                uncheckedTrackColor = colors.bgMuted
             )
         )
     }
@@ -649,31 +709,32 @@ private fun TextFieldDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     var value by remember { mutableStateOf(initialValue) }
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = EchoBgCard,
-        title = { Text(title, fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary) },
+        containerColor = colors.bgCard,
+        title = { Text(title, fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = colors.textPrimary) },
         text = {
             Column {
                 OutlinedTextField(
                     value = value,
                     onValueChange = { value = it; error = null },
-                    label = { Text(hint.ifBlank { title }, fontFamily = OutfitFontFamily, color = EchoTextTertiary, fontSize = 14.sp) },
+                    label = { Text(hint.ifBlank { title }, fontFamily = OutfitFontFamily, color = colors.textTertiary, fontSize = 14.sp) },
                     singleLine = true,
                     isError = error != null,
                     supportingText = error?.let { { Text(it, fontFamily = OutfitFontFamily, fontSize = 13.sp) } },
                     keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = EchoBgMuted,
-                        unfocusedContainerColor = EchoBgMuted,
-                        focusedBorderColor = EchoAccentGreen,
-                        unfocusedBorderColor = EchoBorderSubtle,
-                        focusedTextColor = EchoTextPrimary,
-                        unfocusedTextColor = EchoTextPrimary
+                        focusedContainerColor = colors.bgMuted,
+                        unfocusedContainerColor = colors.bgMuted,
+                        focusedBorderColor = colors.accentGreen,
+                        unfocusedBorderColor = colors.borderSubtle,
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -684,12 +745,12 @@ private fun TextFieldDialog(
                 val e = validate(value)
                 if (e != null) { error = e } else { onConfirm(value) }
             }) {
-                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+                Text("확인", fontFamily = OutfitFontFamily, color = colors.accentGreen, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+                Text("취소", fontFamily = OutfitFontFamily, color = colors.textSecondary)
             }
         }
     )
@@ -705,17 +766,18 @@ private fun VoiceSettingsDialog(
     var speed by remember { mutableStateOf(initialSpeed) }
     var tone by remember { mutableStateOf(initialTone) }
 
+    val colors = LocalEchoColors.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = EchoBgCard,
-        title = { Text("음성 설정", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary) },
+        containerColor = colors.bgCard,
+        title = { Text("음성 설정", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = colors.textPrimary) },
         text = {
             Column {
-                Text("음성 속도", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+                Text("음성 속도", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "${String.format("%.1f", speed)}x  ${when { speed < 1.0 -> "느리게"; speed > 1.0 -> "빠르게"; else -> "보통" }}",
-                    fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoAccentGreen
+                    fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.accentGreen
                 )
                 Slider(
                     value = speed.toFloat(),
@@ -723,14 +785,14 @@ private fun VoiceSettingsDialog(
                     valueRange = 0.8f..1.2f,
                     steps = 3,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = SliderDefaults.colors(thumbColor = EchoAccentGreen, activeTrackColor = EchoAccentGreen, inactiveTrackColor = EchoBgMuted)
+                    colors = SliderDefaults.colors(thumbColor = colors.accentGreen, activeTrackColor = colors.accentGreen, inactiveTrackColor = colors.bgMuted)
                 )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("느리게", fontSize = 12.sp, fontFamily = OutfitFontFamily, color = EchoTextTertiary)
-                    Text("빠르게", fontSize = 12.sp, fontFamily = OutfitFontFamily, color = EchoTextTertiary)
+                    Text("느리게", fontSize = 12.sp, fontFamily = OutfitFontFamily, color = colors.textTertiary)
+                    Text("빠르게", fontSize = 12.sp, fontFamily = OutfitFontFamily, color = colors.textTertiary)
                 }
                 Spacer(Modifier.height(20.dp))
-                Text("음성 톤", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+                Text("음성 톤", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("warm" to "따뜻하게", "calm" to "차분하게", "cheerful" to "밝게").forEach { (value, label) ->
@@ -739,7 +801,7 @@ private fun VoiceSettingsDialog(
                             onClick = { tone = value },
                             label = { Text(label, fontSize = 13.sp, fontFamily = OutfitFontFamily) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = EchoAccentGreen,
+                                selectedContainerColor = colors.accentGreen,
                                 selectedLabelColor = Color.White
                             )
                         )
@@ -749,12 +811,12 @@ private fun VoiceSettingsDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(speed, tone) }) {
-                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+                Text("확인", fontFamily = OutfitFontFamily, color = colors.accentGreen, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+                Text("취소", fontFamily = OutfitFontFamily, color = colors.textSecondary)
             }
         }
     )
@@ -769,27 +831,28 @@ private fun SleepHoursDialog(
     var value by remember { mutableStateOf(initialValue?.toString() ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
 
+    val colors = LocalEchoColors.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = EchoBgCard,
-        title = { Text("선호 수면 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary) },
+        containerColor = colors.bgCard,
+        title = { Text("선호 수면 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = colors.textPrimary) },
         text = {
             OutlinedTextField(
                 value = value,
                 onValueChange = { value = it; error = null },
-                label = { Text("시간 (1~24)", fontFamily = OutfitFontFamily, color = EchoTextTertiary, fontSize = 14.sp) },
+                label = { Text("시간 (1~24)", fontFamily = OutfitFontFamily, color = colors.textTertiary, fontSize = 14.sp) },
                 singleLine = true,
                 isError = error != null,
                 supportingText = error?.let { { Text(it, fontFamily = OutfitFontFamily, fontSize = 13.sp) } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = EchoBgMuted,
-                    unfocusedContainerColor = EchoBgMuted,
-                    focusedBorderColor = EchoAccentGreen,
-                    unfocusedBorderColor = EchoBorderSubtle,
-                    focusedTextColor = EchoTextPrimary,
-                    unfocusedTextColor = EchoTextPrimary
+                    focusedContainerColor = colors.bgMuted,
+                    unfocusedContainerColor = colors.bgMuted,
+                    focusedBorderColor = colors.accentGreen,
+                    unfocusedBorderColor = colors.borderSubtle,
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -804,12 +867,12 @@ private fun SleepHoursDialog(
                     else onConfirm(h)
                 }
             }) {
-                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+                Text("확인", fontFamily = OutfitFontFamily, color = colors.accentGreen, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+                Text("취소", fontFamily = OutfitFontFamily, color = colors.textSecondary)
             }
         }
     )
@@ -827,11 +890,12 @@ private fun DatePickerFieldDialog(
     var day by remember { mutableStateOf(initial.third) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    val colors = LocalEchoColors.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = EchoBgCard,
+        containerColor = colors.bgCard,
         title = {
-            Text("생년월일", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary)
+            Text("생년월일", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
         },
         text = {
             Column {
@@ -844,7 +908,7 @@ private fun DatePickerFieldDialog(
                 )
                 error?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, fontSize = 13.sp, fontFamily = OutfitFontFamily, color = EchoAccentRed)
+                    Text(it, fontSize = 13.sp, fontFamily = OutfitFontFamily, color = colors.accentRed)
                 }
             }
         },
@@ -856,12 +920,12 @@ private fun DatePickerFieldDialog(
                     else -> error = "올바른 날짜를 입력해주세요"
                 }
             }) {
-                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+                Text("확인", fontFamily = OutfitFontFamily, color = colors.accentGreen, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+                Text("취소", fontFamily = OutfitFontFamily, color = colors.textSecondary)
             }
         }
     )
@@ -875,23 +939,24 @@ private fun TimePickerFieldDialog(
 ) {
     var value by remember { mutableStateOf(if (!current.isNullOrBlank()) current else "09:00") }
 
+    val colors = LocalEchoColors.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = EchoBgCard,
+        containerColor = colors.bgCard,
         title = {
-            Text("대화 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary)
+            Text("대화 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
         },
         text = {
             EchoTimePickerContent(value = value, onValueChange = { value = it })
         },
         confirmButton = {
             TextButton(onClick = { onSelected(value) }) {
-                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+                Text("확인", fontFamily = OutfitFontFamily, color = colors.accentGreen, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+                Text("취소", fontFamily = OutfitFontFamily, color = colors.textSecondary)
             }
         }
     )
@@ -905,11 +970,12 @@ private fun LocationStartTimeDialog(
 ) {
     var value by remember { mutableStateOf(current.ifBlank { "06:00" }) }
 
+    val colors = LocalEchoColors.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = EchoBgCard,
+        containerColor = colors.bgCard,
         title = {
-            Text("위치 수집 시작 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = EchoTextPrimary)
+            Text("위치 수집 시작 시간", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
         },
         text = {
             Column {
@@ -917,7 +983,7 @@ private fun LocationStartTimeDialog(
                     text = "매일 이 시간에 위치 수집을 시작합니다.\n대화를 시작하면 수집이 종료됩니다.",
                     fontSize = 14.sp,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextSecondary,
+                    color = colors.textSecondary,
                     lineHeight = 20.sp
                 )
                 Spacer(Modifier.height(16.dp))
@@ -926,12 +992,12 @@ private fun LocationStartTimeDialog(
         },
         confirmButton = {
             TextButton(onClick = { onSelected(value) }) {
-                Text("확인", fontFamily = OutfitFontFamily, color = EchoAccentGreen, fontWeight = FontWeight.SemiBold)
+                Text("확인", fontFamily = OutfitFontFamily, color = colors.accentGreen, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("취소", fontFamily = OutfitFontFamily, color = EchoTextSecondary)
+                Text("취소", fontFamily = OutfitFontFamily, color = colors.textSecondary)
             }
         }
     )
@@ -941,12 +1007,13 @@ private fun LocationStartTimeDialog(
 private fun CardHeader(
     icon: ImageVector,
     title: String,
-    iconTint: Color = EchoAccentGreen
+    iconTint: Color? = null
 ) {
+    val colors = LocalEchoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(EchoBgMuted.copy(alpha = 0.5f))
+            .background(colors.bgMuted.copy(alpha = 0.5f))
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -954,7 +1021,7 @@ private fun CardHeader(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = iconTint,
+            tint = iconTint ?: colors.accentGreen,
             modifier = Modifier.size(24.dp)
         )
         Text(
@@ -962,7 +1029,7 @@ private fun CardHeader(
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = OutfitFontFamily,
-            color = EchoTextPrimary
+            color = colors.textPrimary
         )
     }
 }
@@ -973,6 +1040,7 @@ private fun NavigationRow(
     description: String,
     onClick: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -981,15 +1049,15 @@ private fun NavigationRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(label, fontSize = 16.sp, fontFamily = OutfitFontFamily, color = EchoTextPrimary)
+            Text(label, fontSize = 16.sp, fontFamily = OutfitFontFamily, color = colors.textPrimary)
             Spacer(Modifier.height(2.dp))
             Text(
                 text = description,
                 fontSize = 14.sp,
                 fontFamily = OutfitFontFamily,
-                color = EchoTextSecondary
+                color = colors.textSecondary
             )
         }
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = EchoTextTertiary)
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
     }
 }

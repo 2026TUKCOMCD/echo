@@ -50,16 +50,7 @@ import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.permission.UnifiedPermissionHandler
-import com.example.graduation_project.ui.theme.EchoAccentCoral
-import com.example.graduation_project.ui.theme.EchoAccentGreen
-import com.example.graduation_project.ui.theme.EchoAccentRed
-import com.example.graduation_project.ui.theme.EchoBgCard
-import com.example.graduation_project.ui.theme.EchoBgMuted
-import com.example.graduation_project.ui.theme.EchoBgPage
-import com.example.graduation_project.ui.theme.EchoBorderSubtle
-import com.example.graduation_project.ui.theme.EchoTextPrimary
-import com.example.graduation_project.ui.theme.EchoTextSecondary
-import com.example.graduation_project.ui.theme.EchoTextTertiary
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -112,8 +103,9 @@ private fun ConversationScreenContent(
     onEndClick: () -> Unit,
     onRetryClick: () -> Unit = {}
 ) {
+    val colors = LocalEchoColors.current
     Scaffold(
-        containerColor = EchoBgPage,
+        containerColor = colors.bgPage,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(
@@ -154,6 +146,7 @@ private fun ConversationScreenContent(
 
 @Composable
 private fun StateIconSection(state: ConversationState) {
+    val colors = LocalEchoColors.current
     val iconSize = 80.dp
 
     Box(
@@ -168,7 +161,7 @@ private fun StateIconSection(state: ConversationState) {
                 Icon(
                     imageVector = Icons.Default.MicOff,
                     contentDescription = "처리 중",
-                    tint = EchoTextTertiary,
+                    tint = colors.textTertiary,
                     modifier = Modifier.size(iconSize)
                 )
             }
@@ -176,13 +169,13 @@ private fun StateIconSection(state: ConversationState) {
                 Box(
                     modifier = Modifier
                         .size(iconSize)
-                        .border(3.dp, EchoAccentCoral, CircleShape),
+                        .border(3.dp, colors.accentCoral, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayCircle,
                         contentDescription = "재생 중",
-                        tint = EchoAccentCoral,
+                        tint = colors.accentCoral,
                         modifier = Modifier.size(48.dp)
                     )
                 }
@@ -194,23 +187,23 @@ private fun StateIconSection(state: ConversationState) {
                         .size(iconSize)
                         .then(
                             if (isListening)
-                                Modifier.border(3.dp, EchoAccentGreen, CircleShape)
+                                Modifier.border(3.dp, colors.accentGreen, CircleShape)
                             else
-                                Modifier.background(EchoAccentGreen, CircleShape)
+                                Modifier.background(colors.accentGreen, CircleShape)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
                         contentDescription = if (isListening) "듣고 있음" else "녹음 중",
-                        tint = if (isListening) EchoAccentGreen else Color.White,
+                        tint = if (isListening) colors.accentGreen else Color.White,
                         modifier = Modifier.size(48.dp)
                     )
                 }
             }
             else -> {
                 CircularProgressIndicator(
-                    color = EchoAccentGreen,
+                    color = colors.accentGreen,
                     modifier = Modifier.size(48.dp)
                 )
             }
@@ -224,6 +217,7 @@ private fun StateTextSection(
     currentAiMessage: String?,
     currentUserSpeech: String?
 ) {
+    val colors = LocalEchoColors.current
     val stateLabel = when (state) {
         is ConversationState.Idle -> "대화를 시작해보세요"
         is ConversationState.Sending -> "처리 중..."
@@ -238,7 +232,7 @@ private fun StateTextSection(
         fontSize = 22.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = OutfitFontFamily,
-        color = EchoTextPrimary,
+        color = colors.textPrimary,
         textAlign = TextAlign.Center
     )
 
@@ -256,7 +250,7 @@ private fun StateTextSection(
             text = subText,
             fontSize = 18.sp,
             fontFamily = OutfitFontFamily,
-            color = EchoTextSecondary,
+            color = colors.textSecondary,
             textAlign = TextAlign.Center,
             lineHeight = 26.sp
         )
@@ -270,6 +264,7 @@ private fun BottomActionSection(
     onStartClick: () -> Unit,
     onEndClick: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     val isActive = state !is ConversationState.Idle && state !is ConversationState.Ended
 
     if (!isActive) {
@@ -281,7 +276,7 @@ private fun BottomActionSection(
                 .height(64.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = EchoAccentGreen,
+                containerColor = colors.accentGreen,
                 contentColor = Color.White
             )
         ) {
@@ -301,10 +296,10 @@ private fun BottomActionSection(
                 .height(64.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (isSending) EchoBgMuted else EchoTextSecondary,
-                contentColor = if (isSending) EchoTextTertiary else Color.White,
-                disabledContainerColor = EchoBgMuted,
-                disabledContentColor = EchoTextTertiary
+                containerColor = if (isSending) colors.bgMuted else colors.accentRed,
+                contentColor = if (isSending) colors.textTertiary else Color.White,
+                disabledContainerColor = colors.bgMuted,
+                disabledContentColor = colors.textTertiary
             )
         ) {
             Text("대화 종료", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
@@ -317,10 +312,11 @@ private fun FarewellDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = LocalEchoColors.current
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = EchoBgCard
+            color = colors.bgCard
         ) {
             Column(
                 modifier = Modifier
@@ -333,7 +329,7 @@ private fun FarewellDialog(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextPrimary,
+                    color = colors.textPrimary,
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.height(10.dp))
@@ -341,7 +337,7 @@ private fun FarewellDialog(
                     text = "오늘 대화 내용은 일기로 저장됩니다",
                     fontSize = 15.sp,
                     fontFamily = OutfitFontFamily,
-                    color = EchoTextSecondary,
+                    color = colors.textSecondary,
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.height(28.dp))
@@ -354,9 +350,9 @@ private fun FarewellDialog(
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = EchoTextSecondary
+                            contentColor = colors.textSecondary
                         ),
-                        border = BorderStroke(1.dp, EchoBorderSubtle)
+                        border = BorderStroke(1.dp, colors.borderSubtle)
                     ) {
                         Text("이어하기", fontSize = 17.sp, fontFamily = OutfitFontFamily)
                     }
@@ -365,7 +361,7 @@ private fun FarewellDialog(
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = EchoTextSecondary,
+                            containerColor = colors.accentRed,
                             contentColor = Color.White
                         )
                     ) {
