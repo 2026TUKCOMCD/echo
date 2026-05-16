@@ -245,8 +245,7 @@ private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySett
                                 popUpTo(0) { inclusive = true }
                             }
                         }
-                    },
-                    displayViewModel = displayViewModel
+                    }
                 )
             }
 
