@@ -74,8 +74,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.graduation_project.data.model.UserPreferences
-import com.example.graduation_project.data.model.VoiceSettings
 import com.example.graduation_project.presentation.common.BirthdayInputRow
 import com.example.graduation_project.presentation.common.EchoTimePickerContent
 import com.example.graduation_project.presentation.common.buildBirthdayString
@@ -87,32 +85,6 @@ import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
 private val EMAIL_REGEX = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
-
-private fun buildPreferences(
-    state: SettingsUiState,
-    birthday: String? = state.birthday,
-    familyInfo: String? = state.familyInfo,
-    guardianEmail: String? = state.guardianEmail,
-    location: String? = state.location,
-    occupation: String? = state.occupation,
-    hobbies: String? = state.hobbies,
-    preferredTopics: String? = state.preferredTopics,
-    voiceSpeed: Double = state.voiceSpeed,
-    voiceTone: String = state.voiceTone,
-    conversationTime: String? = state.conversationTime,
-    preferredSleepHours: Int? = state.preferredSleepHours
-): UserPreferences = UserPreferences(
-    birthday = birthday,
-    familyInfo = familyInfo,
-    guardianEmail = guardianEmail,
-    location = location,
-    occupation = occupation,
-    hobbies = hobbies,
-    preferredTopics = preferredTopics,
-    voiceSettings = VoiceSettings(voiceSpeed = voiceSpeed, voiceTone = voiceTone),
-    conversationTime = conversationTime,
-    preferredSleepHours = preferredSleepHours
-)
 
 @Composable
 fun SettingsScreen(
@@ -494,23 +466,20 @@ fun SettingsScreen(
     }
 
     // 다이얼로그
-    val save: (UserPreferences) -> Unit = {
-        viewModel.savePreferences(it)
-        editingField = null
-    }
+    fun dismiss() { editingField = null }
 
     when (editingField) {
         "birthday" -> DatePickerFieldDialog(
             current = uiState.birthday,
-            onSelected = { save(buildPreferences(uiState, birthday = it)) },
-            onDismiss = { editingField = null }
+            onSelected = { viewModel.updateBirthday(it.ifBlank { null }); dismiss() },
+            onDismiss = { dismiss() }
         )
         "familyInfo" -> TextFieldDialog(
             title = "가족 관계",
             hint = "예) 딸, 아들, 배우자",
             initialValue = uiState.familyInfo ?: "",
-            onConfirm = { save(buildPreferences(uiState, familyInfo = it.ifBlank { null })) },
-            onDismiss = { editingField = null }
+            onConfirm = { viewModel.updateFamilyInfo(it.ifBlank { null }); dismiss() },
+            onDismiss = { dismiss() }
         )
         "guardianEmail" -> TextFieldDialog(
             title = "보호자 이메일",
@@ -524,60 +493,57 @@ fun SettingsScreen(
                     else -> null
                 }
             },
-            onConfirm = { save(buildPreferences(uiState, guardianEmail = it.ifBlank { null })) },
-            onDismiss = { editingField = null }
+            onConfirm = { viewModel.updateGuardianEmail(it.ifBlank { null }); dismiss() },
+            onDismiss = { dismiss() }
         )
         "location" -> TextFieldDialog(
             title = "거주 지역",
             hint = "예) 서울 강남구",
             initialValue = uiState.location ?: "",
-            onConfirm = { save(buildPreferences(uiState, location = it.ifBlank { null })) },
-            onDismiss = { editingField = null }
+            onConfirm = { viewModel.updateLocation(it.ifBlank { null }); dismiss() },
+            onDismiss = { dismiss() }
         )
         "occupation" -> TextFieldDialog(
             title = "직업",
             hint = "예) 전직 교사, 은행원",
             initialValue = uiState.occupation ?: "",
-            onConfirm = { save(buildPreferences(uiState, occupation = it.ifBlank { null })) },
-            onDismiss = { editingField = null }
+            onConfirm = { viewModel.updateOccupation(it.ifBlank { null }); dismiss() },
+            onDismiss = { dismiss() }
         )
         "hobbies" -> TextFieldDialog(
             title = "취미",
             hint = "예) 정원 가꾸기, 독서",
             initialValue = uiState.hobbies ?: "",
-            onConfirm = { save(buildPreferences(uiState, hobbies = it.ifBlank { null })) },
-            onDismiss = { editingField = null }
+            onConfirm = { viewModel.updateHobbies(it.ifBlank { null }); dismiss() },
+            onDismiss = { dismiss() }
         )
         "preferredTopics" -> TextFieldDialog(
             title = "선호 대화 주제",
             hint = "예) 옛날 이야기, 건강",
             initialValue = uiState.preferredTopics ?: "",
-            onConfirm = { save(buildPreferences(uiState, preferredTopics = it.ifBlank { null })) },
-            onDismiss = { editingField = null }
+            onConfirm = { viewModel.updatePreferredTopics(it.ifBlank { null }); dismiss() },
+            onDismiss = { dismiss() }
         )
         "voiceSettings" -> VoiceSettingsDialog(
             initialSpeed = uiState.voiceSpeed,
             initialTone = uiState.voiceTone,
-            onConfirm = { speed, tone -> save(buildPreferences(uiState, voiceSpeed = speed, voiceTone = tone)) },
-            onDismiss = { editingField = null }
+            onConfirm = { speed, tone -> viewModel.updateVoiceSettings(speed, tone); dismiss() },
+            onDismiss = { dismiss() }
         )
         "conversationTime" -> TimePickerFieldDialog(
             current = uiState.conversationTime,
-            onSelected = { save(buildPreferences(uiState, conversationTime = it)) },
-            onDismiss = { editingField = null }
+            onSelected = { viewModel.updateConversationTime(it); dismiss() },
+            onDismiss = { dismiss() }
         )
         "sleepHours" -> SleepHoursDialog(
             initialValue = uiState.preferredSleepHours,
-            onConfirm = { save(buildPreferences(uiState, preferredSleepHours = it)) },
-            onDismiss = { editingField = null }
+            onConfirm = { viewModel.updatePreferredSleepHours(it); dismiss() },
+            onDismiss = { dismiss() }
         )
         "locationStartTime" -> LocationStartTimeDialog(
             current = uiState.locationCollectionStartTime,
-            onSelected = {
-                viewModel.setLocationCollectionStartTime(it)
-                editingField = null
-            },
-            onDismiss = { editingField = null }
+            onSelected = { viewModel.setLocationCollectionStartTime(it); dismiss() },
+            onDismiss = { dismiss() }
         )
     }
 }

@@ -33,6 +33,36 @@ data class OnboardingStatusResponse(
 )
 
 @Serializable
+data class BirthdayUpdateRequest(val birthday: String?)
+
+@Serializable
+data class LocationUpdateRequest(val location: String?)
+
+@Serializable
+data class FamilyInfoUpdateRequest(val familyInfo: String?)
+
+@Serializable
+data class GuardianEmailUpdateRequest(val guardianEmail: String?)
+
+@Serializable
+data class OccupationUpdateRequest(val occupation: String?)
+
+@Serializable
+data class HobbiesUpdateRequest(val hobbies: String?)
+
+@Serializable
+data class PreferredTopicsUpdateRequest(val preferredTopics: String?)
+
+@Serializable
+data class VoiceSettingsUpdateRequest(val voiceSpeed: Double?, val voiceTone: String?)
+
+@Serializable
+data class ConversationTimeUpdateRequest(val conversationTime: String?)
+
+@Serializable
+data class PreferredSleepHoursUpdateRequest(val preferredSleepHours: Int?)
+
+@Serializable
 data class VoiceSettings(
     val voiceSpeed: Double = 1.0,
     val voiceTone: String = "warm"
