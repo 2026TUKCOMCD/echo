@@ -70,7 +70,7 @@ private val stepHints = listOf(
 @Composable
 fun OnboardingScreen(
     onOnboardingComplete: () -> Unit,
-    viewModel: OnboardingViewModel = viewModel()
+    viewModel: OnboardingViewModel = viewModel(factory = OnboardingViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }

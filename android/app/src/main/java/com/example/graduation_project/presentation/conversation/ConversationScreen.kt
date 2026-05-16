@@ -70,6 +70,11 @@ fun ConversationScreen(
         }
     }
 
+    // 화면 진입 시 자동으로 대화 시작
+    LaunchedEffect(Unit) {
+        viewModel.startConversation()
+    }
+
     // Ended 상태가 되면 자동으로 뒤로 이동
     LaunchedEffect(uiState.conversationState) {
         if (uiState.conversationState is ConversationState.Ended) {

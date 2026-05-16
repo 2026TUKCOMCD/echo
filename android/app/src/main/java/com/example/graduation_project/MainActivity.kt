@@ -237,6 +237,7 @@ private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySett
             // 설정 탭
             composable(EchoTab.SETTINGS.route) {
                 SettingsScreen(
+                    displayViewModel = displayViewModel,
                     onLogout = {
                         coroutineScope.launch {
                             withContext(Dispatchers.IO) { authRepository.logout() }
