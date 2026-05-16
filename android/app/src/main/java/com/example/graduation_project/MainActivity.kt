@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val displaySettings by displayViewModel.settings.collectAsState()
             Graduation_projectTheme(displaySettings = displaySettings) {
-                AppNavHost(navigateTo = navigateTo)
+                AppNavHost(navigateTo = navigateTo, displayViewModel = displayViewModel)
             }
         }
     }
@@ -88,7 +88,7 @@ private object Routes {
 private val tabRoutes = EchoTab.entries.map { it.route }.toSet()
 
 @Composable
-private fun AppNavHost(navigateTo: String? = null) {
+private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySettingsViewModel) {
     val context = LocalContext.current
     val application = context.applicationContext as Application
     val authRepository = remember { AuthRepository(tokenStorage = TokenStorage(application)) }
@@ -244,7 +244,8 @@ private fun AppNavHost(navigateTo: String? = null) {
                                 popUpTo(0) { inclusive = true }
                             }
                         }
-                    }
+                    },
+                    displayViewModel = displayViewModel
                 )
             }
 

@@ -98,7 +98,11 @@ fun UnifiedPermissionHandler(
     // 알림 권한 요청 런처 (Android 13+)
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { _ ->
+    ) { granted ->
+        // 알림 권한 허용 시 정확한 알람 권한도 요청
+        if (granted && !PermissionChecker.hasExactAlarmPermission(context)) {
+            PermissionChecker.openExactAlarmSettings(context)
+        }
         currentStep = PermissionStep.HEALTH_CONNECT
     }
 
@@ -312,5 +316,30 @@ object PermissionChecker {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+    }
+
+    /**
+     * 정확한 알람 권한 확인 (Android 12+)
+     */
+    fun hasExactAlarmPermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true
+        }
+    }
+
+    /**
+     * 정확한 알람 권한 설정 화면 열기 (Android 12+)
+     */
+    fun openExactAlarmSettings(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
     }
 }

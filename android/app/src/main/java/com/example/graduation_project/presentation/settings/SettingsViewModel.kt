@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationCollectionStorage
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.data.model.UserPreferences
@@ -38,10 +39,12 @@ data class SettingsUiState(
     val alarmEnabled: Boolean = false,
     // 위치 수집 설정
     val locationCollectionStartTime: String = "06:00",
+    val isLocationCollectionRunning: Boolean = false,
     // 권한 상태
     val hasLocationPermission: Boolean = false,
     val hasBackgroundLocationPermission: Boolean = false,
     val hasHealthConnectPermission: Boolean = false,
+    val hasNotificationPermission: Boolean = true,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
@@ -76,14 +79,17 @@ class SettingsViewModel(
         val hasLocation = PermissionChecker.hasForegroundLocationPermission(context)
         val hasBackgroundLocation = PermissionChecker.hasBackgroundLocationPermission(context)
         val hasHealthConnect = PermissionChecker.isHealthConnectAvailable(context)
+        val hasNotification = PermissionChecker.hasNotificationPermission(context)
 
         _uiState.update {
             it.copy(
                 alarmEnabled = alarmEnabled,
                 locationCollectionStartTime = locationStartTime,
+                isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = hasLocation,
                 hasBackgroundLocationPermission = hasBackgroundLocation,
-                hasHealthConnectPermission = hasHealthConnect
+                hasHealthConnectPermission = hasHealthConnect,
+                hasNotificationPermission = hasNotification
             )
         }
 
@@ -106,15 +112,31 @@ class SettingsViewModel(
 
         _uiState.update {
             it.copy(
+                isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
                 hasBackgroundLocationPermission = currentBackgroundPermission,
-                hasHealthConnectPermission = PermissionChecker.isHealthConnectAvailable(context)
+                hasHealthConnectPermission = PermissionChecker.isHealthConnectAvailable(context),
+                hasNotificationPermission = PermissionChecker.hasNotificationPermission(context)
             )
         }
 
         // 위치 권한이 새로 허용되었으면 서비스 시작
         if (!previousBackgroundPermission && currentBackgroundPermission) {
             LocationScheduler.enableLocationCollection(context)
+        }
+    }
+
+    /**
+     * 위치 수집 시작/중지 토글
+     */
+    fun toggleLocationCollection() {
+        val context = getApplication<Application>()
+        if (LocationCollectionService.isRunning) {
+            LocationCollectionService.stop(context)
+            _uiState.update { it.copy(isLocationCollectionRunning = false, savedMessage = "위치 수집이 중지되었습니다") }
+        } else {
+            LocationCollectionService.start(context)
+            _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "위치 수집이 시작되었습니다") }
         }
     }
 
