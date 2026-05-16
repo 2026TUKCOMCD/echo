@@ -2,7 +2,11 @@ package com.example.graduation_project.presentation.history
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.presentation.model.ConversationSummary
@@ -79,6 +83,16 @@ class ConversationHistoryViewModel(application: Application) : AndroidViewModel(
     private fun formatTime(timestamp: Long): String {
         val sdf = SimpleDateFormat("a h:mm", Locale.KOREAN)
         return sdf.format(Date(timestamp))
+    }
+
+    companion object {
+        val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+                val application = checkNotNull(extras[APPLICATION_KEY])
+                return ConversationHistoryViewModel(application) as T
+            }
+        }
     }
 
     private fun mockSummaries(): List<ConversationSummary> {
