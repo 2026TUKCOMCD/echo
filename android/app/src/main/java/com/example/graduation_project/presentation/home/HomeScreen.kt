@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -23,7 +24,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.graduation_project.presentation.conversation.components.AiCharacterImage
+import com.example.graduation_project.R
+import com.example.graduation_project.presentation.conversation.components.AnimatedWebpImage
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import com.example.graduation_project.ui.theme.OutfitFontFamily
@@ -57,7 +59,10 @@ private fun HomeScreenContent(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        AiCharacterImage(size = 180.dp)
+        AnimatedWebpImage(
+            resId = R.raw.echo_05_greeting,
+            modifier = Modifier.size(180.dp)
+        )
 
         Spacer(Modifier.height(32.dp))
 
