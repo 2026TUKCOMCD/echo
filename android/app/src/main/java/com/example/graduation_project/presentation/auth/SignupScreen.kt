@@ -40,7 +40,7 @@ import com.example.graduation_project.ui.theme.OutfitFontFamily
 @Composable
 fun SignupScreen(
     onSignupSuccess: () -> Unit,
-    viewModel: SignupViewModel = viewModel()
+    viewModel: SignupViewModel = viewModel(factory = SignupViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
