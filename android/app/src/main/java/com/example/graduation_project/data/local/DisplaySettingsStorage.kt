@@ -18,8 +18,8 @@ class DisplaySettingsStorage(context: Context) {
         private const val PREF_NAME = "display_settings"
         private const val KEY_FONT_SCALE = "font_scale"
         private const val KEY_HIGH_CONTRAST = "high_contrast"
-        const val SCALE_SMALL = 0.85f
+        const val SCALE_SMALL = 0.8f
         const val SCALE_MEDIUM = 1.0f
-        const val SCALE_LARGE = 1.15f
+        const val SCALE_LARGE = 1.3f
     }
 }

@@ -34,18 +34,18 @@ val defaultEchoColors = EchoColorScheme(
 )
 
 val highContrastEchoColors = EchoColorScheme(
-    bgPage        = Color(0xFFFFFFFF),
+    bgPage        = Color(0xFFFFFBF5),  // 따뜻한 오프화이트 — 노안 눈부심 감소
     bgCard        = Color(0xFFFFFFFF),
-    bgMuted       = Color(0xFFF0F0EE),
-    accentGreen   = Color(0xFF2E6B47),
-    accentBlue    = Color(0xFF1A6FBF),
-    accentCoral   = Color(0xFFB86A4A),
-    accentRed     = Color(0xFFB05030),
-    textPrimary   = Color(0xFF0A0908),
-    textSecondary = Color(0xFF3D3C3A),
-    textTertiary  = Color(0xFF5A5957),
-    borderSubtle  = Color(0xFFBBBAB6),
-    tabInactive   = Color(0xFF6B6A68),
+    bgMuted       = Color(0xFFEEECE8),
+    accentGreen   = Color(0xFF1A5C38),  // 채도 유지하며 어둡게 — 버튼 가독성
+    accentBlue    = Color(0xFF0D4D9C),
+    accentCoral   = Color(0xFFA84A25),  // 따뜻한 강조색 명확히
+    accentRed     = Color(0xFF962010),
+    textPrimary   = Color(0xFF0F0E0D),  // 준검정 — 할레이션 없이 선명
+    textSecondary = Color(0xFF2A2928),  // 확실히 읽힘
+    textTertiary  = Color(0xFF4A4947),  // 노안 인식 한계 수준 확보
+    borderSubtle  = Color(0xFF888683),  // 칸 구분선 명확히
+    tabInactive   = Color(0xFF555453),  // 비활성 탭 인식
 )
 
 val LocalEchoColors = compositionLocalOf { defaultEchoColors }
