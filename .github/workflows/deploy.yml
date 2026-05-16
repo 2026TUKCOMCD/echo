@@ -2,7 +2,7 @@ name: CI/CD - Build and Deploy to EC2
 
 on:
   push:
-    branches: [develop]
+    branches: [chore/temp-deploy-test]
     paths: ['server/**']
 
 env:
