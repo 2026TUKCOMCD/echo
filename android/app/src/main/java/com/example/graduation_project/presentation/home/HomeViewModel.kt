@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.location.LocationManager
+import com.example.graduation_project.data.location.LocationStorageManager
 import com.example.graduation_project.data.model.WeatherResponse
 import com.example.graduation_project.data.repository.UserRepository
 import com.example.graduation_project.data.repository.WeatherRepository
@@ -31,7 +33,10 @@ class HomeViewModel(
     application: Application,
     private val userRepository: UserRepository = UserRepository(),
     private val weatherRepository: WeatherRepository = WeatherRepository(),
-    private val locationManager: LocationManager = LocationManager(application)
+    private val locationManager: LocationManager = LocationManager(application),
+    private val locationStorageManager: LocationStorageManager = LocationStorageManager(
+        AppDatabase.getInstance(application).locationPointDao()
+    )
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(HomeUiState(date = formatToday()))
@@ -60,13 +65,18 @@ class HomeViewModel(
     }
 
     private suspend fun loadWeather() {
-        val location = locationManager.getCurrentLocation() ?: return
-        when (val result = weatherRepository.getWeather(location.latitude, location.longitude)) {
-            is ApiResult.Success -> {
-                _uiState.value = _uiState.value.copy(weather = result.data)
-            }
+        val (lat, lon) = resolveCoordinates() ?: return
+        when (val result = weatherRepository.getWeather(lat, lon)) {
+            is ApiResult.Success -> _uiState.value = _uiState.value.copy(weather = result.data)
             is ApiResult.Error -> Unit
         }
+    }
+
+    private suspend fun resolveCoordinates(): Pair<Double, Double>? {
+        locationStorageManager.getTodayLocations().lastOrNull()?.let {
+            return it.latitude to it.longitude
+        }
+        return locationManager.getCurrentLocation()?.let { it.latitude to it.longitude }
     }
 
     companion object {

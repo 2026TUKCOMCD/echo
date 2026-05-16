@@ -26,6 +26,7 @@ public class WeatherController {
         if (weather == null) {
             return ResponseEntity.noContent().build();
         }
+        weatherClient.cacheUserWeather(userId, weather);
         return ResponseEntity.ok(weather);
     }
 }
