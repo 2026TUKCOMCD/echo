@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.R
+import kotlinx.coroutines.delay
 import com.example.graduation_project.presentation.conversation.components.AnimatedWebpImage
 import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
@@ -66,9 +67,10 @@ fun ConversationScreen(
         viewModel.startConversation()
     }
 
-    // Ended 상태가 되면 자동으로 뒤로 이동
+    // Ended 상태가 되면 웨이브 애니메이션 + 작별 메시지를 보여준 후 뒤로 이동
     LaunchedEffect(uiState.conversationState) {
         if (uiState.conversationState is ConversationState.Ended) {
+            delay(2000L)
             onBack()
         }
     }
@@ -173,7 +175,7 @@ private fun StateTextSection(
         is ConversationState.Playing -> "에코가 말하고 있어요"
         is ConversationState.Recording -> "말씀해주세요"
         is ConversationState.Listening -> "듣고 있어요"
-        else -> ""
+        is ConversationState.Ended -> "오늘 대화가 저장되었으니, 내일 또 봐요"
     }
 
     Text(
@@ -214,44 +216,47 @@ private fun BottomActionSection(
     onEndClick: () -> Unit
 ) {
     val colors = LocalEchoColors.current
-    val isActive = state !is ConversationState.Idle && state !is ConversationState.Ended
 
-    if (!isActive) {
-        Button(
-            onClick = onStartClick,
-            enabled = !isLoading,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = colors.accentGreen,
-                contentColor = Color.White
-            )
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
-            } else {
-                Text("대화 시작", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
+    when {
+        state is ConversationState.Ended -> { /* 종료 후 대기 중 — 버튼 없음 */ }
+        state is ConversationState.Idle -> {
+            Button(
+                onClick = onStartClick,
+                enabled = !isLoading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accentGreen,
+                    contentColor = Color.White
+                )
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
+                } else {
+                    Text("대화 시작", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
+                }
             }
         }
-    } else {
-        val isSending = state is ConversationState.Sending
-        Button(
-            onClick = onEndClick,
-            enabled = !isSending,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (isSending) colors.bgMuted else colors.accentRed,
-                contentColor = if (isSending) colors.textTertiary else Color.White,
-                disabledContainerColor = colors.bgMuted,
-                disabledContentColor = colors.textTertiary
-            )
-        ) {
-            Text("대화 종료", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
+        else -> {
+            val isSending = state is ConversationState.Sending
+            Button(
+                onClick = onEndClick,
+                enabled = !isSending,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSending) colors.bgMuted else colors.accentRed,
+                    contentColor = if (isSending) colors.textTertiary else Color.White,
+                    disabledContainerColor = colors.bgMuted,
+                    disabledContentColor = colors.textTertiary
+                )
+            ) {
+                Text("대화 종료", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
+            }
         }
     }
 }

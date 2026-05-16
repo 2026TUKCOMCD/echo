@@ -35,8 +35,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.graduation_project.R
 import com.example.graduation_project.data.model.WeatherResponse
-import com.example.graduation_project.presentation.conversation.components.AiCharacterImage
+import com.example.graduation_project.presentation.conversation.components.AnimatedWebpImage
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import com.example.graduation_project.ui.theme.OutfitFontFamily
@@ -117,7 +118,10 @@ private fun HomeScreenContent(
 
         Spacer(Modifier.height(16.dp))
 
-        AiCharacterImage(size = 180.dp)
+        AnimatedWebpImage(
+            resId = R.raw.echo_05_greeting,
+            modifier = Modifier.size(180.dp)
+        )
 
         Spacer(Modifier.height(32.dp))
 
