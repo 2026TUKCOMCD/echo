@@ -50,6 +50,7 @@ class LocationCollectionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         Log.d(TAG, "LocationCollectionService 생성")
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -93,6 +94,7 @@ class LocationCollectionService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
         Log.d(TAG, "LocationCollectionService 종료")
         collectionJob?.cancel()
     }
@@ -144,7 +146,7 @@ class LocationCollectionService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("에코")
+            .setContentTitle("📍 에코")
             .setContentText("오늘 방문 장소를 기록하고 있어요")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
@@ -253,8 +255,8 @@ class LocationCollectionService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, GREETING_CHANNEL_ID)
-            .setContentTitle("좋은 아침이에요! ☀️")
-            .setContentText("오늘 하루도 방문 장소를 기록할게요")
+            .setContentTitle("☀️ 오늘도 행복한 하루 되세요!")
+            .setContentText("조금 이따 대화 시간에 만나요!")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
@@ -278,6 +280,11 @@ class LocationCollectionService : Service() {
         private const val GREETING_TIMEOUT_MS = 10 * 60 * 1000L     // 10분
 
         const val ACTION_STOP = "com.example.graduation_project.STOP_LOCATION_SERVICE"
+
+        // 서비스 실행 상태
+        @Volatile
+        var isRunning: Boolean = false
+            private set
 
         /**
          * 서비스 시작

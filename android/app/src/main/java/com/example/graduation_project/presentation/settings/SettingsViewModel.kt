@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationCollectionStorage
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.data.model.UserPreferences
@@ -20,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 data class SettingsUiState(
     val userName: String = "",
@@ -38,10 +41,12 @@ data class SettingsUiState(
     val alarmEnabled: Boolean = false,
     // 위치 수집 설정
     val locationCollectionStartTime: String = "06:00",
+    val isLocationCollectionRunning: Boolean = false,
     // 권한 상태
     val hasLocationPermission: Boolean = false,
     val hasBackgroundLocationPermission: Boolean = false,
     val hasHealthConnectPermission: Boolean = false,
+    val hasNotificationPermission: Boolean = true,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
@@ -76,14 +81,17 @@ class SettingsViewModel(
         val hasLocation = PermissionChecker.hasForegroundLocationPermission(context)
         val hasBackgroundLocation = PermissionChecker.hasBackgroundLocationPermission(context)
         val hasHealthConnect = PermissionChecker.isHealthConnectAvailable(context)
+        val hasNotification = PermissionChecker.hasNotificationPermission(context)
 
         _uiState.update {
             it.copy(
                 alarmEnabled = alarmEnabled,
                 locationCollectionStartTime = locationStartTime,
+                isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = hasLocation,
                 hasBackgroundLocationPermission = hasBackgroundLocation,
-                hasHealthConnectPermission = hasHealthConnect
+                hasHealthConnectPermission = hasHealthConnect,
+                hasNotificationPermission = hasNotification
             )
         }
 
@@ -106,15 +114,31 @@ class SettingsViewModel(
 
         _uiState.update {
             it.copy(
+                isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
                 hasBackgroundLocationPermission = currentBackgroundPermission,
-                hasHealthConnectPermission = PermissionChecker.isHealthConnectAvailable(context)
+                hasHealthConnectPermission = PermissionChecker.isHealthConnectAvailable(context),
+                hasNotificationPermission = PermissionChecker.hasNotificationPermission(context)
             )
         }
 
         // 위치 권한이 새로 허용되었으면 서비스 시작
         if (!previousBackgroundPermission && currentBackgroundPermission) {
             LocationScheduler.enableLocationCollection(context)
+        }
+    }
+
+    /**
+     * 위치 수집 시작/중지 토글
+     */
+    fun toggleLocationCollection() {
+        val context = getApplication<Application>()
+        if (LocationCollectionService.isRunning) {
+            LocationCollectionService.stop(context)
+            _uiState.update { it.copy(isLocationCollectionRunning = false, savedMessage = "위치 수집이 중지되었습니다") }
+        } else {
+            LocationCollectionService.start(context)
+            _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "위치 수집이 시작되었습니다") }
         }
     }
 
@@ -129,22 +153,64 @@ class SettingsViewModel(
         val context = getApplication<Application>()
         LocationScheduler.scheduleMorningAlarm(context)
 
+        // 현재 시간이 위치 수집 범위 내이면 자동으로 서비스 시작
+        val conversationTime = _uiState.value.conversationTime
+        if (!conversationTime.isNullOrBlank() && isCurrentTimeInRange(time, conversationTime)) {
+            if (!LocationCollectionService.isRunning && _uiState.value.hasBackgroundLocationPermission) {
+                LocationCollectionService.start(context)
+                _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "위치 수집이 자동으로 시작되었습니다") }
+                return
+            }
+        }
+
         _uiState.update { it.copy(savedMessage = "위치 수집 시간이 설정되었습니다") }
     }
 
-    fun savePreferences(preferences: UserPreferences) {
+    fun updateBirthday(birthday: String?) = updateField { userRepository.updateBirthday(birthday) }
+    fun updateLocation(location: String?) = updateField { userRepository.updateLocation(location) }
+    fun updateFamilyInfo(familyInfo: String?) = updateField { userRepository.updateFamilyInfo(familyInfo) }
+    fun updateGuardianEmail(guardianEmail: String?) = updateField { userRepository.updateGuardianEmail(guardianEmail) }
+    fun updateOccupation(occupation: String?) = updateField { userRepository.updateOccupation(occupation) }
+    fun updateHobbies(hobbies: String?) = updateField { userRepository.updateHobbies(hobbies) }
+    fun updatePreferredTopics(preferredTopics: String?) = updateField { userRepository.updatePreferredTopics(preferredTopics) }
+    fun updateVoiceSettings(voiceSpeed: Double, voiceTone: String) = updateField { userRepository.updateVoiceSettings(voiceSpeed, voiceTone) }
+    fun updatePreferredSleepHours(hours: Int?) = updateField { userRepository.updatePreferredSleepHours(hours) }
+
+    fun updateConversationTime(time: String?) {
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true) }
-            when (val result = userRepository.updatePreferences(preferences)) {
+            when (val result = userRepository.updateConversationTime(time)) {
                 is ApiResult.Success -> {
-                    _uiState.update {
-                        applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다")
+                    val savedTime = result.data.conversationTime
+                    alarmStorage.saveConversationTime(savedTime)
+                    updateAlarmSchedule(savedTime)
+
+                    // 현재 시간이 위치 수집 범위 내이면 자동으로 서비스 시작
+                    val locationStartTime = _uiState.value.locationCollectionStartTime
+                    if (!savedTime.isNullOrBlank() && isCurrentTimeInRange(locationStartTime, savedTime)) {
+                        val context = getApplication<Application>()
+                        if (!LocationCollectionService.isRunning && _uiState.value.hasBackgroundLocationPermission) {
+                            LocationCollectionService.start(context)
+                            _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "저장되었습니다. 위치 수집이 자동으로 시작되었습니다") }
+                            return@launch
+                        }
                     }
 
-                    // 대화 시간 로컬 저장 및 알람 스케줄링
-                    val time = result.data.conversationTime
-                    alarmStorage.saveConversationTime(time)
-                    updateAlarmSchedule(time)
+                    _uiState.update { applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다") }
+                }
+                is ApiResult.Error -> _uiState.update {
+                    it.copy(isSaving = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
+                }
+            }
+        }
+    }
+
+    private fun updateField(apiCall: suspend () -> ApiResult<UserPreferences>) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true) }
+            when (val result = apiCall()) {
+                is ApiResult.Success -> _uiState.update {
+                    applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다")
                 }
                 is ApiResult.Error -> _uiState.update {
                     it.copy(isSaving = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
@@ -167,19 +233,7 @@ class SettingsViewModel(
 
             // 서버에도 기본 시간 저장
             viewModelScope.launch {
-                val currentState = _uiState.value
-                val preferences = UserPreferences(
-                    birthday = currentState.birthday,
-                    familyInfo = currentState.familyInfo,
-                    guardianEmail = currentState.guardianEmail,
-                    location = currentState.location,
-                    occupation = currentState.occupation,
-                    hobbies = currentState.hobbies,
-                    preferredTopics = currentState.preferredTopics,
-                    conversationTime = time,
-                    preferredSleepHours = currentState.preferredSleepHours
-                )
-                userRepository.updatePreferences(preferences)
+                userRepository.updateConversationTime(time)
             }
         }
 
@@ -187,6 +241,28 @@ class SettingsViewModel(
 
         val message = if (enabled) "알림이 설정되었습니다" else "알림이 해제되었습니다"
         _uiState.update { it.copy(savedMessage = message) }
+    }
+
+    /**
+     * 현재 시간이 startTime ~ endTime 범위 내인지 확인
+     */
+    private fun isCurrentTimeInRange(startTime: String, endTime: String): Boolean {
+        return try {
+            val formatter = DateTimeFormatter.ofPattern("HH:mm")
+            val now = LocalTime.now()
+            val start = LocalTime.parse(startTime, formatter)
+            val end = LocalTime.parse(endTime, formatter)
+
+            if (start.isBefore(end) || start == end) {
+                // 일반적인 경우: 06:00 ~ 09:00
+                now in start..end
+            } else {
+                // 자정을 넘기는 경우: 22:00 ~ 06:00
+                now >= start || now <= end
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     companion object {

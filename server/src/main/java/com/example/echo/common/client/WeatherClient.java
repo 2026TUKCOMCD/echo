@@ -58,6 +58,18 @@ public class WeatherClient {
             .expireAfterWrite(Duration.ofHours(24))
             .build();
 
+    /**
+     * 사용자별 날씨 캐시 (홈 화면 ↔ 대화 프롬프트 일관성 보장)
+     * - 키: userId
+     * - 값: WeatherData (홈 화면에서 조회한 날씨)
+     * - TTL: 30분
+     * - 최대 크기: 1000명
+     */
+    private final Cache<Long, WeatherData> userWeatherCache = Caffeine.newBuilder()
+            .maximumSize(1000)
+            .expireAfterWrite(Duration.ofMinutes(30))
+            .build();
+
     public WeatherClient(WeatherApiClient weatherApiClient,
                          @Value("${weather.api.key}") String apiKey) {
         this.weatherApiClient = weatherApiClient;
@@ -202,6 +214,16 @@ public class WeatherClient {
                     latitude, longitude, timestamp, e.getMessage());
             return null;
         }
+    }
+
+    public void cacheUserWeather(Long userId, WeatherData weather) {
+        if (userId != null && weather != null) {
+            userWeatherCache.put(userId, weather);
+        }
+    }
+
+    public WeatherData getCachedUserWeather(Long userId) {
+        return userId == null ? null : userWeatherCache.getIfPresent(userId);
     }
 
     /**
