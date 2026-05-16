@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 data class SettingsUiState(
     val userName: String = "",
@@ -151,6 +153,16 @@ class SettingsViewModel(
         val context = getApplication<Application>()
         LocationScheduler.scheduleMorningAlarm(context)
 
+        // 현재 시간이 위치 수집 범위 내이면 자동으로 서비스 시작
+        val conversationTime = _uiState.value.conversationTime
+        if (!conversationTime.isNullOrBlank() && isCurrentTimeInRange(time, conversationTime)) {
+            if (!LocationCollectionService.isRunning && _uiState.value.hasBackgroundLocationPermission) {
+                LocationCollectionService.start(context)
+                _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "위치 수집이 자동으로 시작되었습니다") }
+                return
+            }
+        }
+
         _uiState.update { it.copy(savedMessage = "위치 수집 시간이 설정되었습니다") }
     }
 
@@ -172,6 +184,18 @@ class SettingsViewModel(
                     val savedTime = result.data.conversationTime
                     alarmStorage.saveConversationTime(savedTime)
                     updateAlarmSchedule(savedTime)
+
+                    // 현재 시간이 위치 수집 범위 내이면 자동으로 서비스 시작
+                    val locationStartTime = _uiState.value.locationCollectionStartTime
+                    if (!savedTime.isNullOrBlank() && isCurrentTimeInRange(locationStartTime, savedTime)) {
+                        val context = getApplication<Application>()
+                        if (!LocationCollectionService.isRunning && _uiState.value.hasBackgroundLocationPermission) {
+                            LocationCollectionService.start(context)
+                            _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "저장되었습니다. 위치 수집이 자동으로 시작되었습니다") }
+                            return@launch
+                        }
+                    }
+
                     _uiState.update { applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다") }
                 }
                 is ApiResult.Error -> _uiState.update {
@@ -217,6 +241,28 @@ class SettingsViewModel(
 
         val message = if (enabled) "알림이 설정되었습니다" else "알림이 해제되었습니다"
         _uiState.update { it.copy(savedMessage = message) }
+    }
+
+    /**
+     * 현재 시간이 startTime ~ endTime 범위 내인지 확인
+     */
+    private fun isCurrentTimeInRange(startTime: String, endTime: String): Boolean {
+        return try {
+            val formatter = DateTimeFormatter.ofPattern("HH:mm")
+            val now = LocalTime.now()
+            val start = LocalTime.parse(startTime, formatter)
+            val end = LocalTime.parse(endTime, formatter)
+
+            if (start.isBefore(end) || start == end) {
+                // 일반적인 경우: 06:00 ~ 09:00
+                now in start..end
+            } else {
+                // 자정을 넘기는 경우: 22:00 ~ 06:00
+                now >= start || now <= end
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     companion object {
