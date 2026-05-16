@@ -69,13 +69,15 @@ public class ContextService {
         LocationData locationData = locationService.enrichLocationData(rawLocationData);
 
         // 5. 컨텍스트 생성 및 저장
+        Double lat = rawLocationData != null ? rawLocationData.getCurrentLatitude() : null;
+        Double lon = rawLocationData != null ? rawLocationData.getCurrentLongitude() : null;
         UserContext context = UserContext.builder()
                 .userId(userId)
                 .date(LocalDate.now())
                 .conversationHistory(new ArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
                 .preferences(preferences)
-                .todayWeather(weatherClient.getCurrentWeather(null, null))
+                .todayWeather(weatherClient.getCurrentWeather(lat, lon))
                 .locationData(locationData)
                 .lastAccessTime(LocalDateTime.now())
                 .isActive(true)
