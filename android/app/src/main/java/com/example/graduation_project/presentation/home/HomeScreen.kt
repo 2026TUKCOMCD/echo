@@ -1,5 +1,6 @@
 package com.example.graduation_project.presentation.home
 
+import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,11 +19,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.graduation_project.data.model.WeatherResponse
 import com.example.graduation_project.presentation.conversation.components.AiCharacterImage
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
@@ -31,13 +34,17 @@ import com.example.graduation_project.ui.theme.OutfitFontFamily
 @Composable
 fun HomeScreen(
     onStartConversation: () -> Unit,
-    viewModel: HomeViewModel = viewModel()
+    viewModel: HomeViewModel = viewModel(
+        factory = HomeViewModel.Factory(LocalContext.current.applicationContext as Application)
+    )
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
     HomeScreenContent(
         userName = uiState.userName,
         conversationTime = uiState.conversationTime,
+        date = uiState.date,
+        weather = uiState.weather,
         onStartConversation = onStartConversation
     )
 }
@@ -46,6 +53,8 @@ fun HomeScreen(
 private fun HomeScreenContent(
     userName: String,
     conversationTime: String? = null,
+    date: String = "",
+    weather: WeatherResponse? = null,
     onStartConversation: () -> Unit
 ) {
     val colors = LocalEchoColors.current
@@ -57,6 +66,27 @@ private fun HomeScreenContent(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        if (date.isNotBlank()) {
+            Text(
+                text = date,
+                fontSize = 16.sp,
+                fontFamily = OutfitFontFamily,
+                color = colors.textSecondary
+            )
+        }
+
+        if (weather != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "${weather.description} · ${weather.temperature}°C",
+                fontSize = 15.sp,
+                fontFamily = OutfitFontFamily,
+                color = colors.textTertiary
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
         AiCharacterImage(size = 180.dp)
 
         Spacer(Modifier.height(32.dp))
@@ -124,6 +154,12 @@ private fun formatConversationTime(time: String): String {
 @Composable
 private fun HomeScreenPreview() {
     Graduation_projectTheme {
-        HomeScreenContent(userName = "김순자", conversationTime = "09:00", onStartConversation = {})
+        HomeScreenContent(
+            userName = "김순자",
+            conversationTime = "09:00",
+            date = "5월 16일 금요일",
+            weather = WeatherResponse(description = "맑음", temperature = 22),
+            onStartConversation = {}
+        )
     }
 }
