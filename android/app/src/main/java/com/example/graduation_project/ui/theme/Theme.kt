@@ -43,7 +43,7 @@ fun Graduation_projectTheme(
         LocalEchoColors provides echoColors,
         LocalDensity provides Density(
             density = currentDensity.density,
-            fontScale = displaySettings.fontScale
+            fontScale = currentDensity.fontScale * displaySettings.fontScale
         )
     ) {
         MaterialTheme(
