@@ -1,6 +1,7 @@
 package com.example.echo.context.service;
 
 import com.example.echo.common.client.WeatherClient;
+import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
@@ -69,15 +70,22 @@ public class ContextService {
         LocationData locationData = locationService.enrichLocationData(rawLocationData);
 
         // 5. 컨텍스트 생성 및 저장
-        Double lat = rawLocationData != null ? rawLocationData.getCurrentLatitude() : null;
-        Double lon = rawLocationData != null ? rawLocationData.getCurrentLongitude() : null;
+        WeatherData weather = weatherClient.getCachedUserWeather(userId);
+        if (weather == null) {
+            Double lat = rawLocationData != null ? rawLocationData.getCurrentLatitude() : null;
+            Double lon = rawLocationData != null ? rawLocationData.getCurrentLongitude() : null;
+            weather = weatherClient.getCurrentWeather(lat, lon);
+            log.info("[컨텍스트] per-user 캐시 미스 → 좌표 fallback fetch (userId={})", userId);
+        } else {
+            log.info("[컨텍스트] per-user 캐시 hit (userId={})", userId);
+        }
         UserContext context = UserContext.builder()
                 .userId(userId)
                 .date(LocalDate.now())
                 .conversationHistory(new ArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
                 .preferences(preferences)
-                .todayWeather(weatherClient.getCurrentWeather(lat, lon))
+                .todayWeather(weather)
                 .locationData(locationData)
                 .lastAccessTime(LocalDateTime.now())
                 .isActive(true)
