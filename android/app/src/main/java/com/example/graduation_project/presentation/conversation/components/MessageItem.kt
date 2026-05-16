@@ -11,6 +11,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
+import com.example.graduation_project.ui.theme.EchoAccentGreen
+import com.example.graduation_project.ui.theme.EchoAiBubble
+import com.example.graduation_project.ui.theme.EchoTextPrimary
+import com.example.graduation_project.ui.theme.EchoTextSecondary
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,7 +86,7 @@ fun MessageItem(
             Text(
                 text = senderText,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (message.isFromUser) EchoAccentGreen else EchoTextSecondary,
                 modifier = Modifier.padding(
                     start = if (!message.isFromUser) Dimens.SpacingSmall else 0.dp,
                     end = if (message.isFromUser) Dimens.SpacingSmall else 0.dp,
@@ -100,23 +105,13 @@ fun MessageItem(
                             bottomEnd = if (message.isFromUser) 4.dp else Dimens.MessageBubbleRadius
                         )
                     )
-                    .background(
-                        if (message.isFromUser) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    )
+                    .background(if (message.isFromUser) EchoAccentGreen else EchoAiBubble)
                     .padding(Dimens.MessageBubblePadding)
             ) {
                 Text(
                     text = message.text,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (message.isFromUser) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                    color = if (message.isFromUser) Color.White else EchoTextPrimary
                 )
             }
 

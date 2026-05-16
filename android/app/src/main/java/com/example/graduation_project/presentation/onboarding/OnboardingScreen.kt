@@ -180,55 +180,75 @@ fun OnboardingScreen(
         }
 
         // 하단 버튼
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (uiState.currentStep > 0) {
-                OutlinedButton(
-                    onClick = viewModel::previous,
+            if (uiState.currentStep in 3..9) {
+                TextButton(
+                    onClick = viewModel::skip,
                     modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp)
+                        .fillMaxWidth()
+                        .height(44.dp)
                 ) {
                     Text(
-                        text = "이전",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "건너뛰기",
+                        fontSize = 16.sp,
                         fontFamily = OutfitFontFamily,
-                        color = EchoAccentGreen
+                        color = EchoTextTertiary
                     )
                 }
             }
-            Button(
-                onClick = viewModel::next,
-                enabled = !uiState.isLoading,
-                modifier = Modifier
-                    .weight(if (uiState.currentStep > 0) 1f else Float.MAX_VALUE)
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = EchoAccentGreen,
-                    contentColor = Color.White,
-                    disabledContainerColor = EchoAccentGreen.copy(alpha = 0.6f)
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.height(22.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
+                if (uiState.currentStep > 0) {
+                    OutlinedButton(
+                        onClick = viewModel::previous,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(
+                            text = "이전",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = OutfitFontFamily,
+                            color = EchoAccentGreen
+                        )
+                    }
+                }
+                Button(
+                    onClick = viewModel::next,
+                    enabled = !uiState.isLoading,
+                    modifier = Modifier
+                        .weight(if (uiState.currentStep > 0) 1f else Float.MAX_VALUE)
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = EchoAccentGreen,
+                        contentColor = Color.White,
+                        disabledContainerColor = EchoAccentGreen.copy(alpha = 0.6f)
                     )
-                } else {
-                    Text(
-                        text = if (uiState.currentStep < ONBOARDING_STEPS - 1) "다음" else "완료",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = OutfitFontFamily
-                    )
+                ) {
+                    if (uiState.isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.height(22.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = if (uiState.currentStep < ONBOARDING_STEPS - 1) "다음" else "완료",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = OutfitFontFamily
+                        )
+                    }
                 }
             }
         }

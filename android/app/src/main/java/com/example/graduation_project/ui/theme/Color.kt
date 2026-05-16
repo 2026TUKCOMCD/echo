@@ -15,6 +15,7 @@ val EchoTextSecondary = Color(0xFF6D6C6A)
 val EchoTextTertiary  = Color(0xFF9C9B99)
 val EchoBorderSubtle  = Color(0xFFE5E4E1)
 val EchoTabInactive   = Color(0xFFA8A7A5)
+val EchoAiBubble      = Color(0xFFE0DDD9)
 
 // Aliases for RecordingIndicator, PulseEffect backward compat
 val ListeningTeal      = EchoAccentGreen

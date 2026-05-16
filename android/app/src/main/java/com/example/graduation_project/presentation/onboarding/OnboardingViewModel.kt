@@ -81,6 +81,15 @@ class OnboardingViewModel(
         if (step > 0) _uiState.update { it.copy(currentStep = step - 1, fieldError = null) }
     }
 
+    fun skip() {
+        val step = _uiState.value.currentStep
+        if (step < ONBOARDING_STEPS - 1) {
+            _uiState.update { it.copy(currentStep = step + 1, fieldError = null) }
+        } else {
+            submit()
+        }
+    }
+
     private fun validateStep(state: OnboardingUiState): String? = when (state.currentStep) {
         0 -> if (state.birthday.isBlank()) "생년월일을 입력해주세요" else null
         1 -> if (state.location.isBlank()) "거주 지역을 입력해주세요" else null
