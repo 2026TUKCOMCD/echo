@@ -37,7 +37,7 @@ import com.example.graduation_project.ui.theme.OutfitFontFamily
 @Composable
 fun ConversationHistoryScreen(
     onConversationClick: (String) -> Unit,
-    viewModel: ConversationHistoryViewModel = viewModel()
+    viewModel: ConversationHistoryViewModel = viewModel(factory = ConversationHistoryViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
