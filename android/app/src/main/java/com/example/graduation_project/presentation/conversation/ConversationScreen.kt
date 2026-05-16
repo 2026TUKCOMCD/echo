@@ -1,9 +1,7 @@
 package com.example.graduation_project.presentation.conversation
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,17 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -36,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,13 +35,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.graduation_project.R
+import com.example.graduation_project.presentation.conversation.components.AnimatedWebpImage
+import com.example.graduation_project.presentation.model.ConversationError
 import com.example.graduation_project.presentation.model.ConversationState
 import com.example.graduation_project.presentation.model.ConversationUiState
-import com.example.graduation_project.presentation.model.MessageUiModel
-import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.permission.UnifiedPermissionHandler
-import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
+import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
 @Composable
@@ -123,7 +114,11 @@ private fun ConversationScreenContent(
             Spacer(Modifier.weight(1f))
 
             // 캐릭터 이미지 영역
-            StateIconSection(state = uiState.conversationState)
+            CharacterWebpSection(
+                state = uiState.conversationState,
+                error = uiState.currentError,
+                modifier = Modifier.size(240.dp)
+            )
 
             Spacer(Modifier.height(32.dp))
 
@@ -150,70 +145,19 @@ private fun ConversationScreenContent(
 }
 
 @Composable
-private fun StateIconSection(state: ConversationState) {
-    val colors = LocalEchoColors.current
-    val iconSize = 80.dp
-
-    Box(
-        modifier = Modifier.size(iconSize),
-        contentAlignment = Alignment.Center
-    ) {
-        when (state) {
-            is ConversationState.Idle -> {
-                // 아이콘 없음 — 홈 화면에서 캐릭터를 보여주므로 여기서는 비워둠
-            }
-            is ConversationState.Sending -> {
-                Icon(
-                    imageVector = Icons.Default.MicOff,
-                    contentDescription = "처리 중",
-                    tint = colors.textTertiary,
-                    modifier = Modifier.size(iconSize)
-                )
-            }
-            is ConversationState.Playing -> {
-                Box(
-                    modifier = Modifier
-                        .size(iconSize)
-                        .border(3.dp, colors.accentCoral, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayCircle,
-                        contentDescription = "재생 중",
-                        tint = colors.accentCoral,
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
-            }
-            is ConversationState.Recording, is ConversationState.Listening -> {
-                val isListening = state is ConversationState.Listening
-                Box(
-                    modifier = Modifier
-                        .size(iconSize)
-                        .then(
-                            if (isListening)
-                                Modifier.border(3.dp, colors.accentGreen, CircleShape)
-                            else
-                                Modifier.background(colors.accentGreen, CircleShape)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = if (isListening) "듣고 있음" else "녹음 중",
-                        tint = if (isListening) colors.accentGreen else Color.White,
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
-            }
-            else -> {
-                CircularProgressIndicator(
-                    color = colors.accentGreen,
-                    modifier = Modifier.size(48.dp)
-                )
-            }
-        }
+private fun CharacterWebpSection(
+    state: ConversationState,
+    error: ConversationError?,
+    modifier: Modifier = Modifier
+) {
+    val resId = when {
+        error != null                      -> R.raw.echo_02_empathy
+        state is ConversationState.Playing -> R.raw.echo_new
+        state is ConversationState.Idle ||
+        state is ConversationState.Ended   -> R.raw.echo_05_greeting
+        else                               -> R.raw.echo_02_empathy
     }
+    AnimatedWebpImage(resId = resId, modifier = modifier)
 }
 
 @Composable
