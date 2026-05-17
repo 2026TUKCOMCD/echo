@@ -194,7 +194,7 @@ private fun HomeScreenPreview() {
     Graduation_projectTheme {
         HomeScreenContent(
             userName = "김순자",
-            conversationTime = "09:00",
+            conversationTime = "21:00",
             date = "5월 16일 금요일",
             weather = WeatherResponse(description = "맑음", temperature = 22),
             onStartConversation = {}

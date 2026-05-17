@@ -16,6 +16,7 @@ import com.example.graduation_project.MainActivity
 import com.example.graduation_project.R
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationScheduler
+import java.util.Calendar
 
 /**
  * 대화 알람 수신 및 알림 표시
@@ -109,7 +110,10 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
             bigText = "에코와 함께 오늘 하루를 이야기해 보세요!"
         }
 
-        // 알림 생성 (대화 시작까지 유지)
+        // 자정까지 남은 시간 계산 (대화 안 하면 자정에 자동 취소)
+        val timeoutMs = calculateMillisUntilMidnight()
+
+        // 알림 생성 (대화 시작 또는 자정에 자동 취소)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("에코와 대화할 시간이에요")
@@ -120,10 +124,26 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
             .setAutoCancel(false)  // 클릭해도 알림 유지 (대화 시작 시 취소)
             .setOngoing(true)      // 스와이프로 삭제 불가
             .setContentIntent(pendingIntent)
+            .setTimeoutAfter(timeoutMs)  // 자정에 자동 취소
             .build()
 
         notificationManager.notify(NOTIFICATION_ID, notification)
-        Log.d(TAG, "대화 알림 표시 완료 (위치 권한: $hasLocationPermission)")
+        Log.d(TAG, "대화 알림 표시 완료 (위치 권한: $hasLocationPermission, 자정까지: ${timeoutMs / 1000 / 60}분)")
+    }
+
+    /**
+     * 자정까지 남은 시간(밀리초) 계산
+     */
+    private fun calculateMillisUntilMidnight(): Long {
+        val now = Calendar.getInstance()
+        val midnight = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return midnight.timeInMillis - now.timeInMillis
     }
 
     companion object {

@@ -266,7 +266,7 @@ class SettingsViewModel(
     }
 
     companion object {
-        private const val DEFAULT_CONVERSATION_TIME = "09:00"
+        private const val DEFAULT_CONVERSATION_TIME = "21:00"
 
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")

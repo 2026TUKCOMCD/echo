@@ -176,7 +176,8 @@ class LocationCollectionService : Service() {
 
     private suspend fun collectLocation() {
         if (!hasLocationPermission()) {
-            Log.w(TAG, "위치 권한 없음 - 수집 건너뜀")
+            Log.w(TAG, "위치 권한 없음 - 서비스 중지")
+            stopSelf()  // 권한 없으면 서비스 중지 (리소스 낭비 방지)
             return
         }
 
@@ -201,10 +202,16 @@ class LocationCollectionService : Service() {
     }
 
     private fun hasLocationPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
+        val hasFineLocation = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasFineLocation) {
+            Log.d(TAG, "정밀 위치 권한(FINE) 없음 - 50m 체류 감지에 필수")
+        }
+
+        return hasFineLocation
     }
 
     /**

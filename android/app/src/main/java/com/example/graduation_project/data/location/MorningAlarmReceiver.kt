@@ -19,8 +19,8 @@ class MorningAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "아침 6시 알람 수신 - 위치 수집 서비스 시작")
 
-        // 위치 권한 체크
-        val hasLocationPermission = ContextCompat.checkSelfPermission(
+        // 위치 권한 체크 (정확한 체류 감지를 위해 FINE 권한 필수)
+        val hasFineLocation = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
@@ -30,8 +30,15 @@ class MorningAlarmReceiver : BroadcastReceiver() {
             Manifest.permission.ACCESS_BACKGROUND_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (!hasLocationPermission || !hasBackgroundPermission) {
-            Log.w(TAG, "위치 권한 없음 - 서비스 시작 건너뜀")
+        Log.d(TAG, "권한 상태: FINE=$hasFineLocation, BACKGROUND=$hasBackgroundPermission")
+
+        if (!hasFineLocation) {
+            Log.w(TAG, "정밀 위치 권한(FINE) 없음 - 서비스 시작 건너뜀 (50m 체류 감지에 필수)")
+            return
+        }
+
+        if (!hasBackgroundPermission) {
+            Log.w(TAG, "백그라운드 위치 권한 없음 - 서비스 시작 건너뜀")
             return
         }
 
