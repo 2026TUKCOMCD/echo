@@ -108,7 +108,11 @@ class SettingsViewModel(
             _uiState.update { it.copy(hasHealthConnectPermission = hasHealthConnectPermission) }
 
             when (val result = userRepository.getPreferences()) {
-                is ApiResult.Success -> _uiState.update { applyPrefs(it, result.data).copy(isLoading = false) }
+                is ApiResult.Success -> {
+                    _uiState.update { applyPrefs(it, result.data).copy(isLoading = false) }
+                    // 대화 시간 로드 후 위치 수집 상태 확인
+                    checkAndUpdateLocationCollectionStatus()
+                }
                 is ApiResult.Error -> _uiState.update { it.copy(isLoading = false) }
             }
         }
@@ -142,6 +146,9 @@ class SettingsViewModel(
         if (!previousBackgroundPermission && currentBackgroundPermission) {
             LocationScheduler.enableLocationCollection(context)
         }
+
+        // 위치 수집 상태 확인 (범위 밖이면 자동 중지)
+        checkAndUpdateLocationCollectionStatus()
     }
 
     /**
@@ -160,7 +167,7 @@ class SettingsViewModel(
     }
 
     /**
-     * 위치 수집 시작/중지 토글
+     * 위치 수집 시작/중지 토글 (수동 제어 - 시간 범위 무관)
      */
     fun toggleLocationCollection() {
         val context = getApplication<Application>()
@@ -283,6 +290,30 @@ class SettingsViewModel(
 
         val message = if (enabled) "아침 인사 알림이 설정되었습니다" else "아침 인사 알림이 해제되었습니다"
         _uiState.update { it.copy(savedMessage = message) }
+    }
+
+    /**
+     * 위치 수집 상태 확인 및 자동 조정
+     * - 현재 시간이 수집 범위(시작 시간 ~ 대화 시간) 밖이면 서비스 자동 중지
+     * - 범위 내이고 권한이 있으면 서비스 자동 시작
+     */
+    private fun checkAndUpdateLocationCollectionStatus() {
+        val context = getApplication<Application>()
+        val startTime = _uiState.value.locationCollectionStartTime
+        val conversationTime = _uiState.value.conversationTime
+
+        // 대화 시간이 설정되지 않은 경우 체크 불가
+        if (conversationTime.isNullOrBlank()) {
+            return
+        }
+
+        val isInRange = isCurrentTimeInRange(startTime, conversationTime)
+
+        if (LocationCollectionService.isRunning && !isInRange) {
+            // 범위 밖인데 서비스가 실행 중이면 중지
+            LocationCollectionService.stop(context)
+            _uiState.update { it.copy(isLocationCollectionRunning = false) }
+        }
     }
 
     /**

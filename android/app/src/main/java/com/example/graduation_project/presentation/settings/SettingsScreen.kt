@@ -261,6 +261,11 @@ fun SettingsScreen(
                         icon = Icons.AutoMirrored.Outlined.Chat,
                         title = "대화 설정"
                     )
+                    // 마이크 권한 상태 표시 (필수 권한) - 최상단
+                    MicrophonePermissionStatusRow(
+                        isGranted = PermissionChecker.hasMicrophonePermission(context)
+                    )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("대화 시간", uiState.conversationTime, enabled = enabled) { editingField = "conversationTime" }
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
@@ -276,17 +281,6 @@ fun SettingsScreen(
                     ) { editingField = "voiceSettings" }
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("선호 대화 주제", uiState.preferredTopics, enabled = enabled) { editingField = "preferredTopics" }
-                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    // 마이크 권한 상태 표시 (필수 권한)
-                    MicrophonePermissionRow(
-                        isGranted = PermissionChecker.hasMicrophonePermission(context),
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.fromParts("package", context.packageName, null)
-                            }
-                            context.startActivity(intent)
-                        }
-                    )
                 }
             }
 
@@ -359,18 +353,19 @@ fun SettingsScreen(
                         title = "건강 정보",
                         iconTint = colors.accentRed
                     )
-                    PreferenceRow(
-                        label = "선호 수면 시간",
-                        value = uiState.preferredSleepHours?.let { "${it}시간" },
-                        enabled = enabled
-                    ) { editingField = "sleepHours" }
-                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    // 건강 데이터 권한 - 최상단
                     PermissionStatusRow(
                         label = "건강 데이터 권한",
                         isGranted = uiState.hasHealthConnectPermission,
                         grantedText = "허용됨",
                         deniedText = "허용 필요"
                     )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PreferenceRow(
+                        label = "선호 수면 시간",
+                        value = uiState.preferredSleepHours?.let { "${it}시간" },
+                        enabled = enabled
+                    ) { editingField = "sleepHours" }
                 }
             }
 
@@ -428,24 +423,6 @@ fun SettingsScreen(
                         title = "알람 및 권한 설정",
                         iconTint = colors.textSecondary
                     )
-                    // 대화 시간 알림 토글
-                    NotificationToggleRow(
-                        label = "대화 시간 알림",
-                        description = "설정한 대화 시간에 알림",
-                        enabled = uiState.alarmEnabled,
-                        hasNotificationPermission = uiState.hasNotificationPermission,
-                        onToggle = { viewModel.setAlarmEnabled(it) }
-                    )
-                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    // 아침 인사 알림 토글
-                    NotificationToggleRow(
-                        label = "아침 인사 알림",
-                        description = "위치 수집 시작 시 알림",
-                        enabled = uiState.morningGreetingEnabled,
-                        hasNotificationPermission = uiState.hasNotificationPermission,
-                        onToggle = { viewModel.setMorningGreetingEnabled(it) }
-                    )
-                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     // 알림 권한 상태 및 설정
                     PermissionStatusRow(
                         label = "알림 권한",
@@ -466,7 +443,7 @@ fun SettingsScreen(
                         }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    // 앱 권한 설정
+                    // 앱 권한 설정 - 권한 페이지로 직접 이동
                     NavigationRow(
                         label = "앱 권한 설정",
                         description = "모든 권한을 한 곳에서 관리",
@@ -660,18 +637,16 @@ private fun PermissionStatusRow(
 }
 
 /**
- * 마이크 권한 상태 표시 (필수 권한 - 대화 기능에 필수)
+ * 마이크 권한 상태 표시 (필수 권한 - 표시만, 클릭 불가)
  */
 @Composable
-private fun MicrophonePermissionRow(
-    isGranted: Boolean,
-    onClick: () -> Unit
+private fun MicrophonePermissionStatusRow(
+    isGranted: Boolean
 ) {
     val colors = LocalEchoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -703,60 +678,12 @@ private fun MicrophonePermissionRow(
                 )
             }
         }
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
     }
 }
 
 /**
- * 알림 토글 Row (알림 권한 없으면 비활성화)
+ * 위치 수집 상태 토글
  */
-@Composable
-private fun NotificationToggleRow(
-    label: String,
-    description: String,
-    enabled: Boolean,
-    hasNotificationPermission: Boolean,
-    onToggle: (Boolean) -> Unit
-) {
-    val colors = LocalEchoColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 20.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = when {
-                    !hasNotificationPermission -> "알림 권한 필요"
-                    enabled -> description
-                    else -> "알림 꺼짐"
-                },
-                fontSize = 17.sp,
-                fontFamily = OutfitFontFamily,
-                color = when {
-                    !hasNotificationPermission -> colors.accentRed
-                    enabled -> colors.textPrimary
-                    else -> colors.textTertiary
-                }
-            )
-        }
-        Switch(
-            checked = enabled && hasNotificationPermission,
-            onCheckedChange = { onToggle(it) },
-            enabled = hasNotificationPermission,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = colors.accentGreen,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = colors.bgMuted
-            )
-        )
-    }
-}
-
 @Composable
 private fun LocationCollectionToggleRow(
     isRunning: Boolean,
@@ -779,7 +706,7 @@ private fun LocationCollectionToggleRow(
                         .size(10.dp)
                         .background(
                             color = if (isRunning) colors.accentGreen else colors.textTertiary,
-                            shape = androidx.compose.foundation.shape.CircleShape
+                            shape = CircleShape
                         )
                 )
                 Spacer(Modifier.width(8.dp))
@@ -804,6 +731,7 @@ private fun LocationCollectionToggleRow(
         )
     }
 }
+
 
 @Composable
 private fun TextFieldDialog(
