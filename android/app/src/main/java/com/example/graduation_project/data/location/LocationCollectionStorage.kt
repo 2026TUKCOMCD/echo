@@ -69,10 +69,25 @@ class LocationCollectionStorage(context: Context) {
         return prefs.getBoolean(KEY_ENABLED, true)
     }
 
+    /**
+     * 아침 인사 알림 활성화 여부 저장
+     */
+    fun setMorningGreetingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MORNING_GREETING, enabled).apply()
+    }
+
+    /**
+     * 아침 인사 알림 활성화 여부 조회
+     */
+    fun isMorningGreetingEnabled(): Boolean {
+        return prefs.getBoolean(KEY_MORNING_GREETING, true)
+    }
+
     companion object {
         private const val PREFS_NAME = "location_collection_prefs"
         private const val KEY_START_TIME = "start_time"
         private const val KEY_ENABLED = "enabled"
+        private const val KEY_MORNING_GREETING = "morning_greeting_enabled"
 
         const val DEFAULT_START_TIME = "06:00"
         private const val DEFAULT_HOUR = 6

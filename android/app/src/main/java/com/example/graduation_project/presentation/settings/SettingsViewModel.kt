@@ -10,11 +10,13 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationCollectionStorage
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.repository.UserRepository
+import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.presentation.permission.PermissionChecker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +40,9 @@ data class SettingsUiState(
     val voiceTone: String = "warm",
     val conversationTime: String? = null,
     val preferredSleepHours: Int? = null,
+    // 알림 설정
     val alarmEnabled: Boolean = false,
+    val morningGreetingEnabled: Boolean = true,
     // 위치 수집 설정
     val locationCollectionStartTime: String = "06:00",
     val isLocationCollectionRunning: Boolean = false,
@@ -60,6 +64,7 @@ class SettingsViewModel(
 
     private val alarmStorage = ConversationAlarmStorage(application)
     private val locationStorage = LocationCollectionStorage(application)
+    private val healthConnectManager = HealthConnectManager(application)
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -77,25 +82,31 @@ class SettingsViewModel(
         // 위치 수집 시간 로드
         val locationStartTime = locationStorage.getStartTime()
 
+        // 아침 인사 알림 설정 로드
+        val morningGreetingEnabled = locationStorage.isMorningGreetingEnabled()
+
         // 권한 상태 확인
         val hasLocation = PermissionChecker.hasForegroundLocationPermission(context)
         val hasBackgroundLocation = PermissionChecker.hasBackgroundLocationPermission(context)
-        val hasHealthConnect = PermissionChecker.isHealthConnectAvailable(context)
         val hasNotification = PermissionChecker.hasNotificationPermission(context)
 
         _uiState.update {
             it.copy(
                 alarmEnabled = alarmEnabled,
+                morningGreetingEnabled = morningGreetingEnabled,
                 locationCollectionStartTime = locationStartTime,
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = hasLocation,
                 hasBackgroundLocationPermission = hasBackgroundLocation,
-                hasHealthConnectPermission = hasHealthConnect,
                 hasNotificationPermission = hasNotification
             )
         }
 
         viewModelScope.launch {
+            // Health Connect 권한 확인 (실제 권한 허용 여부)
+            val hasHealthConnectPermission = checkHealthConnectPermission()
+            _uiState.update { it.copy(hasHealthConnectPermission = hasHealthConnectPermission) }
+
             when (val result = userRepository.getPreferences()) {
                 is ApiResult.Success -> _uiState.update { applyPrefs(it, result.data).copy(isLoading = false) }
                 is ApiResult.Error -> _uiState.update { it.copy(isLoading = false) }
@@ -117,14 +128,34 @@ class SettingsViewModel(
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
                 hasBackgroundLocationPermission = currentBackgroundPermission,
-                hasHealthConnectPermission = PermissionChecker.isHealthConnectAvailable(context),
                 hasNotificationPermission = PermissionChecker.hasNotificationPermission(context)
             )
+        }
+
+        // Health Connect 권한 확인 (비동기)
+        viewModelScope.launch {
+            val hasHealthConnectPermission = checkHealthConnectPermission()
+            _uiState.update { it.copy(hasHealthConnectPermission = hasHealthConnectPermission) }
         }
 
         // 위치 권한이 새로 허용되었으면 서비스 시작
         if (!previousBackgroundPermission && currentBackgroundPermission) {
             LocationScheduler.enableLocationCollection(context)
+        }
+    }
+
+    /**
+     * Health Connect 권한 확인 (SDK 설치 + 실제 권한 허용 여부)
+     */
+    private suspend fun checkHealthConnectPermission(): Boolean {
+        return try {
+            val availability = healthConnectManager.checkAvailability()
+            if (availability != HealthConnectAvailability.Available) {
+                return false
+            }
+            healthConnectManager.checkGrantedPermissions()
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -240,6 +271,17 @@ class SettingsViewModel(
         updateAlarmSchedule(time)
 
         val message = if (enabled) "알림이 설정되었습니다" else "알림이 해제되었습니다"
+        _uiState.update { it.copy(savedMessage = message) }
+    }
+
+    /**
+     * 아침 인사 알림 활성화/비활성화 설정
+     */
+    fun setMorningGreetingEnabled(enabled: Boolean) {
+        locationStorage.setMorningGreetingEnabled(enabled)
+        _uiState.update { it.copy(morningGreetingEnabled = enabled) }
+
+        val message = if (enabled) "아침 인사 알림이 설정되었습니다" else "아침 인사 알림이 해제되었습니다"
         _uiState.update { it.copy(savedMessage = message) }
     }
 
