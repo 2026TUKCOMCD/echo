@@ -944,7 +944,7 @@ private fun TimePickerFieldDialog(
     onSelected: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var value by remember { mutableStateOf(if (!current.isNullOrBlank()) current else "09:00") }
+    var value by remember { mutableStateOf(if (!current.isNullOrBlank()) current else "21:00") }
 
     val colors = LocalEchoColors.current
     AlertDialog(

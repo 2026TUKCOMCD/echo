@@ -125,18 +125,14 @@ object LocationScheduler {
 
     /**
      * 위치 수집 활성화
-     * - 현재 시간이 시작 시간 ~ 대화 시간 사이면 서비스 즉시 시작
-     * - 그 외 시간대면 알람만 스케줄링
+     * - 대화 시간 전이면 즉시 서비스 시작 (권한 허용 직후 바로 수집 시작)
+     * - 대화 시간 이후면 다음날 알람만 스케줄링
      */
     fun enableLocationCollection(context: Context) {
-        val locationStorage = LocationCollectionStorage(context)
         val alarmStorage = ConversationAlarmStorage(context)
 
-        val startHour = locationStorage.getStartHour()
-        val startMinute = locationStorage.getStartMinute()
-
-        // 대화 시간 가져오기 (기본값: 09:00)
-        val conversationTime = alarmStorage.getConversationTime() ?: "09:00"
+        // 대화 시간 가져오기 (기본값: 21:00)
+        val conversationTime = alarmStorage.getConversationTime() ?: "21:00"
         val endHour = try { conversationTime.split(":")[0].toInt() } catch (e: Exception) { 9 }
         val endMinute = try { conversationTime.split(":")[1].toInt() } catch (e: Exception) { 0 }
 
@@ -145,25 +141,18 @@ object LocationScheduler {
         val currentHour = now.get(Calendar.HOUR_OF_DAY)
         val currentMinute = now.get(Calendar.MINUTE)
         val currentMinutes = currentHour * 60 + currentMinute
-        val startMinutes = startHour * 60 + startMinute
         val endMinutes = endHour * 60 + endMinute
 
-        // 시작 시간 ~ 대화 시간 사이인지 확인
-        val isWithinCollectionTime = if (startMinutes < endMinutes) {
-            // 같은 날 (예: 06:00 ~ 09:00)
-            currentMinutes in startMinutes until endMinutes
-        } else {
-            // 자정을 넘는 경우 (예: 22:00 ~ 06:00) - 이 케이스는 거의 없음
-            currentMinutes >= startMinutes || currentMinutes < endMinutes
-        }
+        // 대화 시간 전인지 확인 (대화 시간 전이면 아직 오늘 대화가 안 끝났으므로 수집 필요)
+        val isBeforeConversationTime = currentMinutes < endMinutes
 
-        if (isWithinCollectionTime) {
-            // 시작 시간 ~ 대화 시간 사이 → 즉시 서비스 시작
-            Log.d(TAG, "수집 시간대($startHour:$startMinute ~ $endHour:$endMinute) 내 - 위치 수집 즉시 시작")
+        if (isBeforeConversationTime) {
+            // 대화 시간 전 → 즉시 서비스 시작 (권한 허용 직후 바로 수집)
+            Log.d(TAG, "대화 시간($endHour:$endMinute) 전 - 위치 수집 즉시 시작")
             LocationCollectionService.start(context)
         } else {
-            // 수집 시간대 외 → 알람만 스케줄링
-            Log.d(TAG, "수집 시간대($startHour:$startMinute ~ $endHour:$endMinute) 외 - 알람만 스케줄링")
+            // 대화 시간 이후 → 오늘 대화는 이미 끝났으므로 내일부터 수집
+            Log.d(TAG, "대화 시간($endHour:$endMinute) 이후 - 내일 아침부터 수집 시작 예정")
         }
 
         scheduleMorningAlarm(context)

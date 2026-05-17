@@ -340,9 +340,9 @@ private fun TimePickerStep(
     onAlarmEnabledChange: (Boolean) -> Unit
 ) {
     val colors = LocalEchoColors.current
-    val initial = if (selected.isNotEmpty()) selected else "09:00"
+    val initial = if (selected.isNotEmpty()) selected else "21:00"
     LaunchedEffect(Unit) {
-        if (selected.isEmpty()) onTimeSelected("09:00")
+        if (selected.isEmpty()) onTimeSelected("21:00")
     }
 
     Column {
