@@ -42,6 +42,8 @@ import com.example.graduation_project.presentation.home.HomeScreen
 import com.example.graduation_project.presentation.onboarding.OnboardingScreen
 import com.example.graduation_project.presentation.settings.SettingsScreen
 import com.example.graduation_project.presentation.settings.DisplaySettingsViewModel
+import com.example.graduation_project.data.location.LocationScheduler
+import com.example.graduation_project.BuildConfig
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import kotlinx.coroutines.Dispatchers
@@ -54,9 +56,28 @@ class MainActivity : ComponentActivity() {
 
     private val displayViewModel: DisplaySettingsViewModel by viewModels { DisplaySettingsViewModel.Factory }
 
+    /**
+     * 앱 재설치 감지 후 알람 재예약
+     * - 버전 코드가 변경되었거나 처음 실행 시에만 알람 재예약
+     */
+    private fun rescheduleAlarmsIfReinstalled() {
+        val prefs = getSharedPreferences("app_state", MODE_PRIVATE)
+        val savedVersionCode = prefs.getLong("last_version_code", -1)
+        val currentVersionCode = BuildConfig.VERSION_CODE.toLong()
+
+        if (savedVersionCode != currentVersionCode) {
+            // 재설치 또는 업데이트 감지 → 알람 재예약
+            LocationScheduler.enableLocationCollection(this)
+            prefs.edit().putLong("last_version_code", currentVersionCode).apply()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // 앱 재설치 감지 후 알람 재예약
+        rescheduleAlarmsIfReinstalled()
 
         // 알림 딥링크 처리
         val navigateTo = intent.getStringExtra("navigate_to")

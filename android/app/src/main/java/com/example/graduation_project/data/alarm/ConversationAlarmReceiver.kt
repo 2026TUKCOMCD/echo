@@ -157,7 +157,7 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_NAVIGATE_TO = "navigate_to"
         const val NAVIGATE_TO_HOME = "home"
 
-        private const val FAREWELL_TIMEOUT_MS = 10 * 60 * 1000L  // 10분
+        private const val FAREWELL_TIMEOUT_MS = 3 * 60 * 1000L   // 3분
 
         /**
          * 대화 알림 취소 (대화 시작 시 호출)
@@ -169,7 +169,7 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
         }
 
         /**
-         * 대화 종료 알림 표시 (10분 후 자동 사라짐)
+         * 대화 종료 알림 표시 (3분 후 자동 사라짐)
          */
         fun showFarewellNotification(context: Context) {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -193,7 +193,7 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
                 .setContentText("내일 또 만나요!")
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true)
-                .setTimeoutAfter(FAREWELL_TIMEOUT_MS)  // 10분 후 자동 사라짐
+                .setTimeoutAfter(FAREWELL_TIMEOUT_MS)  // 3분 후 자동 사라짐
                 .build()
 
             notificationManager.notify(FAREWELL_NOTIFICATION_ID, notification)

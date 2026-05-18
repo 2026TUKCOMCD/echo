@@ -24,6 +24,7 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +32,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
  * 백그라운드 GPS 위치 수집 서비스
@@ -44,6 +47,8 @@ class LocationCollectionService : Service() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationStorageManager: LocationStorageManager
+    private lateinit var locationCollectionStorage: LocationCollectionStorage
+    private lateinit var conversationAlarmStorage: ConversationAlarmStorage
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var collectionJob: Job? = null
@@ -57,6 +62,8 @@ class LocationCollectionService : Service() {
 
         val database = AppDatabase.getInstance(this)
         locationStorageManager = LocationStorageManager(database.locationPointDao())
+        locationCollectionStorage = LocationCollectionStorage(this)
+        conversationAlarmStorage = ConversationAlarmStorage(this)
 
         createNotificationChannel()
     }
@@ -169,8 +176,46 @@ class LocationCollectionService : Service() {
                 Log.d(TAG, "다음 수집까지 ${intervalMs / 60000}분 대기")
 
                 delay(intervalMs)
+
+                // 시간 범위 체크 - 범위 밖이면 서비스 자동 중지
+                if (!isCurrentTimeInRange()) {
+                    Log.d(TAG, "수집 시간 범위 종료 - 서비스 자동 중지")
+                    stopSelf()
+                    return@launch
+                }
+
                 collectLocation()
             }
+        }
+    }
+
+    /**
+     * 현재 시간이 수집 범위(시작 시간 ~ 대화 시간) 내인지 확인
+     */
+    private fun isCurrentTimeInRange(): Boolean {
+        return try {
+            val startTimeStr = locationCollectionStorage.getStartTime()
+            // 대화 시간이 설정되지 않은 경우 기본값 21:00 사용
+            val endTimeStr = conversationAlarmStorage.getConversationTime() ?: DEFAULT_CONVERSATION_TIME
+
+            val formatter = DateTimeFormatter.ofPattern("HH:mm")
+            val now = LocalTime.now()
+            val start = LocalTime.parse(startTimeStr, formatter)
+            val end = LocalTime.parse(endTimeStr, formatter)
+
+            val isInRange = if (start.isBefore(end) || start == end) {
+                // 일반적인 경우: 06:00 ~ 21:00
+                now in start..end
+            } else {
+                // 자정을 넘기는 경우: 22:00 ~ 06:00
+                now >= start || now <= end
+            }
+
+            Log.d(TAG, "시간 범위 체크: now=$now, range=$startTimeStr~$endTimeStr, inRange=$isInRange")
+            isInRange
+        } catch (e: Exception) {
+            Log.e(TAG, "시간 범위 체크 실패", e)
+            true  // 오류 시 계속 수집
         }
     }
 
@@ -178,6 +223,13 @@ class LocationCollectionService : Service() {
         if (!hasLocationPermission()) {
             Log.w(TAG, "위치 권한 없음 - 서비스 중지")
             stopSelf()  // 권한 없으면 서비스 중지 (리소스 낭비 방지)
+            return
+        }
+
+        // 최소 간격 체크 (중복 수집 방지)
+        val elapsed = locationCollectionStorage.getElapsedSinceLastCollection()
+        if (elapsed < MIN_COLLECTION_INTERVAL_MS) {
+            Log.d(TAG, "최소 간격 미달 - 스킵 (${elapsed / 60000}분 경과, 최소 ${MIN_COLLECTION_INTERVAL_MS / 60000}분 필요)")
             return
         }
 
@@ -190,6 +242,7 @@ class LocationCollectionService : Service() {
 
             if (location != null) {
                 locationStorageManager.saveLocation(location.latitude, location.longitude)
+                locationCollectionStorage.saveLastCollectionTime(System.currentTimeMillis())
                 Log.d(TAG, "위치 수집 완료: lat=${location.latitude}, lon=${location.longitude}")
             } else {
                 Log.w(TAG, "위치를 가져올 수 없음")
@@ -284,7 +337,9 @@ class LocationCollectionService : Service() {
 
         private const val INTERVAL_NORMAL_MS = 10 * 60 * 1000L      // 10분
         private const val INTERVAL_LOW_BATTERY_MS = 30 * 60 * 1000L // 30분
-        private const val GREETING_TIMEOUT_MS = 10 * 60 * 1000L     // 10분
+        private const val MIN_COLLECTION_INTERVAL_MS = 9 * 60 * 1000L // 최소 9분 (중복 수집 방지)
+        private const val GREETING_TIMEOUT_MS = 3 * 60 * 1000L      // 3분
+        private const val DEFAULT_CONVERSATION_TIME = "21:00"       // 기본 대화 시간
 
         const val ACTION_STOP = "com.example.graduation_project.STOP_LOCATION_SERVICE"
 

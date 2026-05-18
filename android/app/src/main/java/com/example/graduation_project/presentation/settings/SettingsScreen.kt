@@ -3,6 +3,7 @@ package com.example.graduation_project.presentation.settings
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -104,10 +106,25 @@ fun SettingsScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshPermissionStatus()
+                viewModel.refreshBatteryOptimizationStatus()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 배터리 최적화 해제 요청 처리
+    LaunchedEffect(uiState.shouldRequestBatteryOptimization) {
+        if (uiState.shouldRequestBatteryOptimization) {
+            val powerManager = context.getSystemService(PowerManager::class.java)
+            if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                }
+                context.startActivity(intent)
+            }
+            viewModel.dismissBatteryOptimizationRequest()
+        }
     }
 
     LaunchedEffect(uiState.savedMessage) {
@@ -261,12 +278,12 @@ fun SettingsScreen(
                         icon = Icons.AutoMirrored.Outlined.Chat,
                         title = "대화 설정"
                     )
-                    PreferenceRow("대화 시간", uiState.conversationTime, enabled = enabled) { editingField = "conversationTime" }
-                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    AlarmToggleRow(
-                        enabled = uiState.alarmEnabled,
-                        onToggle = { viewModel.setAlarmEnabled(it) }
+                    // 마이크 권한 상태 표시 (필수 권한) - 최상단
+                    MicrophonePermissionStatusRow(
+                        isGranted = PermissionChecker.hasMicrophonePermission(context)
                     )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PreferenceRow("대화 시간", uiState.conversationTime, enabled = enabled) { editingField = "conversationTime" }
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
                         label = "음성 설정",
@@ -353,18 +370,19 @@ fun SettingsScreen(
                         title = "건강 정보",
                         iconTint = colors.accentRed
                     )
-                    PreferenceRow(
-                        label = "선호 수면 시간",
-                        value = uiState.preferredSleepHours?.let { "${it}시간" },
-                        enabled = enabled
-                    ) { editingField = "sleepHours" }
-                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    // 건강 데이터 권한 - 최상단
                     PermissionStatusRow(
                         label = "건강 데이터 권한",
                         isGranted = uiState.hasHealthConnectPermission,
                         grantedText = "허용됨",
                         deniedText = "허용 필요"
                     )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    PreferenceRow(
+                        label = "선호 수면 시간",
+                        value = uiState.preferredSleepHours?.let { "${it}시간" },
+                        enabled = enabled
+                    ) { editingField = "sleepHours" }
                 }
             }
 
@@ -391,6 +409,20 @@ fun SettingsScreen(
                         deniedText = "허용 필요"
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    // 배터리 최적화 상태
+                    PermissionStatusRow(
+                        label = "배터리 최적화",
+                        isGranted = uiState.isBatteryOptimizationDisabled,
+                        grantedText = "제한 없음",
+                        deniedText = "제한됨 (터치하여 해제)",
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     // 위치 수집 상태 토글
                     LocationCollectionToggleRow(
                         isRunning = uiState.isLocationCollectionRunning,
@@ -403,12 +435,19 @@ fun SettingsScreen(
                         value = uiState.locationCollectionStartTime,
                         enabled = enabled
                     ) { editingField = "locationStartTime" }
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    // 위치 데이터 확인 (디버그)
+                    NavigationRow(
+                        label = "수집된 위치 데이터",
+                        description = "오늘 수집된 GPS 포인트 확인",
+                        onClick = { viewModel.loadLocationDebugData() }
+                    )
                 }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            // ===== 앱 설정 섹션 =====
+            // ===== 알람 및 권한 설정 섹션 =====
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -419,18 +458,30 @@ fun SettingsScreen(
                 Column {
                     CardHeader(
                         icon = Icons.Outlined.Notifications,
-                        title = "앱 설정",
+                        title = "알람 및 권한 설정",
                         iconTint = colors.textSecondary
                     )
-                    // 알림 권한 표시
+                    // 알림 권한 상태 및 설정
                     PermissionStatusRow(
                         label = "알림 권한",
                         isGranted = uiState.hasNotificationPermission,
                         grantedText = "허용됨",
-                        deniedText = "허용 필요"
+                        deniedText = "허용 필요 (터치하여 설정)",
+                        onClick = {
+                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
+                            } else {
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", context.packageName, null)
+                                }
+                            }
+                            context.startActivity(intent)
+                        }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    // 앱 권한 설정
+                    // 앱 권한 설정 - 권한 페이지로 직접 이동
                     NavigationRow(
                         label = "앱 권한 설정",
                         description = "모든 권한을 한 곳에서 관리",
@@ -546,6 +597,16 @@ fun SettingsScreen(
             onDismiss = { dismiss() }
         )
     }
+
+    // 위치 데이터 디버그 다이얼로그
+    uiState.locationDebugData?.let { debugData ->
+        LocationDebugDialog(
+            debugData = debugData,
+            isServiceRunning = uiState.isLocationCollectionRunning,
+            onDismiss = { viewModel.dismissLocationDebugData() },
+            onRefresh = { viewModel.loadLocationDebugData() }
+        )
+    }
 }
 
 @Composable
@@ -623,10 +684,12 @@ private fun PermissionStatusRow(
     }
 }
 
+/**
+ * 마이크 권한 상태 표시 (필수 권한 - 표시만, 클릭 불가)
+ */
 @Composable
-private fun AlarmToggleRow(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit
+private fun MicrophonePermissionStatusRow(
+    isGranted: Boolean
 ) {
     val colors = LocalEchoColors.current
     Row(
@@ -636,28 +699,39 @@ private fun AlarmToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("대화 시간 알림", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("마이크 권한", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "(필수)",
+                    fontSize = 12.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = colors.accentRed
+                )
+            }
             Spacer(Modifier.height(3.dp))
-            Text(
-                text = if (enabled) "매일 알림을 받습니다" else "알림 꺼짐",
-                fontSize = 17.sp,
-                fontFamily = OutfitFontFamily,
-                color = if (enabled) colors.textPrimary else colors.textTertiary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isGranted) Icons.Filled.Check else Icons.Outlined.Warning,
+                    contentDescription = null,
+                    tint = if (isGranted) colors.accentBlue else colors.accentRed,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = if (isGranted) "허용됨" else "허용 필요 - 대화 기능 사용 불가",
+                    fontSize = 16.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = if (isGranted) colors.accentBlue else colors.accentRed
+                )
+            }
         }
-        Switch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = colors.accentGreen,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = colors.bgMuted
-            )
-        )
     }
 }
 
+/**
+ * 위치 수집 상태 토글
+ */
 @Composable
 private fun LocationCollectionToggleRow(
     isRunning: Boolean,
@@ -680,7 +754,7 @@ private fun LocationCollectionToggleRow(
                         .size(10.dp)
                         .background(
                             color = if (isRunning) colors.accentGreen else colors.textTertiary,
-                            shape = androidx.compose.foundation.shape.CircleShape
+                            shape = CircleShape
                         )
                 )
                 Spacer(Modifier.width(8.dp))
@@ -705,6 +779,7 @@ private fun LocationCollectionToggleRow(
         )
     }
 }
+
 
 @Composable
 private fun TextFieldDialog(
@@ -1067,4 +1142,178 @@ private fun NavigationRow(
         }
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
     }
+}
+
+/**
+ * 위치 데이터 디버그 다이얼로그
+ */
+@Composable
+private fun LocationDebugDialog(
+    debugData: LocationDebugData,
+    isServiceRunning: Boolean,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    val colors = LocalEchoColors.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.bgCard,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.LocationOn,
+                    contentDescription = null,
+                    tint = colors.accentBlue,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    "위치 데이터",
+                    fontFamily = OutfitFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.textPrimary
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+            ) {
+                // 요약 정보
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = colors.bgMuted
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("오늘 수집", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+                            Text("${debugData.todayCount}개", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = colors.textPrimary, fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("마지막 수집", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+                            Text(debugData.lastCollectionTime ?: "-", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = colors.textPrimary)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("서비스 상태", fontSize = 14.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(
+                                            color = if (isServiceRunning) colors.accentGreen else colors.textTertiary,
+                                            shape = CircleShape
+                                        )
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    if (isServiceRunning) "수집 중" else "중지됨",
+                                    fontSize = 14.sp,
+                                    fontFamily = OutfitFontFamily,
+                                    color = if (isServiceRunning) colors.accentGreen else colors.textTertiary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 포인트 목록
+                if (debugData.points.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "수집된 데이터가 없습니다",
+                            fontSize = 14.sp,
+                            fontFamily = OutfitFontFamily,
+                            color = colors.textTertiary
+                        )
+                    }
+                } else {
+                    Text(
+                        "수집 포인트",
+                        fontSize = 12.sp,
+                        fontFamily = OutfitFontFamily,
+                        color = colors.textSecondary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        debugData.points.forEach { point ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                color = colors.bgMuted.copy(alpha = 0.5f)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "#${point.id}",
+                                        fontSize = 12.sp,
+                                        fontFamily = OutfitFontFamily,
+                                        color = colors.textTertiary,
+                                        modifier = Modifier.width(32.dp)
+                                    )
+                                    Text(
+                                        "${String.format("%.4f", point.latitude)}, ${String.format("%.4f", point.longitude)}",
+                                        fontSize = 13.sp,
+                                        fontFamily = OutfitFontFamily,
+                                        color = colors.textPrimary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        point.time,
+                                        fontSize = 12.sp,
+                                        fontFamily = OutfitFontFamily,
+                                        color = colors.textSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onRefresh) {
+                    Text("새로고침", fontFamily = OutfitFontFamily, color = colors.accentBlue)
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("닫기", fontFamily = OutfitFontFamily, color = colors.textSecondary)
+                }
+            }
+        }
+    )
 }

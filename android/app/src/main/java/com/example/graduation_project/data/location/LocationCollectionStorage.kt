@@ -69,10 +69,34 @@ class LocationCollectionStorage(context: Context) {
         return prefs.getBoolean(KEY_ENABLED, true)
     }
 
+    /**
+     * 마지막 위치 수집 시간 저장 (epoch milliseconds)
+     */
+    fun saveLastCollectionTime(timeMillis: Long) {
+        prefs.edit().putLong(KEY_LAST_COLLECTION_TIME, timeMillis).apply()
+    }
+
+    /**
+     * 마지막 위치 수집 시간 조회
+     * @return epoch milliseconds, 없으면 0
+     */
+    fun getLastCollectionTime(): Long {
+        return prefs.getLong(KEY_LAST_COLLECTION_TIME, 0L)
+    }
+
+    /**
+     * 마지막 수집으로부터 경과 시간 (밀리초)
+     */
+    fun getElapsedSinceLastCollection(): Long {
+        val lastTime = getLastCollectionTime()
+        return if (lastTime > 0) System.currentTimeMillis() - lastTime else Long.MAX_VALUE
+    }
+
     companion object {
         private const val PREFS_NAME = "location_collection_prefs"
         private const val KEY_START_TIME = "start_time"
         private const val KEY_ENABLED = "enabled"
+        private const val KEY_LAST_COLLECTION_TIME = "last_collection_time"
 
         const val DEFAULT_START_TIME = "06:00"
         private const val DEFAULT_HOUR = 6
