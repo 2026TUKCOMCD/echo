@@ -226,6 +226,13 @@ class LocationCollectionService : Service() {
             return
         }
 
+        // 최소 간격 체크 (중복 수집 방지)
+        val elapsed = locationCollectionStorage.getElapsedSinceLastCollection()
+        if (elapsed < MIN_COLLECTION_INTERVAL_MS) {
+            Log.d(TAG, "최소 간격 미달 - 스킵 (${elapsed / 60000}분 경과, 최소 ${MIN_COLLECTION_INTERVAL_MS / 60000}분 필요)")
+            return
+        }
+
         try {
             val cancellationToken = CancellationTokenSource()
             val location = fusedLocationClient.getCurrentLocation(
@@ -235,6 +242,7 @@ class LocationCollectionService : Service() {
 
             if (location != null) {
                 locationStorageManager.saveLocation(location.latitude, location.longitude)
+                locationCollectionStorage.saveLastCollectionTime(System.currentTimeMillis())
                 Log.d(TAG, "위치 수집 완료: lat=${location.latitude}, lon=${location.longitude}")
             } else {
                 Log.w(TAG, "위치를 가져올 수 없음")
@@ -329,6 +337,7 @@ class LocationCollectionService : Service() {
 
         private const val INTERVAL_NORMAL_MS = 10 * 60 * 1000L      // 10분
         private const val INTERVAL_LOW_BATTERY_MS = 30 * 60 * 1000L // 30분
+        private const val MIN_COLLECTION_INTERVAL_MS = 9 * 60 * 1000L // 최소 9분 (중복 수집 방지)
         private const val GREETING_TIMEOUT_MS = 3 * 60 * 1000L      // 3분
         private const val DEFAULT_CONVERSATION_TIME = "21:00"       // 기본 대화 시간
 

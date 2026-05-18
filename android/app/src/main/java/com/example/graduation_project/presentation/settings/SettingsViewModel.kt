@@ -12,9 +12,12 @@ import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
+import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationCollectionStorage
 import com.example.graduation_project.data.location.LocationScheduler
+import com.example.graduation_project.data.location.LocationStorageManager
+import com.example.graduation_project.domain.model.LocationPoint
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.repository.UserRepository
 import com.example.graduation_project.domain.health.HealthConnectAvailability
@@ -57,7 +60,28 @@ data class SettingsUiState(
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // 위치 데이터 디버그
+    val locationDebugData: LocationDebugData? = null
+)
+
+/**
+ * 위치 데이터 디버그 정보
+ */
+data class LocationDebugData(
+    val todayCount: Int,
+    val lastCollectionTime: String?,
+    val points: List<LocationPointDisplay>
+)
+
+/**
+ * 위치 포인트 표시용 데이터
+ */
+data class LocationPointDisplay(
+    val id: Int,
+    val latitude: Double,
+    val longitude: Double,
+    val time: String
 )
 
 class SettingsViewModel(
@@ -68,12 +92,57 @@ class SettingsViewModel(
     private val alarmStorage = ConversationAlarmStorage(application)
     private val locationStorage = LocationCollectionStorage(application)
     private val healthConnectManager = HealthConnectManager(application)
+    private val locationStorageManager = LocationStorageManager(
+        AppDatabase.getInstance(application).locationPointDao()
+    )
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
         loadSettings()
+    }
+
+    /**
+     * 위치 데이터 로드 (디버그용)
+     */
+    fun loadLocationDebugData() {
+        viewModelScope.launch {
+            try {
+                val points = locationStorageManager.getTodayLocations()
+                val lastCollectionTime = locationStorage.getLastCollectionTime()
+
+                val debugData = LocationDebugData(
+                    todayCount = points.size,
+                    lastCollectionTime = if (lastCollectionTime > 0) {
+                        java.time.Instant.ofEpochMilli(lastCollectionTime)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+                    } else null,
+                    points = points.mapIndexed { index, point ->
+                        LocationPointDisplay(
+                            id = points.size - index,
+                            latitude = point.latitude,
+                            longitude = point.longitude,
+                            time = point.timestamp
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+                        )
+                    }.reversed()
+                )
+
+                _uiState.update { it.copy(locationDebugData = debugData) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "위치 데이터 로드 실패: ${e.message}") }
+            }
+        }
+    }
+
+    /**
+     * 위치 데이터 디버그 다이얼로그 닫기
+     */
+    fun dismissLocationDebugData() {
+        _uiState.update { it.copy(locationDebugData = null) }
     }
 
     private fun loadSettings() {
