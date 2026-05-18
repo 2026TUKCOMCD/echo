@@ -21,6 +21,11 @@ import androidx.health.connect.client.HealthConnectClient
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.presentation.health.openHealthConnectSettings
 
+private const val APP_STATE_PREFS = "app_state"
+private const val PERMISSION_STATE_PREFS = "permission_state"
+private const val KEY_PERMISSION_FLOW_COMPLETED = "permission_flow_completed"
+private const val KEY_NEEDS_PERMISSION_RECHECK = "needs_permission_recheck"
+
 /**
  * 권한 요청 단계
  */
@@ -44,6 +49,8 @@ fun UnifiedPermissionHandler(
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
+    val appStatePrefs = context.getSharedPreferences(APP_STATE_PREFS, Context.MODE_PRIVATE)
+    val permPrefs = context.getSharedPreferences(PERMISSION_STATE_PREFS, Context.MODE_PRIVATE)
 
     // 현재 권한 요청 단계
     var currentStep by remember { mutableStateOf(PermissionStep.INTRO) }
@@ -54,9 +61,13 @@ fun UnifiedPermissionHandler(
     var showNotificationSettingsDialog by remember { mutableStateOf(false) }
     var showHealthConnectSettingsDialog by remember { mutableStateOf(false) }
 
-    // 이미 권한 처리를 완료했는지 (앱 재시작 시 다시 안 물어봄)
+    // 앱 업데이트/재설치(버전 코드 변경) 시 권한 재확인 필요 여부
+    val needsRecheck = appStatePrefs.getBoolean(KEY_NEEDS_PERMISSION_RECHECK, false)
+    // 이전에 권한 플로우를 완료한 적 있는지 (SharedPreferences에 영구 저장)
+    val previouslyCompleted = permPrefs.getBoolean(KEY_PERMISSION_FLOW_COMPLETED, false)
+
     var hasCompletedOnboarding by remember {
-        mutableStateOf(PermissionChecker.hasMicrophonePermission(context))
+        mutableStateOf(previouslyCompleted && !needsRecheck)
     }
 
     // 마이크 권한 요청 런처
@@ -112,6 +123,8 @@ fun UnifiedPermissionHandler(
     ) { _ ->
         currentStep = PermissionStep.COMPLETED
         hasCompletedOnboarding = true
+        permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
+        appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
         onAllPermissionsHandled()
     }
 
@@ -167,11 +180,15 @@ fun UnifiedPermissionHandler(
                     } else {
                         currentStep = PermissionStep.COMPLETED
                         hasCompletedOnboarding = true
+                        permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
+                        appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
                         onAllPermissionsHandled()
                     }
                 } else {
                     currentStep = PermissionStep.COMPLETED
                     hasCompletedOnboarding = true
+                    permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
+                    appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
                     onAllPermissionsHandled()
                 }
             }
@@ -246,6 +263,8 @@ fun UnifiedPermissionHandler(
                 showHealthConnectSettingsDialog = false
                 currentStep = PermissionStep.COMPLETED
                 hasCompletedOnboarding = true
+                permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
+                appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
             },
             onOpenSettings = {
                 openHealthConnectSettings(context)

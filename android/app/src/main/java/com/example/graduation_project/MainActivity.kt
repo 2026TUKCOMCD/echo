@@ -71,7 +71,10 @@ class MainActivity : ComponentActivity() {
             if (PermissionChecker.hasForegroundLocationPermission(this)) {
                 LocationScheduler.enableLocationCollection(this)
             }
-            prefs.edit().putLong("last_version_code", currentVersionCode).apply()
+            prefs.edit()
+                .putLong("last_version_code", currentVersionCode)
+                .putBoolean("needs_permission_recheck", true)
+                .apply()
         }
     }
 
@@ -194,11 +197,11 @@ private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySett
                 LoginScreen(
                     onLoginSuccess = {
                         coroutineScope.launch {
-                            val completed = when (val result = userRepository.getOnboardingStatus()) {
-                                is ApiResult.Success -> result.data.completed
-                                is ApiResult.Error -> false
+                            val destination = when (val result = userRepository.getOnboardingStatus()) {
+                                is ApiResult.Success -> if (result.data.completed) EchoTab.HOME.route else Routes.ONBOARDING
+                                // 네트워크/서버 오류 시 CHECKING으로 이동해 재시도 — 온보딩 강제 진입 방지
+                                is ApiResult.Error -> Routes.CHECKING
                             }
-                            val destination = if (completed) EchoTab.HOME.route else Routes.ONBOARDING
                             navController.navigate(destination) {
                                 popUpTo(Routes.LOGIN) { inclusive = true }
                             }
