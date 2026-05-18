@@ -43,7 +43,6 @@ data class SettingsUiState(
     val preferredSleepHours: Int? = null,
     // 알림 설정
     val alarmEnabled: Boolean = false,
-    val morningGreetingEnabled: Boolean = true,
     // 위치 수집 설정
     val locationCollectionStartTime: String = "06:00",
     val isLocationCollectionRunning: Boolean = false,
@@ -86,9 +85,6 @@ class SettingsViewModel(
         // 위치 수집 시간 로드
         val locationStartTime = locationStorage.getStartTime()
 
-        // 아침 인사 알림 설정 로드
-        val morningGreetingEnabled = locationStorage.isMorningGreetingEnabled()
-
         // 권한 상태 확인
         val hasLocation = PermissionChecker.hasForegroundLocationPermission(context)
         val hasBackgroundLocation = PermissionChecker.hasBackgroundLocationPermission(context)
@@ -98,7 +94,6 @@ class SettingsViewModel(
         _uiState.update {
             it.copy(
                 alarmEnabled = alarmEnabled,
-                morningGreetingEnabled = morningGreetingEnabled,
                 locationCollectionStartTime = locationStartTime,
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = hasLocation,
@@ -294,17 +289,6 @@ class SettingsViewModel(
         updateAlarmSchedule(time)
 
         val message = if (enabled) "알림이 설정되었습니다" else "알림이 해제되었습니다"
-        _uiState.update { it.copy(savedMessage = message) }
-    }
-
-    /**
-     * 아침 인사 알림 활성화/비활성화 설정
-     */
-    fun setMorningGreetingEnabled(enabled: Boolean) {
-        locationStorage.setMorningGreetingEnabled(enabled)
-        _uiState.update { it.copy(morningGreetingEnabled = enabled) }
-
-        val message = if (enabled) "아침 인사 알림이 설정되었습니다" else "아침 인사 알림이 해제되었습니다"
         _uiState.update { it.copy(savedMessage = message) }
     }
 
