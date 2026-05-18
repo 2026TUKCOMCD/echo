@@ -427,6 +427,9 @@ fun SettingsScreen(
                     LocationCollectionToggleRow(
                         isRunning = uiState.isLocationCollectionRunning,
                         hasPermission = uiState.hasBackgroundLocationPermission,
+                        isToggleEnabled = uiState.isLocationToggleEnabled,
+                        startTime = uiState.locationCollectionStartTime,
+                        endTime = uiState.conversationTime ?: "21:00",
                         onToggle = { viewModel.toggleLocationCollection() }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
@@ -731,14 +734,22 @@ private fun MicrophonePermissionStatusRow(
 
 /**
  * 위치 수집 상태 토글
+ * - 시간 범위 내에서만 토글 활성화
+ * - 범위 밖에서는 비활성화 + 안내 메시지 표시
  */
 @Composable
 private fun LocationCollectionToggleRow(
     isRunning: Boolean,
     hasPermission: Boolean,
+    isToggleEnabled: Boolean,
+    startTime: String,
+    endTime: String,
     onToggle: () -> Unit
 ) {
     val colors = LocalEchoColors.current
+    // 권한이 없거나 시간 범위 밖이면 비활성화
+    val isEnabled = hasPermission && isToggleEnabled
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -765,16 +776,30 @@ private fun LocationCollectionToggleRow(
                     color = if (isRunning) colors.accentGreen else colors.textTertiary
                 )
             }
+            // 시간 범위 밖일 때 안내 메시지
+            if (hasPermission && !isToggleEnabled) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "$startTime ~ $endTime 사이에만 사용 가능",
+                    fontSize = 13.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = colors.textTertiary
+                )
+            }
         }
         Switch(
             checked = isRunning,
             onCheckedChange = { onToggle() },
-            enabled = hasPermission,
+            enabled = isEnabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = colors.accentGreen,
                 uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = colors.bgMuted
+                uncheckedTrackColor = colors.bgMuted,
+                disabledCheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                disabledCheckedTrackColor = colors.accentGreen.copy(alpha = 0.4f),
+                disabledUncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                disabledUncheckedTrackColor = colors.bgMuted.copy(alpha = 0.4f)
             )
         )
     }

@@ -125,37 +125,58 @@ object LocationScheduler {
 
     /**
      * 위치 수집 활성화
-     * - 대화 시간 전이면 즉시 서비스 시작 (권한 허용 직후 바로 수집 시작)
-     * - 대화 시간 이후면 다음날 알람만 스케줄링
+     * - 시작 시간 ~ 대화 시간 범위 내이면 즉시 서비스 시작
+     * - 범위 밖이면 다음날 알람만 스케줄링
      */
     fun enableLocationCollection(context: Context) {
-        val alarmStorage = ConversationAlarmStorage(context)
-
-        // 대화 시간 가져오기 (기본값: 21:00)
-        val conversationTime = alarmStorage.getConversationTime() ?: "21:00"
-        val endHour = try { conversationTime.split(":")[0].toInt() } catch (e: Exception) { 9 }
-        val endMinute = try { conversationTime.split(":")[1].toInt() } catch (e: Exception) { 0 }
-
-        // 현재 시간 확인
-        val now = Calendar.getInstance()
-        val currentHour = now.get(Calendar.HOUR_OF_DAY)
-        val currentMinute = now.get(Calendar.MINUTE)
-        val currentMinutes = currentHour * 60 + currentMinute
-        val endMinutes = endHour * 60 + endMinute
-
-        // 대화 시간 전인지 확인 (대화 시간 전이면 아직 오늘 대화가 안 끝났으므로 수집 필요)
-        val isBeforeConversationTime = currentMinutes < endMinutes
-
-        if (isBeforeConversationTime) {
-            // 대화 시간 전 → 즉시 서비스 시작 (권한 허용 직후 바로 수집)
-            Log.d(TAG, "대화 시간($endHour:$endMinute) 전 - 위치 수집 즉시 시작")
+        if (isCurrentTimeInCollectionRange(context)) {
+            Log.d(TAG, "수집 시간 범위 내 - 위치 수집 즉시 시작")
             LocationCollectionService.start(context)
         } else {
-            // 대화 시간 이후 → 오늘 대화는 이미 끝났으므로 내일부터 수집
-            Log.d(TAG, "대화 시간($endHour:$endMinute) 이후 - 내일 아침부터 수집 시작 예정")
+            Log.d(TAG, "수집 시간 범위 밖 - 다음 알람 시간부터 수집 시작 예정")
         }
 
         scheduleMorningAlarm(context)
         Log.d(TAG, "위치 수집 활성화 완료")
+    }
+
+    /**
+     * 현재 시간이 위치 수집 범위(시작 시간 ~ 대화 시간) 내인지 확인
+     */
+    fun isCurrentTimeInCollectionRange(context: Context): Boolean {
+        val locationStorage = LocationCollectionStorage(context)
+        val alarmStorage = ConversationAlarmStorage(context)
+
+        val startTime = locationStorage.getStartTime()
+        val conversationTime = alarmStorage.getConversationTime() ?: "21:00"
+
+        return try {
+            val now = Calendar.getInstance()
+            val currentHour = now.get(Calendar.HOUR_OF_DAY)
+            val currentMinute = now.get(Calendar.MINUTE)
+            val currentMinutes = currentHour * 60 + currentMinute
+
+            val startHour = startTime.split(":")[0].toInt()
+            val startMinuteVal = startTime.split(":")[1].toInt()
+            val startMinutes = startHour * 60 + startMinuteVal
+
+            val endHour = conversationTime.split(":")[0].toInt()
+            val endMinuteVal = conversationTime.split(":")[1].toInt()
+            val endMinutes = endHour * 60 + endMinuteVal
+
+            val isInRange = if (startMinutes <= endMinutes) {
+                // 일반적인 경우: 06:00 ~ 21:00
+                currentMinutes in startMinutes..endMinutes
+            } else {
+                // 자정을 넘기는 경우: 22:00 ~ 06:00
+                currentMinutes >= startMinutes || currentMinutes <= endMinutes
+            }
+
+            Log.d(TAG, "시간 범위 체크: now=$currentHour:$currentMinute, range=$startTime~$conversationTime, inRange=$isInRange")
+            isInRange
+        } catch (e: Exception) {
+            Log.e(TAG, "시간 범위 체크 실패", e)
+            false
+        }
     }
 }
