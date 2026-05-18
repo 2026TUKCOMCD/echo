@@ -43,6 +43,7 @@ import com.example.graduation_project.presentation.onboarding.OnboardingScreen
 import com.example.graduation_project.presentation.settings.SettingsScreen
 import com.example.graduation_project.presentation.settings.DisplaySettingsViewModel
 import com.example.graduation_project.data.location.LocationScheduler
+import com.example.graduation_project.presentation.permission.PermissionChecker
 import com.example.graduation_project.BuildConfig
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
@@ -66,8 +67,10 @@ class MainActivity : ComponentActivity() {
         val currentVersionCode = BuildConfig.VERSION_CODE.toLong()
 
         if (savedVersionCode != currentVersionCode) {
-            // 재설치 또는 업데이트 감지 → 알람 재예약
-            LocationScheduler.enableLocationCollection(this)
+            // 위치 권한이 있을 때만 서비스 시작 (없으면 Android 14+에서 SecurityException)
+            if (PermissionChecker.hasForegroundLocationPermission(this)) {
+                LocationScheduler.enableLocationCollection(this)
+            }
             prefs.edit().putLong("last_version_code", currentVersionCode).apply()
         }
     }
