@@ -49,7 +49,6 @@ data class SettingsUiState(
     // 위치 수집 설정
     val locationCollectionStartTime: String = "06:00",
     val isLocationCollectionRunning: Boolean = false,
-    val isLocationToggleEnabled: Boolean = false,  // 시간 범위 내일 때만 토글 활성화
     // 권한 상태
     val hasLocationPermission: Boolean = false,
     val hasBackgroundLocationPermission: Boolean = false,
@@ -166,7 +165,6 @@ class SettingsViewModel(
                 alarmEnabled = alarmEnabled,
                 locationCollectionStartTime = locationStartTime,
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
-                isLocationToggleEnabled = LocationScheduler.isCurrentTimeInCollectionRange(context),
                 hasLocationPermission = hasLocation,
                 hasBackgroundLocationPermission = hasBackgroundLocation,
                 hasNotificationPermission = hasNotification,
@@ -203,7 +201,6 @@ class SettingsViewModel(
         _uiState.update {
             it.copy(
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
-                isLocationToggleEnabled = LocationScheduler.isCurrentTimeInCollectionRange(context),
                 hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
                 hasBackgroundLocationPermission = currentBackgroundPermission,
                 hasNotificationPermission = PermissionChecker.hasNotificationPermission(context),
@@ -246,17 +243,10 @@ class SettingsViewModel(
     }
 
     /**
-     * 위치 수집 시작/중지 토글 (시간 범위 내에서만 가능)
+     * 위치 수집 시작/중지 토글 (수동 제어 - 시간 범위 무관)
      */
     fun toggleLocationCollection() {
         val context = getApplication<Application>()
-
-        // 시간 범위 밖이면 토글 불가
-        if (!LocationScheduler.isCurrentTimeInCollectionRange(context)) {
-            _uiState.update { it.copy(errorMessage = "현재 시간은 위치 수집 범위 밖입니다") }
-            return
-        }
-
         if (LocationCollectionService.isRunning) {
             LocationCollectionService.stop(context)
             _uiState.update { it.copy(isLocationCollectionRunning = false, savedMessage = "위치 수집이 중지되었습니다") }
@@ -374,14 +364,19 @@ class SettingsViewModel(
     /**
      * 위치 수집 상태 확인 및 자동 조정
      * - 현재 시간이 수집 범위(시작 시간 ~ 대화 시간) 밖이면 서비스 자동 중지
-     * - 토글 활성화 상태도 함께 업데이트
+     * - 범위 내이고 권한이 있으면 서비스 자동 시작
      */
     private fun checkAndUpdateLocationCollectionStatus() {
         val context = getApplication<Application>()
-        val isInRange = LocationScheduler.isCurrentTimeInCollectionRange(context)
+        val startTime = _uiState.value.locationCollectionStartTime
+        val conversationTime = _uiState.value.conversationTime
 
-        // 토글 활성화 상태 업데이트
-        _uiState.update { it.copy(isLocationToggleEnabled = isInRange) }
+        // 대화 시간이 설정되지 않은 경우 체크 불가
+        if (conversationTime.isNullOrBlank()) {
+            return
+        }
+
+        val isInRange = isCurrentTimeInRange(startTime, conversationTime)
 
         if (LocationCollectionService.isRunning && !isInRange) {
             // 범위 밖인데 서비스가 실행 중이면 중지
