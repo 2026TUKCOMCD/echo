@@ -1,6 +1,7 @@
 package com.example.graduation_project.presentation.settings
 
 import android.app.Application
+import android.os.PowerManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -51,6 +52,9 @@ data class SettingsUiState(
     val hasBackgroundLocationPermission: Boolean = false,
     val hasHealthConnectPermission: Boolean = false,
     val hasNotificationPermission: Boolean = true,
+    val isBatteryOptimizationDisabled: Boolean = false,
+    // 배터리 최적화 해제 요청 이벤트 (UI에서 처리)
+    val shouldRequestBatteryOptimization: Boolean = false,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
@@ -89,6 +93,7 @@ class SettingsViewModel(
         val hasLocation = PermissionChecker.hasForegroundLocationPermission(context)
         val hasBackgroundLocation = PermissionChecker.hasBackgroundLocationPermission(context)
         val hasNotification = PermissionChecker.hasNotificationPermission(context)
+        val isBatteryOptimizationDisabled = checkBatteryOptimizationDisabled()
 
         _uiState.update {
             it.copy(
@@ -98,7 +103,8 @@ class SettingsViewModel(
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = hasLocation,
                 hasBackgroundLocationPermission = hasBackgroundLocation,
-                hasNotificationPermission = hasNotification
+                hasNotificationPermission = hasNotification,
+                isBatteryOptimizationDisabled = isBatteryOptimizationDisabled
             )
         }
 
@@ -126,13 +132,15 @@ class SettingsViewModel(
         val context = getApplication<Application>()
         val previousBackgroundPermission = _uiState.value.hasBackgroundLocationPermission
         val currentBackgroundPermission = PermissionChecker.hasBackgroundLocationPermission(context)
+        val isBatteryOptimizationDisabled = checkBatteryOptimizationDisabled()
 
         _uiState.update {
             it.copy(
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
                 hasBackgroundLocationPermission = currentBackgroundPermission,
-                hasNotificationPermission = PermissionChecker.hasNotificationPermission(context)
+                hasNotificationPermission = PermissionChecker.hasNotificationPermission(context),
+                isBatteryOptimizationDisabled = isBatteryOptimizationDisabled
             )
         }
 
@@ -142,9 +150,13 @@ class SettingsViewModel(
             _uiState.update { it.copy(hasHealthConnectPermission = hasHealthConnectPermission) }
         }
 
-        // 위치 권한이 새로 허용되었으면 서비스 시작
+        // 위치 권한이 새로 허용되었으면 서비스 시작 + 배터리 최적화 해제 요청
         if (!previousBackgroundPermission && currentBackgroundPermission) {
             LocationScheduler.enableLocationCollection(context)
+            // 배터리 최적화가 아직 해제되지 않았으면 요청
+            if (!isBatteryOptimizationDisabled) {
+                _uiState.update { it.copy(shouldRequestBatteryOptimization = true) }
+            }
         }
 
         // 위치 수집 상태 확인 (범위 밖이면 자동 중지)
@@ -177,6 +189,10 @@ class SettingsViewModel(
         } else {
             LocationCollectionService.start(context)
             _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "위치 수집이 시작되었습니다") }
+            // 배터리 최적화가 아직 해제되지 않았으면 요청
+            if (!checkBatteryOptimizationDisabled()) {
+                _uiState.update { it.copy(shouldRequestBatteryOptimization = true) }
+            }
         }
     }
 
@@ -336,6 +352,30 @@ class SettingsViewModel(
         } catch (e: Exception) {
             false
         }
+    }
+
+    /**
+     * 배터리 최적화가 해제되어 있는지 확인
+     */
+    private fun checkBatteryOptimizationDisabled(): Boolean {
+        val context = getApplication<Application>()
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    /**
+     * 배터리 최적화 요청 이벤트 클리어 (UI에서 처리 후 호출)
+     */
+    fun dismissBatteryOptimizationRequest() {
+        _uiState.update { it.copy(shouldRequestBatteryOptimization = false) }
+    }
+
+    /**
+     * 배터리 최적화 상태 새로고침
+     */
+    fun refreshBatteryOptimizationStatus() {
+        val isDisabled = checkBatteryOptimizationDisabled()
+        _uiState.update { it.copy(isBatteryOptimizationDisabled = isDisabled) }
     }
 
     companion object {

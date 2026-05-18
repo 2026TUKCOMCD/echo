@@ -3,6 +3,7 @@ package com.example.graduation_project.presentation.settings
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -104,10 +105,25 @@ fun SettingsScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshPermissionStatus()
+                viewModel.refreshBatteryOptimizationStatus()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 배터리 최적화 해제 요청 처리
+    LaunchedEffect(uiState.shouldRequestBatteryOptimization) {
+        if (uiState.shouldRequestBatteryOptimization) {
+            val powerManager = context.getSystemService(PowerManager::class.java)
+            if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                }
+                context.startActivity(intent)
+            }
+            viewModel.dismissBatteryOptimizationRequest()
+        }
     }
 
     LaunchedEffect(uiState.savedMessage) {
@@ -390,6 +406,20 @@ fun SettingsScreen(
                         isGranted = uiState.hasBackgroundLocationPermission,
                         grantedText = "항상 허용됨",
                         deniedText = "허용 필요"
+                    )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    // 배터리 최적화 상태
+                    PermissionStatusRow(
+                        label = "배터리 최적화",
+                        isGranted = uiState.isBatteryOptimizationDisabled,
+                        grantedText = "제한 없음",
+                        deniedText = "제한됨 (터치하여 해제)",
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
+                        }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     // 위치 수집 상태 토글
