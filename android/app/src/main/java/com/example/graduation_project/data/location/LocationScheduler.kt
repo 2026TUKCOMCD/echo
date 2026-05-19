@@ -1,11 +1,15 @@
 package com.example.graduation_project.data.location
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import java.util.Calendar
 
@@ -125,37 +129,143 @@ object LocationScheduler {
 
     /**
      * 위치 수집 활성화
-     * - 대화 시간 전이면 즉시 서비스 시작 (권한 허용 직후 바로 수집 시작)
-     * - 대화 시간 이후면 다음날 알람만 스케줄링
+     * - 필수 조건(FINE 권한, 백그라운드 권한, 배터리 최적화 해제) 확인
+     * - 위치 수집 시간 범위 내이면 즉시 서비스 시작
+     * - 범위 밖이면 다음날 알람만 스케줄링
      */
-    fun enableLocationCollection(context: Context) {
+    fun enableLocationCollection(context: Context): Boolean {
+        // 필수 조건 확인
+        val prerequisiteResult = checkPrerequisites(context)
+        if (prerequisiteResult != PrerequisiteResult.ALL_SATISFIED) {
+            Log.w(TAG, "위치 수집 필수 조건 미충족: $prerequisiteResult - 서비스 시작 안 함")
+            // 알람은 예약 (다음날 아침에 조건 다시 체크)
+            scheduleMorningAlarm(context)
+            return false
+        }
+
+        val locationStorage = LocationCollectionStorage(context)
         val alarmStorage = ConversationAlarmStorage(context)
+
+        // 위치 수집 시작 시간 가져오기 (기본값: 06:00)
+        val startHour = locationStorage.getStartHour()
+        val startMinute = locationStorage.getStartMinute()
 
         // 대화 시간 가져오기 (기본값: 21:00)
         val conversationTime = alarmStorage.getConversationTime() ?: "21:00"
-        val endHour = try { conversationTime.split(":")[0].toInt() } catch (e: Exception) { 9 }
+        val endHour = try { conversationTime.split(":")[0].toInt() } catch (e: Exception) { 21 }
         val endMinute = try { conversationTime.split(":")[1].toInt() } catch (e: Exception) { 0 }
 
         // 현재 시간 확인
         val now = Calendar.getInstance()
-        val currentHour = now.get(Calendar.HOUR_OF_DAY)
-        val currentMinute = now.get(Calendar.MINUTE)
-        val currentMinutes = currentHour * 60 + currentMinute
+        val currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+        val startMinutes = startHour * 60 + startMinute
         val endMinutes = endHour * 60 + endMinute
 
-        // 대화 시간 전인지 확인 (대화 시간 전이면 아직 오늘 대화가 안 끝났으므로 수집 필요)
-        val isBeforeConversationTime = currentMinutes < endMinutes
+        // 위치 수집 시간 범위 내인지 확인
+        val isInCollectionTimeRange = currentMinutes in startMinutes until endMinutes
 
-        if (isBeforeConversationTime) {
-            // 대화 시간 전 → 즉시 서비스 시작 (권한 허용 직후 바로 수집)
-            Log.d(TAG, "대화 시간($endHour:$endMinute) 전 - 위치 수집 즉시 시작")
+        if (isInCollectionTimeRange) {
+            // 시간 범위 내 → 즉시 서비스 시작
+            Log.d(TAG, "위치 수집 시간 범위 내 ($startHour:$startMinute ~ $endHour:$endMinute) - 즉시 시작")
             LocationCollectionService.start(context)
         } else {
-            // 대화 시간 이후 → 오늘 대화는 이미 끝났으므로 내일부터 수집
-            Log.d(TAG, "대화 시간($endHour:$endMinute) 이후 - 내일 아침부터 수집 시작 예정")
+            // 시간 범위 밖 → 내일 아침부터 수집
+            Log.d(TAG, "위치 수집 시간 범위 밖 - 내일 아침부터 수집 시작 예정")
         }
 
         scheduleMorningAlarm(context)
         Log.d(TAG, "위치 수집 활성화 완료")
+        return true
+    }
+
+    /**
+     * 시간 범위 내이면 서비스 시작 (필수 조건 체크 없이)
+     * 이미 checkPrerequisites()로 조건 체크를 완료한 후 호출할 것
+     */
+    fun startServiceIfInTimeRange(context: Context) {
+        val locationStorage = LocationCollectionStorage(context)
+        val alarmStorage = ConversationAlarmStorage(context)
+
+        // 위치 수집 시작 시간 가져오기 (기본값: 06:00)
+        val startHour = locationStorage.getStartHour()
+        val startMinute = locationStorage.getStartMinute()
+
+        // 대화 시간 가져오기 (기본값: 21:00)
+        val conversationTime = alarmStorage.getConversationTime() ?: "21:00"
+        val endHour = try { conversationTime.split(":")[0].toInt() } catch (e: Exception) { 21 }
+        val endMinute = try { conversationTime.split(":")[1].toInt() } catch (e: Exception) { 0 }
+
+        // 현재 시간 확인
+        val now = Calendar.getInstance()
+        val currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+        val startMinutes = startHour * 60 + startMinute
+        val endMinutes = endHour * 60 + endMinute
+
+        // 위치 수집 시간 범위 내인지 확인
+        val isInCollectionTimeRange = currentMinutes in startMinutes until endMinutes
+
+        if (isInCollectionTimeRange) {
+            // 시간 범위 내 → 즉시 서비스 시작
+            Log.d(TAG, "위치 수집 시간 범위 내 ($startHour:$startMinute ~ $endHour:$endMinute) - 즉시 시작")
+            LocationCollectionService.start(context)
+        } else {
+            // 시간 범위 밖 → 서비스 시작 안 함
+            Log.d(TAG, "위치 수집 시간 범위 밖 - 서비스 시작 안 함")
+        }
+    }
+
+    /**
+     * 위치 수집 서비스 시작 필수 조건 확인
+     */
+    fun checkPrerequisites(context: Context): PrerequisiteResult {
+        // 1. FINE 위치 권한 확인
+        val hasFineLocation = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasFineLocation) {
+            val hasCoarseLocation = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            return if (hasCoarseLocation) {
+                PrerequisiteResult.COARSE_LOCATION_ONLY
+            } else {
+                PrerequisiteResult.NO_LOCATION_PERMISSION
+            }
+        }
+
+        // 2. 백그라운드 위치 권한 확인 (Android 10+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val hasBackgroundLocation = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!hasBackgroundLocation) {
+                return PrerequisiteResult.NO_BACKGROUND_LOCATION
+            }
+        }
+
+        // 3. 배터리 최적화 해제 확인
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+            return PrerequisiteResult.BATTERY_OPTIMIZATION_ENABLED
+        }
+
+        return PrerequisiteResult.ALL_SATISFIED
+    }
+
+    /**
+     * 위치 수집 필수 조건 결과
+     */
+    enum class PrerequisiteResult {
+        ALL_SATISFIED,              // 모든 조건 충족
+        NO_LOCATION_PERMISSION,     // 위치 권한 없음
+        COARSE_LOCATION_ONLY,       // 대략적 위치만 허용 (정밀 위치 필요)
+        NO_BACKGROUND_LOCATION,     // 백그라운드 위치 권한 없음
+        BATTERY_OPTIMIZATION_ENABLED // 배터리 최적화 해제 안 됨
     }
 }

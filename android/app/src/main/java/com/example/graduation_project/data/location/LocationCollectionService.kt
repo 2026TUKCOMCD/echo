@@ -220,9 +220,18 @@ class LocationCollectionService : Service() {
     }
 
     private suspend fun collectLocation() {
-        if (!hasLocationPermission()) {
-            Log.w(TAG, "위치 권한 없음 - 서비스 중지")
-            stopSelf()  // 권한 없으면 서비스 중지 (리소스 낭비 방지)
+        val permissionStatus = checkLocationPermissionStatus()
+        if (permissionStatus != LocationPermissionStatus.FINE_GRANTED) {
+            when (permissionStatus) {
+                LocationPermissionStatus.COARSE_ONLY -> {
+                    Log.w(TAG, "대략적 위치 권한만 허용됨 - 정확한 위치 필요")
+                    showPreciseLocationRequiredNotification()
+                }
+                else -> {
+                    Log.w(TAG, "위치 권한 없음 - 서비스 중지")
+                }
+            }
+            stopSelf()
             return
         }
 
@@ -254,17 +263,62 @@ class LocationCollectionService : Service() {
         }
     }
 
-    private fun hasLocationPermission(): Boolean {
+    /**
+     * 위치 권한 상태 확인
+     */
+    private fun checkLocationPermissionStatus(): LocationPermissionStatus {
         val hasFineLocation = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (!hasFineLocation) {
-            Log.d(TAG, "정밀 위치 권한(FINE) 없음 - 50m 체류 감지에 필수")
-        }
+        val hasCoarseLocation = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
 
-        return hasFineLocation
+        return when {
+            hasFineLocation -> LocationPermissionStatus.FINE_GRANTED
+            hasCoarseLocation -> LocationPermissionStatus.COARSE_ONLY
+            else -> LocationPermissionStatus.DENIED
+        }
+    }
+
+    /**
+     * 정밀 위치 권한 필요 알림 표시
+     */
+    private fun showPreciseLocationRequiredNotification() {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.parse("package:$packageName")
+            },
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("📍 정확한 위치 권한 필요")
+            .setContentText("방문 장소 기록을 위해 '정확한 위치'를 허용해주세요")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        notificationManager.notify(PERMISSION_NOTIFICATION_ID, notification)
+        Log.d(TAG, "정밀 위치 권한 필요 알림 표시")
+    }
+
+    /**
+     * 위치 권한 상태
+     */
+    private enum class LocationPermissionStatus {
+        FINE_GRANTED,   // 정밀 위치 허용됨
+        COARSE_ONLY,    // 대략적 위치만 허용됨
+        DENIED          // 권한 없음
     }
 
     /**
@@ -334,6 +388,7 @@ class LocationCollectionService : Service() {
         private const val GREETING_CHANNEL_ID = "location_greeting_channel"
         private const val NOTIFICATION_ID = 1001
         private const val GREETING_NOTIFICATION_ID = 1002
+        private const val PERMISSION_NOTIFICATION_ID = 1003
 
         private const val INTERVAL_NORMAL_MS = 10 * 60 * 1000L      // 10분
         private const val INTERVAL_LOW_BATTERY_MS = 30 * 60 * 1000L // 30분

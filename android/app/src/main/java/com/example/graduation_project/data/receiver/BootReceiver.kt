@@ -1,34 +1,40 @@
 package com.example.graduation_project.data.receiver
 
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.util.Log
-import androidx.core.content.ContextCompat
 import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
-import com.example.graduation_project.data.location.LocationCollectionService
-import com.example.graduation_project.data.location.LocationCollectionStorage
 import com.example.graduation_project.data.location.LocationScheduler
-import java.util.Calendar
 
 /**
- * 부팅 완료 시 필요한 서비스/알람 자동 시작
+ * 부팅 완료 및 앱 업데이트 시 필요한 서비스/알람 자동 시작
  *
- * 핸드폰이 재부팅되면 다음 작업을 수행:
- * - 위치 수집 서비스 시작 (권한이 있을 때만, 설정 시간 기준)
- * - 대화 알람 재스케줄링
+ * 다음 이벤트를 처리:
+ * - BOOT_COMPLETED: 기기 재부팅
+ * - MY_PACKAGE_REPLACED: 앱 업데이트 완료
+ *
+ * 두 경우 모두 AlarmManager 알람이 초기화되므로 재스케줄링 필요
  */
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) {
-            return
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED -> {
+                Log.d(TAG, "부팅 완료 - 서비스 및 알람 재시작")
+                handleRestart(context)
+            }
+            Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                Log.d(TAG, "앱 업데이트 완료 - 서비스 및 알람 재시작")
+                handleRestart(context)
+            }
         }
+    }
 
-        Log.d(TAG, "부팅 완료 - 서비스 및 알람 재시작")
-
+    /**
+     * 부팅/업데이트 후 공통 처리
+     */
+    private fun handleRestart(context: Context) {
         // 1. 위치 수집 관련 처리
         scheduleLocationCollection(context)
 
@@ -37,59 +43,21 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private fun scheduleLocationCollection(context: Context) {
-        // 위치 수집 비활성화 상태면 건너뜀
-        val storage = LocationCollectionStorage(context)
-        if (!storage.isEnabled()) {
-            Log.d(TAG, "위치 수집 비활성화 상태 - 건너뜀")
-            return
+        // 필수 조건 체크 및 서비스 시작 (조건 미충족 시에도 알람은 스케줄링)
+        val prerequisiteResult = LocationScheduler.checkPrerequisites(context)
+        Log.d(TAG, "필수 조건 체크 결과: $prerequisiteResult")
+
+        when (prerequisiteResult) {
+            LocationScheduler.PrerequisiteResult.ALL_SATISFIED -> {
+                // 모든 조건 충족 - enableLocationCollection()으로 시간 범위 체크 후 시작
+                LocationScheduler.enableLocationCollection(context)
+            }
+            else -> {
+                // 조건 미충족 - 알람만 스케줄링 (다음 아침에 조건 다시 체크)
+                Log.w(TAG, "필수 조건 미충족: $prerequisiteResult - 알람만 스케줄링")
+                LocationScheduler.scheduleMorningAlarm(context)
+            }
         }
-
-        // 위치 권한 체크 (정확한 체류 감지를 위해 FINE 권한 필수)
-        val hasFineLocation = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val hasBackgroundPermission = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-        Log.d(TAG, "권한 상태: FINE=$hasFineLocation, BACKGROUND=$hasBackgroundPermission")
-
-        if (!hasFineLocation) {
-            Log.w(TAG, "정밀 위치 권한(FINE) 없음 - 위치 서비스 시작 건너뜀 (50m 체류 감지에 필수)")
-            return
-        }
-
-        if (!hasBackgroundPermission) {
-            Log.w(TAG, "백그라운드 위치 권한 없음 - 위치 서비스 시작 건너뜀")
-            return
-        }
-
-        // 설정 시간 가져오기
-        val startHour = storage.getStartHour()
-        val startMinute = storage.getStartMinute()
-
-        // 현재 시간이 설정 시간 이후인지 확인
-        val now = Calendar.getInstance()
-        val currentHour = now.get(Calendar.HOUR_OF_DAY)
-        val currentMinute = now.get(Calendar.MINUTE)
-
-        val isAfterStartTime = (currentHour > startHour) ||
-                (currentHour == startHour && currentMinute >= startMinute)
-
-        if (isAfterStartTime) {
-            // 설정 시간 이후 부팅 → 즉시 시작
-            Log.d(TAG, "설정 시간($startHour:$startMinute) 이후 부팅 - 위치 수집 즉시 시작")
-            LocationCollectionService.start(context)
-        } else {
-            // 설정 시간 이전 부팅 → 알람만 스케줄링
-            Log.d(TAG, "설정 시간($startHour:$startMinute) 이전 부팅 - 알람 스케줄링만")
-        }
-
-        // 다음 날 알람 스케줄링
-        LocationScheduler.scheduleMorningAlarm(context)
     }
 
     companion object {
