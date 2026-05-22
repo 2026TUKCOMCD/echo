@@ -83,6 +83,8 @@ import com.example.graduation_project.presentation.common.parseBirthday
 import com.example.graduation_project.presentation.health.openHealthConnectSettings
 import com.example.graduation_project.data.local.DisplaySettingsStorage
 import com.example.graduation_project.presentation.permission.PermissionChecker
+import com.example.graduation_project.presentation.permission.SamsungBatterySettingsDialog
+import com.example.graduation_project.util.DeviceUtil
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -98,6 +100,7 @@ fun SettingsScreen(
     val displaySettings by displayViewModel.settings.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingField by remember { mutableStateOf<String?>(null) }
+    var showSamsungBatteryDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -124,7 +127,28 @@ fun SettingsScreen(
                 context.startActivity(intent)
             }
             viewModel.dismissBatteryOptimizationRequest()
+            // 삼성 기기인 경우 추가 설정 안내
+            if (DeviceUtil.isSamsungDevice()) {
+                showSamsungBatteryDialog = true
+            }
         }
+    }
+
+    // 삼성 기기 배터리 설정 안내 다이얼로그
+    if (showSamsungBatteryDialog) {
+        SamsungBatterySettingsDialog(
+            onDismiss = { showSamsungBatteryDialog = false },
+            onOpenSettings = {
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+        )
     }
 
     LaunchedEffect(uiState.savedMessage) {
@@ -423,11 +447,9 @@ fun SettingsScreen(
                         }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    // 위치 수집 상태 토글
-                    LocationCollectionToggleRow(
-                        isRunning = uiState.isLocationCollectionRunning,
-                        hasPermission = uiState.hasBackgroundLocationPermission,
-                        onToggle = { viewModel.toggleLocationCollection() }
+                    // 위치 수집 상태 표시 (토글 없이 상태만)
+                    LocationCollectionStatusRow(
+                        isRunning = uiState.isLocationCollectionRunning
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
@@ -730,13 +752,11 @@ private fun MicrophonePermissionStatusRow(
 }
 
 /**
- * 위치 수집 상태 토글
+ * 위치 수집 상태 표시 (토글 없이 상태만 표시)
  */
 @Composable
-private fun LocationCollectionToggleRow(
-    isRunning: Boolean,
-    hasPermission: Boolean,
-    onToggle: () -> Unit
+private fun LocationCollectionStatusRow(
+    isRunning: Boolean
 ) {
     val colors = LocalEchoColors.current
     Row(
@@ -746,7 +766,12 @@ private fun LocationCollectionToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("위치 수집 상태", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+            Text(
+                text = "위치 수집 상태",
+                fontSize = 15.sp,
+                fontFamily = OutfitFontFamily,
+                color = colors.textSecondary
+            )
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -766,20 +791,8 @@ private fun LocationCollectionToggleRow(
                 )
             }
         }
-        Switch(
-            checked = isRunning,
-            onCheckedChange = { onToggle() },
-            enabled = hasPermission,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = colors.accentGreen,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = colors.bgMuted
-            )
-        )
     }
 }
-
 
 @Composable
 private fun TextFieldDialog(

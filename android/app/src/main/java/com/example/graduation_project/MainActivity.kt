@@ -48,6 +48,8 @@ import com.example.graduation_project.presentation.settings.SettingsScreen
 import com.example.graduation_project.presentation.settings.DisplaySettingsViewModel
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.data.location.MorningAlarmReceiver
+import com.example.graduation_project.presentation.permission.SamsungBatterySettingsDialog
+import com.example.graduation_project.util.DeviceUtil
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import kotlinx.coroutines.Dispatchers
@@ -138,7 +140,8 @@ private fun AppNavHost(
     // 권한 다이얼로그 상태
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showGuideDialog by remember { mutableStateOf(false) }
-    var permissionStep by remember { mutableStateOf(0) } // 0: 대기, 1: 위치, 2: 백그라운드, 3: 배터리
+    var showSamsungBatteryDialog by remember { mutableStateOf(false) }
+    var permissionStep by remember { mutableStateOf(0) } // 0: 대기, 1: 위치, 2: 백그라운드, 3: 배터리, 4: 삼성
 
     // 위치 권한 요청 런처
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -201,9 +204,18 @@ private fun AppNavHost(
                     }
                     context.startActivity(intent)
                 }
-                // 완료 - 위치 수집 시작 시도
-                LocationScheduler.enableLocationCollection(context)
-                permissionStep = 0
+                // 삼성 기기인 경우 추가 설정 안내
+                if (DeviceUtil.isSamsungDevice()) {
+                    permissionStep = 4
+                } else {
+                    // 완료 - 위치 수집 시작 시도
+                    LocationScheduler.enableLocationCollection(context)
+                    permissionStep = 0
+                }
+            }
+            4 -> {
+                // 삼성 기기 추가 배터리 설정 안내
+                showSamsungBatteryDialog = true
             }
         }
     }
@@ -238,6 +250,30 @@ private fun AppNavHost(
     if (showGuideDialog) {
         LocationPermissionGuideDialog(
             onDismiss = { showGuideDialog = false }
+        )
+    }
+
+    // 삼성 기기 배터리 설정 안내 다이얼로그
+    if (showSamsungBatteryDialog) {
+        SamsungBatterySettingsDialog(
+            onDismiss = {
+                showSamsungBatteryDialog = false
+                permissionStep = 0
+                // 위치 수집 시작 시도
+                LocationScheduler.enableLocationCollection(context)
+            },
+            onOpenSettings = {
+                // 삼성 배터리 설정 화면으로 이동
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    // 실패 시 일반 설정 화면
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
         )
     }
 

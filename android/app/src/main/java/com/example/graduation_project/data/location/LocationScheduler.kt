@@ -19,11 +19,18 @@ import java.util.Calendar
  * AlarmManager를 사용하여:
  * - 사용자가 설정한 시간에 위치 수집 서비스 시작 (기본: 아침 6시)
  * - 대화 종료 후 다음날 자동 재시작 예약
+ * - 10분마다 위치 수집 알람 (Doze 모드에서도 정확하게 동작)
  */
 object LocationScheduler {
 
     private const val TAG = "LocationScheduler"
     private const val MORNING_ALARM_REQUEST_CODE = 2001
+    private const val COLLECTION_ALARM_REQUEST_CODE = 2002
+
+    // 위치 수집 간격 (밀리초)
+    private const val INTERVAL_NORMAL_MS = 10 * 60 * 1000L      // 10분
+    private const val INTERVAL_LOW_BATTERY_MS = 30 * 60 * 1000L // 30분
+    private const val LOW_BATTERY_THRESHOLD = 15                 // 15%
 
     /**
      * 사용자 설정 시간에 알람 스케줄링
@@ -267,5 +274,123 @@ object LocationScheduler {
         COARSE_LOCATION_ONLY,       // 대략적 위치만 허용 (정밀 위치 필요)
         NO_BACKGROUND_LOCATION,     // 백그라운드 위치 권한 없음
         BATTERY_OPTIMIZATION_ENABLED // 배터리 최적화 해제 안 됨
+    }
+
+    // ============================================================
+    // 주기적 위치 수집 알람 (10분마다, Doze 모드에서도 정확하게 동작)
+    // ============================================================
+
+    /**
+     * 다음 위치 수집 알람 스케줄링
+     * - 배터리 상태에 따라 10분 또는 30분 후 알람 설정
+     * - setExactAndAllowWhileIdle()로 Doze 모드에서도 정확하게 동작
+     */
+    fun scheduleNextCollectionAlarm(context: Context) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+        val intent = Intent(context, LocationCollectionAlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            COLLECTION_ALARM_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 배터리 상태에 따른 간격 결정
+        val intervalMs = getCollectionInterval(context)
+        val triggerTime = System.currentTimeMillis() + intervalMs
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerTime,
+                        pendingIntent
+                    )
+                } else {
+                    // 정확한 알람 권한 없으면 일반 알람 사용
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerTime,
+                        pendingIntent
+                    )
+                    Log.w(TAG, "정확한 알람 권한 없음 - 일반 알람 사용")
+                }
+            } else {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            }
+
+            Log.d(TAG, "다음 위치 수집 알람 스케줄링: ${intervalMs / 60000}분 후")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "위치 수집 알람 스케줄링 실패", e)
+        }
+    }
+
+    /**
+     * 위치 수집 알람 취소
+     */
+    fun cancelCollectionAlarm(context: Context) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+        val intent = Intent(context, LocationCollectionAlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            COLLECTION_ALARM_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        alarmManager.cancel(pendingIntent)
+        Log.d(TAG, "위치 수집 알람 취소됨")
+    }
+
+    /**
+     * 배터리 상태에 따른 수집 간격 결정
+     */
+    private fun getCollectionInterval(context: Context): Long {
+        val batteryLevel = getBatteryLevel(context)
+        return if (batteryLevel < LOW_BATTERY_THRESHOLD) {
+            Log.d(TAG, "배터리 부족 ($batteryLevel%) - 30분 간격")
+            INTERVAL_LOW_BATTERY_MS
+        } else {
+            INTERVAL_NORMAL_MS
+        }
+    }
+
+    /**
+     * 현재 배터리 잔량 (%)
+     */
+    private fun getBatteryLevel(context: Context): Int {
+        val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+        return batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+    }
+
+    /**
+     * 현재 시간이 위치 수집 범위(시작 시간 ~ 대화 시간) 내인지 확인
+     */
+    fun isCurrentTimeInCollectionRange(context: Context): Boolean {
+        val locationStorage = LocationCollectionStorage(context)
+        val alarmStorage = ConversationAlarmStorage(context)
+
+        val startHour = locationStorage.getStartHour()
+        val startMinute = locationStorage.getStartMinute()
+
+        val conversationTime = alarmStorage.getConversationTime() ?: "21:00"
+        val endHour = try { conversationTime.split(":")[0].toInt() } catch (e: Exception) { 21 }
+        val endMinute = try { conversationTime.split(":")[1].toInt() } catch (e: Exception) { 0 }
+
+        val now = Calendar.getInstance()
+        val currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+        val startMinutes = startHour * 60 + startMinute
+        val endMinutes = endHour * 60 + endMinute
+
+        val isInRange = currentMinutes in startMinutes until endMinutes
+        Log.d(TAG, "시간 범위 체크: 현재=${currentMinutes}분, 범위=${startMinutes}~${endMinutes}분, 결과=$isInRange")
+        return isInRange
     }
 }

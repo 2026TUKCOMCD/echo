@@ -101,6 +101,11 @@
             android:name=".data.location.MorningAlarmReceiver"
             android:exported="false" />
 
+        <!-- 10분마다 위치 수집 알람 (Doze 모드에서도 정확하게 동작) -->
+        <receiver
+            android:name=".data.location.LocationCollectionAlarmReceiver"
+            android:exported="false" />
+
         <!-- 대화 시간 알람 -->
         <receiver
             android:name=".data.alarm.ConversationAlarmReceiver"

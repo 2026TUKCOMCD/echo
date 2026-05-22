@@ -8,10 +8,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -24,16 +22,11 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 
 /**
  * 백그라운드 GPS 위치 수집 서비스
@@ -48,7 +41,6 @@ class LocationCollectionService : Service() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationStorageManager: LocationStorageManager
     private lateinit var locationCollectionStorage: LocationCollectionStorage
-    private lateinit var conversationAlarmStorage: ConversationAlarmStorage
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var collectionJob: Job? = null
@@ -63,33 +55,35 @@ class LocationCollectionService : Service() {
         val database = AppDatabase.getInstance(this)
         locationStorageManager = LocationStorageManager(database.locationPointDao())
         locationCollectionStorage = LocationCollectionStorage(this)
-        conversationAlarmStorage = ConversationAlarmStorage(this)
 
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "LocationCollectionService 시작")
+        Log.d(TAG, "LocationCollectionService onStartCommand - action: ${intent?.action}")
 
         when (intent?.action) {
             ACTION_STOP -> {
                 Log.d(TAG, "서비스 중지 요청")
+                LocationScheduler.cancelCollectionAlarm(this)
                 stopSelf()
                 return START_NOT_STICKY
             }
+            ACTION_COLLECT -> {
+                // AlarmManager에서 트리거된 위치 수집 요청
+                Log.d(TAG, "알람에 의한 위치 수집 요청")
+                performLocationCollection()
+                return START_STICKY
+            }
         }
 
+        // 서비스 최초 시작 (MorningAlarmReceiver 또는 enableLocationCollection에서 호출)
         // Foreground Service 시작
         startForegroundService()
 
-        // 이미 수집 중이면 다시 시작하지 않음
-        if (collectionJob?.isActive == true) {
-            Log.d(TAG, "이미 위치 수집 중 - 중복 시작 무시")
-            return START_STICKY
-        }
-
-        // 위치 수집 시작
-        startLocationCollection()
+        // 즉시 첫 위치 수집 + 다음 알람 스케줄링
+        performLocationCollection()
+        LocationScheduler.scheduleNextCollectionAlarm(this)
 
         // 아침 인사 알림 표시
         showMorningGreetingNotification()
@@ -104,6 +98,8 @@ class LocationCollectionService : Service() {
         isRunning = false
         Log.d(TAG, "LocationCollectionService 종료")
         collectionJob?.cancel()
+        // 서비스 종료 시 알람도 취소
+        LocationScheduler.cancelCollectionAlarm(this)
     }
 
     private fun startForegroundService() {
@@ -163,59 +159,20 @@ class LocationCollectionService : Service() {
             .build()
     }
 
-    private fun startLocationCollection() {
-        collectionJob?.cancel()
-        collectionJob = serviceScope.launch {
-            Log.d(TAG, "위치 수집 루프 시작")
-
-            // 시작 시 즉시 한 번 수집
-            collectLocation()
-
-            while (isActive) {
-                val intervalMs = getCollectionInterval()
-                Log.d(TAG, "다음 수집까지 ${intervalMs / 60000}분 대기")
-
-                delay(intervalMs)
-
-                // 시간 범위 체크 - 범위 밖이면 서비스 자동 중지
-                if (!isCurrentTimeInRange()) {
-                    Log.d(TAG, "수집 시간 범위 종료 - 서비스 자동 중지")
-                    stopSelf()
-                    return@launch
-                }
-
-                collectLocation()
-            }
-        }
-    }
-
     /**
-     * 현재 시간이 수집 범위(시작 시간 ~ 대화 시간) 내인지 확인
+     * 위치 수집 실행 (알람 또는 서비스 시작 시 호출)
+     * - 이전의 while 루프 + delay 방식에서 AlarmManager 기반으로 변경
+     * - Doze 모드에서도 정확하게 동작
      */
-    private fun isCurrentTimeInRange(): Boolean {
-        return try {
-            val startTimeStr = locationCollectionStorage.getStartTime()
-            // 대화 시간이 설정되지 않은 경우 기본값 21:00 사용
-            val endTimeStr = conversationAlarmStorage.getConversationTime() ?: DEFAULT_CONVERSATION_TIME
+    private fun performLocationCollection() {
+        // 이미 수집 중이면 중복 실행 방지
+        if (collectionJob?.isActive == true) {
+            Log.d(TAG, "이미 위치 수집 중 - 중복 실행 무시")
+            return
+        }
 
-            val formatter = DateTimeFormatter.ofPattern("HH:mm")
-            val now = LocalTime.now()
-            val start = LocalTime.parse(startTimeStr, formatter)
-            val end = LocalTime.parse(endTimeStr, formatter)
-
-            val isInRange = if (start.isBefore(end) || start == end) {
-                // 일반적인 경우: 06:00 ~ 21:00
-                now in start..end
-            } else {
-                // 자정을 넘기는 경우: 22:00 ~ 06:00
-                now >= start || now <= end
-            }
-
-            Log.d(TAG, "시간 범위 체크: now=$now, range=$startTimeStr~$endTimeStr, inRange=$isInRange")
-            isInRange
-        } catch (e: Exception) {
-            Log.e(TAG, "시간 범위 체크 실패", e)
-            true  // 오류 시 계속 수집
+        collectionJob = serviceScope.launch {
+            collectLocation()
         }
     }
 
@@ -322,28 +279,6 @@ class LocationCollectionService : Service() {
     }
 
     /**
-     * 배터리 상태에 따른 수집 간격 결정
-     * - 정상: 10분
-     * - 배터리 15% 미만: 30분
-     */
-    private fun getCollectionInterval(): Long {
-        val batteryLevel = getBatteryLevel()
-        return if (batteryLevel < 15) {
-            Log.d(TAG, "배터리 부족 ($batteryLevel%) - 30분 간격으로 전환")
-            INTERVAL_LOW_BATTERY_MS
-        } else {
-            INTERVAL_NORMAL_MS
-        }
-    }
-
-    private fun getBatteryLevel(): Int {
-        val batteryStatus = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-        val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-        return if (level >= 0 && scale > 0) (level * 100 / scale) else 100
-    }
-
-    /**
      * "좋은 아침이에요" 인사 알림 표시
      * 10분 후 자동으로 사라짐
      */
@@ -390,13 +325,11 @@ class LocationCollectionService : Service() {
         private const val GREETING_NOTIFICATION_ID = 1002
         private const val PERMISSION_NOTIFICATION_ID = 1003
 
-        private const val INTERVAL_NORMAL_MS = 10 * 60 * 1000L      // 10분
-        private const val INTERVAL_LOW_BATTERY_MS = 30 * 60 * 1000L // 30분
         private const val MIN_COLLECTION_INTERVAL_MS = 9 * 60 * 1000L // 최소 9분 (중복 수집 방지)
         private const val GREETING_TIMEOUT_MS = 3 * 60 * 1000L      // 3분
-        private const val DEFAULT_CONVERSATION_TIME = "21:00"       // 기본 대화 시간
 
         const val ACTION_STOP = "com.example.graduation_project.STOP_LOCATION_SERVICE"
+        const val ACTION_COLLECT = "com.example.graduation_project.COLLECT_LOCATION"
 
         // 서비스 실행 상태
         @Volatile
