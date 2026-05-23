@@ -1249,6 +1249,12 @@ private fun LocationDebugDialog(
 
                 Spacer(Modifier.height(12.dp))
 
+                // 상태 정보 (디버그)
+                debugData.statusInfo?.let { status ->
+                    LocationStatusSection(status = status)
+                    Spacer(Modifier.height(12.dp))
+                }
+
                 // 포인트 목록
                 if (debugData.points.isEmpty()) {
                     Box(
@@ -1329,4 +1335,134 @@ private fun LocationDebugDialog(
             }
         }
     )
+}
+
+/**
+ * 위치 수집 상태 정보 섹션 (디버그용)
+ */
+@Composable
+private fun LocationStatusSection(status: LocationStatusInfo) {
+    val colors = LocalEchoColors.current
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = colors.bgMuted
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                "시스템 상태",
+                fontSize = 12.sp,
+                fontFamily = OutfitFontFamily,
+                color = colors.textSecondary,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            // 위치 서비스 상태
+            StatusRow(
+                label = "위치 서비스",
+                isOk = status.isLocationEnabled,
+                okText = "켜짐",
+                errorText = "꺼짐 ⚠️"
+            )
+            StatusRow(
+                label = "GPS",
+                isOk = status.isGpsEnabled,
+                okText = "켜짐",
+                errorText = "꺼짐"
+            )
+            StatusRow(
+                label = "네트워크 위치",
+                isOk = status.isNetworkEnabled,
+                okText = "켜짐",
+                errorText = "꺼짐"
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 권한 상태
+            StatusRow(
+                label = "정밀 위치 권한",
+                isOk = status.hasFineLocation,
+                okText = "허용됨",
+                errorText = "거부됨 ⚠️"
+            )
+            StatusRow(
+                label = "백그라운드 권한",
+                isOk = status.hasBackgroundLocation,
+                okText = "허용됨",
+                errorText = "거부됨 ⚠️"
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 기타 상태
+            StatusRow(
+                label = "배터리 최적화",
+                isOk = status.isBatteryOptimizationIgnored,
+                okText = "제외됨",
+                errorText = "활성화됨 ⚠️"
+            )
+            StatusRow(
+                label = "비행기 모드",
+                isOk = !status.isAirplaneModeOn,
+                okText = "꺼짐",
+                errorText = "켜짐 ⚠️"
+            )
+
+            // 삼성 기기 힌트
+            if (status.isSamsungDevice && status.isBatteryOptimizationIgnored && !status.isServiceRunning) {
+                Spacer(Modifier.height(8.dp))
+                val warningColor = Color(0xFFFF9800) // Orange/Amber
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = warningColor.copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        "💡 삼성 기기: 설정 → 배터리 → 백그라운드 사용 제한에서 이 앱을 제외해주세요",
+                        fontSize = 11.sp,
+                        fontFamily = OutfitFontFamily,
+                        color = warningColor,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 상태 표시 행
+ */
+@Composable
+private fun StatusRow(
+    label: String,
+    isOk: Boolean,
+    okText: String,
+    errorText: String
+) {
+    val colors = LocalEchoColors.current
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            fontFamily = OutfitFontFamily,
+            color = colors.textSecondary
+        )
+        Text(
+            if (isOk) okText else errorText,
+            fontSize = 13.sp,
+            fontFamily = OutfitFontFamily,
+            color = if (isOk) colors.accentGreen else colors.accentRed,
+            fontWeight = if (!isOk) FontWeight.Medium else FontWeight.Normal
+        )
+    }
 }
