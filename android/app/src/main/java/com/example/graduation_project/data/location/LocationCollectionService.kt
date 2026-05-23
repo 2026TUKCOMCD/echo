@@ -10,8 +10,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -25,8 +28,10 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
 
 /**
  * 백그라운드 GPS 위치 수집 서비스
@@ -177,6 +182,9 @@ class LocationCollectionService : Service() {
     }
 
     private suspend fun collectLocation() {
+        // 디버그: 위치 수집 시도 시 상태 로그
+        logLocationDebugInfo()
+
         val permissionStatus = checkLocationPermissionStatus()
         if (permissionStatus != LocationPermissionStatus.FINE_GRANTED) {
             when (permissionStatus) {
@@ -201,22 +209,36 @@ class LocationCollectionService : Service() {
 
         try {
             val cancellationToken = CancellationTokenSource()
-            val location = fusedLocationClient.getCurrentLocation(
-                Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                cancellationToken.token
-            ).await()
+
+            // 타임아웃 설정 (30초)
+            val location = withTimeout(LOCATION_TIMEOUT_MS) {
+                fusedLocationClient.getCurrentLocation(
+                    Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                    cancellationToken.token
+                ).await()
+            }
 
             if (location != null) {
                 locationStorageManager.saveLocation(location.latitude, location.longitude)
                 locationCollectionStorage.saveLastCollectionTime(System.currentTimeMillis())
-                Log.d(TAG, "위치 수집 완료: lat=${location.latitude}, lon=${location.longitude}")
+                Log.d(TAG, "✅ 위치 수집 완료: lat=${location.latitude}, lon=${location.longitude}")
             } else {
-                Log.w(TAG, "위치를 가져올 수 없음")
+                // 위치가 null인 경우 상세 원인 분석
+                logLocationNullReason()
             }
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "❌ 위치 수집 타임아웃 (${LOCATION_TIMEOUT_MS / 1000}초 초과)")
+            logLocationNullReason()
         } catch (e: SecurityException) {
-            Log.e(TAG, "위치 권한 오류", e)
+            Log.e(TAG, "❌ 위치 권한 오류 - 권한이 거부되었거나 취소됨", e)
+        } catch (e: IllegalStateException) {
+            // Google Play Services 문제
+            Log.e(TAG, "❌ Google Play Services 오류 - ${e.message}", e)
+            Log.w(TAG, "  → Google Play Services 업데이트가 필요하거나 사용 불가 상태")
         } catch (e: Exception) {
-            Log.e(TAG, "위치 수집 실패", e)
+            Log.e(TAG, "❌ 위치 수집 실패 - ${e.javaClass.simpleName}: ${e.message}", e)
+            // 추가 힌트
+            logExceptionHints(e)
         }
     }
 
@@ -279,6 +301,164 @@ class LocationCollectionService : Service() {
     }
 
     /**
+     * 위치 수집 디버그 정보 로그
+     * 10분마다 위치 수집 시도할 때 현재 상태를 상세히 기록
+     */
+    private fun logLocationDebugInfo() {
+        try {
+            val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+
+            // 1. GPS 상태
+            val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+
+            // 2. 네트워크 위치 상태
+            val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+
+            // 3. 위치 서비스 전체 on/off (Android P+)
+            val isLocationEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                locationManager.isLocationEnabled
+            } else {
+                isGpsEnabled || isNetworkEnabled
+            }
+
+            // 4. 권한 상태
+            val hasFineLocation = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val hasCoarseLocation = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val hasBackgroundLocation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true // Android 9 이하는 백그라운드 권한 불필요
+            }
+
+            // 5. 배터리 최적화 상태
+            val isBatteryOptimizationIgnored = powerManager.isIgnoringBatteryOptimizations(packageName)
+
+            // 6. 마지막 수집 시간
+            val lastCollectionTime = locationCollectionStorage.getLastCollectionTime()
+            val elapsedMinutes = if (lastCollectionTime > 0) {
+                (System.currentTimeMillis() - lastCollectionTime) / 60000
+            } else {
+                -1L
+            }
+
+            Log.d(TAG, """
+                |========== 위치 수집 디버그 정보 ==========
+                |[위치 서비스]
+                |  - 위치 서비스 활성화: $isLocationEnabled
+                |  - GPS 활성화: $isGpsEnabled
+                |  - 네트워크 위치 활성화: $isNetworkEnabled
+                |[권한 상태]
+                |  - 정밀 위치(FINE): $hasFineLocation
+                |  - 대략 위치(COARSE): $hasCoarseLocation
+                |  - 백그라운드 위치: $hasBackgroundLocation
+                |[배터리]
+                |  - 배터리 최적화 제외: $isBatteryOptimizationIgnored
+                |[수집 정보]
+                |  - 마지막 수집: ${if (elapsedMinutes >= 0) "${elapsedMinutes}분 전" else "없음"}
+                |============================================
+            """.trimMargin())
+
+            // 문제 발견 시 경고 로그
+            if (!isLocationEnabled) {
+                Log.w(TAG, "⚠️ 위치 서비스가 꺼져 있습니다!")
+            }
+            if (!isGpsEnabled && !isNetworkEnabled) {
+                Log.w(TAG, "⚠️ GPS와 네트워크 위치 모두 꺼져 있습니다!")
+            }
+            if (!hasFineLocation) {
+                Log.w(TAG, "⚠️ 정밀 위치 권한이 없습니다!")
+            }
+            if (!hasBackgroundLocation) {
+                Log.w(TAG, "⚠️ 백그라운드 위치 권한이 없습니다!")
+            }
+            if (!isBatteryOptimizationIgnored) {
+                Log.w(TAG, "⚠️ 배터리 최적화가 활성화되어 있습니다!")
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "디버그 정보 로그 실패", e)
+        }
+    }
+
+    /**
+     * 위치가 null인 경우 상세 원인 분석 로그
+     */
+    private fun logLocationNullReason() {
+        try {
+            val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+
+            // 비행기 모드 체크
+            val isAirplaneModeOn = Settings.Global.getInt(
+                contentResolver,
+                Settings.Global.AIRPLANE_MODE_ON,
+                0
+            ) != 0
+
+            val reason = when {
+                isAirplaneModeOn -> "비행기 모드가 켜져 있음 (설정에서 해제 필요)"
+                !isGpsEnabled && !isNetworkEnabled -> "GPS/네트워크 위치 모두 꺼져 있음 (사용자가 위치 설정에서 끔)"
+                !isGpsEnabled -> "GPS만 꺼져 있음 (실내이거나 GPS 비활성화)"
+                else -> "일시적 위치 확인 불가 (실내/건물 내부/위성 신호 약함)"
+            }
+
+            Log.w(TAG, """
+                |❌ 위치를 가져올 수 없음 - 원인 분석:
+                |  - 비행기 모드: $isAirplaneModeOn
+                |  - GPS 활성화: $isGpsEnabled
+                |  - 네트워크 위치: $isNetworkEnabled
+                |  - 판단된 원인: $reason
+            """.trimMargin())
+
+            // 삼성 기기 힌트
+            if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                val isBatteryOptimizationIgnored = powerManager.isIgnoringBatteryOptimizations(packageName)
+                if (isBatteryOptimizationIgnored) {
+                    Log.w(TAG, "💡 삼성 기기 힌트: 배터리 최적화는 해제됐지만 수집 안 되면 '설정 → 배터리 → 백그라운드 사용 제한'에서 이 앱을 제외해주세요")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "위치 null 원인 분석 실패", e)
+        }
+    }
+
+    /**
+     * 예외 발생 시 추가 힌트 로그
+     */
+    private fun logExceptionHints(e: Exception) {
+        val message = e.message ?: ""
+
+        when {
+            message.contains("UNAVAILABLE", ignoreCase = true) ||
+            message.contains("unavailable", ignoreCase = true) -> {
+                Log.w(TAG, "💡 힌트: 위치 서비스를 사용할 수 없습니다. 기기 재시작 또는 위치 설정 확인 필요")
+            }
+            message.contains("GooglePlayServices", ignoreCase = true) ||
+            message.contains("play services", ignoreCase = true) -> {
+                Log.w(TAG, "💡 힌트: Google Play Services 문제. Play Store에서 업데이트 필요")
+            }
+            message.contains("timeout", ignoreCase = true) -> {
+                Log.w(TAG, "💡 힌트: 위치 조회 시간 초과. 실외로 이동하면 GPS 신호가 좋아집니다 (Wi-Fi 켜면 더 빠름)")
+            }
+            message.contains("denied", ignoreCase = true) ||
+            message.contains("permission", ignoreCase = true) -> {
+                Log.w(TAG, "💡 힌트: 권한 문제. 앱 설정에서 위치 권한 '항상 허용'으로 변경 필요")
+            }
+        }
+    }
+
+    /**
      * "좋은 아침이에요" 인사 알림 표시
      * 10분 후 자동으로 사라짐
      */
@@ -327,6 +507,7 @@ class LocationCollectionService : Service() {
 
         private const val MIN_COLLECTION_INTERVAL_MS = 9 * 60 * 1000L // 최소 9분 (중복 수집 방지)
         private const val GREETING_TIMEOUT_MS = 3 * 60 * 1000L      // 3분
+        private const val LOCATION_TIMEOUT_MS = 30 * 1000L          // 위치 조회 타임아웃 30초
 
         const val ACTION_STOP = "com.example.graduation_project.STOP_LOCATION_SERVICE"
         const val ACTION_COLLECT = "com.example.graduation_project.COLLECT_LOCATION"
