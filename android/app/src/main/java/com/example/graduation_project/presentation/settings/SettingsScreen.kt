@@ -84,7 +84,6 @@ import com.example.graduation_project.presentation.health.openHealthConnectSetti
 import com.example.graduation_project.data.local.DisplaySettingsStorage
 import com.example.graduation_project.presentation.permission.PermissionChecker
 import com.example.graduation_project.presentation.permission.SamsungBatterySettingsDialog
-import com.example.graduation_project.util.DeviceUtil
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -127,14 +126,17 @@ fun SettingsScreen(
                 context.startActivity(intent)
             }
             viewModel.dismissBatteryOptimizationRequest()
-            // 삼성 기기인 경우 추가 설정 안내
-            if (DeviceUtil.isSamsungDevice()) {
-                showSamsungBatteryDialog = true
-            }
         }
     }
 
-    // 삼성 기기 배터리 설정 안내 다이얼로그
+    // 삼성 기기 배터리 설정 안내 다이얼로그 (ViewModel에서 삼성 기기 여부 판단)
+    LaunchedEffect(uiState.shouldShowSamsungBatteryDialog) {
+        if (uiState.shouldShowSamsungBatteryDialog) {
+            showSamsungBatteryDialog = true
+            viewModel.dismissSamsungBatteryDialog()
+        }
+    }
+
     if (showSamsungBatteryDialog) {
         SamsungBatterySettingsDialog(
             onDismiss = { showSamsungBatteryDialog = false },

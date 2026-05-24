@@ -2,6 +2,8 @@ package com.example.graduation_project.data.location
 
 import android.Manifest
 import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -9,7 +11,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.example.graduation_project.MainActivity
+import com.example.graduation_project.R
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import java.util.Calendar
 
@@ -31,6 +36,14 @@ object LocationScheduler {
     private const val INTERVAL_NORMAL_MS = 10 * 60 * 1000L      // 10분
     private const val INTERVAL_LOW_BATTERY_MS = 30 * 60 * 1000L // 30분
     private const val LOW_BATTERY_THRESHOLD = 15                 // 15%
+
+    // 배터리 부족 알림
+    private const val LOW_BATTERY_CHANNEL_ID = "location_low_battery_channel"
+    private const val LOW_BATTERY_NOTIFICATION_ID = 2003
+
+    // 마지막으로 배터리 부족 알림을 표시한 시간 (중복 알림 방지)
+    private var lastLowBatteryNotificationTime = 0L
+    private const val LOW_BATTERY_NOTIFICATION_COOLDOWN_MS = 60 * 60 * 1000L // 1시간
 
     /**
      * 사용자 설정 시간에 알람 스케줄링
@@ -356,10 +369,66 @@ object LocationScheduler {
         val batteryLevel = getBatteryLevel(context)
         return if (batteryLevel < LOW_BATTERY_THRESHOLD) {
             Log.d(TAG, "배터리 부족 ($batteryLevel%) - 30분 간격")
+            showLowBatteryNotification(context, batteryLevel)
             INTERVAL_LOW_BATTERY_MS
         } else {
             INTERVAL_NORMAL_MS
         }
+    }
+
+    /**
+     * 배터리 부족 알림 표시
+     * - 배터리 15% 미만 시 30분 간격으로 위치 수집한다는 안내
+     * - 1시간에 1번만 표시 (중복 알림 방지)
+     */
+    fun showLowBatteryNotification(context: Context, batteryLevel: Int) {
+        val currentTime = System.currentTimeMillis()
+
+        // 쿨다운 체크 (1시간 이내에 이미 표시했으면 스킵)
+        if (currentTime - lastLowBatteryNotificationTime < LOW_BATTERY_NOTIFICATION_COOLDOWN_MS) {
+            Log.d(TAG, "배터리 부족 알림 쿨다운 중 - 스킵")
+            return
+        }
+
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+
+        // 알림 채널 생성
+        val channel = NotificationChannel(
+            LOW_BATTERY_CHANNEL_ID,
+            "배터리 절약 모드",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "배터리 부족 시 위치 수집 간격 안내"
+            setShowBadge(false)
+        }
+        notificationManager.createNotificationChannel(channel)
+
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, LOW_BATTERY_CHANNEL_ID)
+            .setContentTitle("🔋 배터리 절약 모드")
+            .setContentText("배터리가 ${batteryLevel}%입니다. 30분 간격으로 위치를 수집합니다.")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+
+        notificationManager.notify(LOW_BATTERY_NOTIFICATION_ID, notification)
+        lastLowBatteryNotificationTime = currentTime
+        Log.d(TAG, "배터리 부족 알림 표시: $batteryLevel%")
+    }
+
+    /**
+     * 테스트용: 마지막 알림 시간 리셋
+     */
+    internal fun resetLowBatteryNotificationCooldown() {
+        lastLowBatteryNotificationTime = 0L
     }
 
     /**

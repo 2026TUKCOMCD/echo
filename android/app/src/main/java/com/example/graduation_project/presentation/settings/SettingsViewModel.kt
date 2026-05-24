@@ -29,6 +29,7 @@ import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.repository.UserRepository
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.presentation.permission.PermissionChecker
+import com.example.graduation_project.util.DeviceUtil
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,6 +65,8 @@ data class SettingsUiState(
     val isBatteryOptimizationDisabled: Boolean = false,
     // 배터리 최적화 해제 요청 이벤트 (UI에서 처리)
     val shouldRequestBatteryOptimization: Boolean = false,
+    // 삼성 기기 배터리 설정 안내 다이얼로그 표시 이벤트
+    val shouldShowSamsungBatteryDialog: Boolean = false,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
@@ -313,7 +316,12 @@ class SettingsViewModel(
             LocationScheduler.enableLocationCollection(context)
             // 배터리 최적화가 아직 해제되지 않았으면 요청
             if (!isBatteryOptimizationDisabled) {
-                _uiState.update { it.copy(shouldRequestBatteryOptimization = true) }
+                _uiState.update {
+                    it.copy(
+                        shouldRequestBatteryOptimization = true,
+                        shouldShowSamsungBatteryDialog = DeviceUtil.isSamsungDevice()
+                    )
+                }
             }
         }
 
@@ -349,7 +357,12 @@ class SettingsViewModel(
             _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "위치 수집이 시작되었습니다") }
             // 배터리 최적화가 아직 해제되지 않았으면 요청
             if (!checkBatteryOptimizationDisabled()) {
-                _uiState.update { it.copy(shouldRequestBatteryOptimization = true) }
+                _uiState.update {
+                    it.copy(
+                        shouldRequestBatteryOptimization = true,
+                        shouldShowSamsungBatteryDialog = DeviceUtil.isSamsungDevice()
+                    )
+                }
             }
         }
     }
@@ -515,6 +528,13 @@ class SettingsViewModel(
      */
     fun dismissBatteryOptimizationRequest() {
         _uiState.update { it.copy(shouldRequestBatteryOptimization = false) }
+    }
+
+    /**
+     * 삼성 배터리 설정 다이얼로그 이벤트 클리어 (UI에서 처리 후 호출)
+     */
+    fun dismissSamsungBatteryDialog() {
+        _uiState.update { it.copy(shouldShowSamsungBatteryDialog = false) }
     }
 
     /**
