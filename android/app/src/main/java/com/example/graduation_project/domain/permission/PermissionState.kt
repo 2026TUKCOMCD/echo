@@ -18,6 +18,27 @@ sealed class PermissionState {
 }
 
 /**
+ * 위치 권한 상태를 나타내는 sealed class
+ * 일반 PermissionState와 달리 CoarseOnly 상태를 포함
+ */
+sealed class LocationPermissionState {
+    /** 정밀 위치 권한(FINE)이 부여된 상태 */
+    data object Granted : LocationPermissionState()
+
+    /** 대략적 위치 권한(COARSE)만 부여된 상태 - 위치 수집 불가 */
+    data object CoarseOnly : LocationPermissionState()
+
+    /** 권한이 거부된 상태 (다시 요청 가능) */
+    data object Denied : LocationPermissionState()
+
+    /** 권한이 영구적으로 거부된 상태 (설정에서 직접 변경 필요) */
+    data object PermanentlyDenied : LocationPermissionState()
+
+    /** 권한 요청 전 상태 */
+    data object NotRequested : LocationPermissionState()
+}
+
+/**
  * 마이크 권한 관련 이벤트
  */
 sealed class MicrophonePermissionEvent {

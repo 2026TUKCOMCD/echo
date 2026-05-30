@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -215,6 +216,9 @@ class AudioPlayerManager {
      * [개선] 캐시된 ByteArray 재사용 (디코딩 불필요)
      */
     private fun handlePlaybackError(exception: AudioPlayException, isRetry: Boolean) {
+        // stop()이 호출되어 scope가 취소된 경우, 에러 처리하지 않음
+        if (scope?.isActive != true) return
+
         val canRetry = isRetryableError(exception) && retryCount < maxRetries
 
         if (canRetry && cachedAudioBytes != null) {
