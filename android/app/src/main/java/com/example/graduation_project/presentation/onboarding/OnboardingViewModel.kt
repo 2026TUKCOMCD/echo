@@ -139,8 +139,24 @@ class OnboardingViewModel(
 
                     _uiState.update { it.copy(isLoading = false, isCompleted = true) }
                 }
-                is ApiResult.Error -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
+                is ApiResult.Error -> {
+                    // 저장 오류 발생 시, 네트워크 타임아웃 등으로 서버에 이미 저장됐을 수 있으므로 상태 재확인
+                    when (val statusResult = userRepository.getOnboardingStatus()) {
+                        is ApiResult.Success -> if (statusResult.data.completed) {
+                            val time = state.conversationTime.ifBlank { null }
+                            alarmStorage.saveConversationTime(time)
+                            alarmStorage.setAlarmEnabled(state.alarmEnabled)
+                            if (state.alarmEnabled && time != null) {
+                                ConversationAlarmScheduler.scheduleAlarm(getApplication(), time)
+                            }
+                            _uiState.update { it.copy(isLoading = false, isCompleted = true) }
+                        } else {
+                            _uiState.update { it.copy(isLoading = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.") }
+                        }
+                        is ApiResult.Error -> _uiState.update {
+                            it.copy(isLoading = false, errorMessage = "서버에 문제가 생겼습니다. 잠시 후 다시 시도해주세요.")
+                        }
+                    }
                 }
             }
         }
