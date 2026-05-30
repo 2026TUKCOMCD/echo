@@ -18,6 +18,7 @@ androidVad = "2.0.10"
 room = "2.8.4"
 media3 = "1.2.1"
 mockk = "1.13.12"
+robolectric = "4.14.1"
 playServicesLocation = "21.3.0"
 healthConnect = "1.1.0"
 navigationCompose = "2.8.5"
@@ -84,6 +85,7 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 
 # Test
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

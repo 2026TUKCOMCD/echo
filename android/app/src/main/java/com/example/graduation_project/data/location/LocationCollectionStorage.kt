@@ -56,20 +56,6 @@ class LocationCollectionStorage(context: Context) {
     }
 
     /**
-     * 위치 수집 활성화 여부 저장
-     */
-    fun setEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_ENABLED, enabled).apply()
-    }
-
-    /**
-     * 위치 수집 활성화 여부 조회
-     */
-    fun isEnabled(): Boolean {
-        return prefs.getBoolean(KEY_ENABLED, true)
-    }
-
-    /**
      * 마지막 위치 수집 시간 저장 (epoch milliseconds)
      */
     fun saveLastCollectionTime(timeMillis: Long) {
@@ -95,7 +81,6 @@ class LocationCollectionStorage(context: Context) {
     companion object {
         private const val PREFS_NAME = "location_collection_prefs"
         private const val KEY_START_TIME = "start_time"
-        private const val KEY_ENABLED = "enabled"
         private const val KEY_LAST_COLLECTION_TIME = "last_collection_time"
 
         const val DEFAULT_START_TIME = "06:00"

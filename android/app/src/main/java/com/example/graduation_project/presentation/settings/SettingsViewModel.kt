@@ -1,7 +1,14 @@
 package com.example.graduation_project.presentation.settings
 
+import android.Manifest
 import android.app.Application
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.os.Build
 import android.os.PowerManager
+import android.provider.Settings
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -22,6 +29,7 @@ import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.repository.UserRepository
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.presentation.permission.PermissionChecker
+import com.example.graduation_project.util.DeviceUtil
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,6 +65,8 @@ data class SettingsUiState(
     val isBatteryOptimizationDisabled: Boolean = false,
     // 배터리 최적화 해제 요청 이벤트 (UI에서 처리)
     val shouldRequestBatteryOptimization: Boolean = false,
+    // 삼성 기기 배터리 설정 안내 다이얼로그 표시 이벤트
+    val shouldShowSamsungBatteryDialog: Boolean = false,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
@@ -71,7 +81,29 @@ data class SettingsUiState(
 data class LocationDebugData(
     val todayCount: Int,
     val lastCollectionTime: String?,
-    val points: List<LocationPointDisplay>
+    val points: List<LocationPointDisplay>,
+    // 상태 정보
+    val statusInfo: LocationStatusInfo? = null
+)
+
+/**
+ * 위치 수집 상태 정보 (디버그용)
+ */
+data class LocationStatusInfo(
+    // 위치 서비스 상태
+    val isLocationEnabled: Boolean,
+    val isGpsEnabled: Boolean,
+    val isNetworkEnabled: Boolean,
+    // 권한 상태
+    val hasFineLocation: Boolean,
+    val hasCoarseLocation: Boolean,
+    val hasBackgroundLocation: Boolean,
+    // 기타 상태
+    val isBatteryOptimizationIgnored: Boolean,
+    val isAirplaneModeOn: Boolean,
+    val isSamsungDevice: Boolean,
+    // 서비스 상태
+    val isServiceRunning: Boolean
 )
 
 /**
@@ -109,8 +141,12 @@ class SettingsViewModel(
     fun loadLocationDebugData() {
         viewModelScope.launch {
             try {
+                val context = getApplication<Application>()
                 val points = locationStorageManager.getTodayLocations()
                 val lastCollectionTime = locationStorage.getLastCollectionTime()
+
+                // 상태 정보 수집
+                val statusInfo = collectLocationStatusInfo(context)
 
                 val debugData = LocationDebugData(
                     todayCount = points.size,
@@ -128,7 +164,8 @@ class SettingsViewModel(
                                 .atZone(java.time.ZoneId.systemDefault())
                                 .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
                         )
-                    }.reversed()
+                    }.reversed(),
+                    statusInfo = statusInfo
                 )
 
                 _uiState.update { it.copy(locationDebugData = debugData) }
@@ -136,6 +173,66 @@ class SettingsViewModel(
                 _uiState.update { it.copy(errorMessage = "위치 데이터 로드 실패: ${e.message}") }
             }
         }
+    }
+
+    /**
+     * 위치 수집 상태 정보 수집
+     */
+    private fun collectLocationStatusInfo(context: Context): LocationStatusInfo {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+
+        // GPS 상태
+        val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        val isLocationEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            locationManager.isLocationEnabled
+        } else {
+            isGpsEnabled || isNetworkEnabled
+        }
+
+        // 권한 상태
+        val hasFineLocation = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val hasCoarseLocation = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val hasBackgroundLocation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+
+        // 배터리 최적화 상태
+        val isBatteryOptimizationIgnored = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+
+        // 비행기 모드
+        val isAirplaneModeOn = Settings.Global.getInt(
+            context.contentResolver,
+            Settings.Global.AIRPLANE_MODE_ON,
+            0
+        ) != 0
+
+        // 삼성 기기 여부
+        val isSamsungDevice = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+
+        return LocationStatusInfo(
+            isLocationEnabled = isLocationEnabled,
+            isGpsEnabled = isGpsEnabled,
+            isNetworkEnabled = isNetworkEnabled,
+            hasFineLocation = hasFineLocation,
+            hasCoarseLocation = hasCoarseLocation,
+            hasBackgroundLocation = hasBackgroundLocation,
+            isBatteryOptimizationIgnored = isBatteryOptimizationIgnored,
+            isAirplaneModeOn = isAirplaneModeOn,
+            isSamsungDevice = isSamsungDevice,
+            isServiceRunning = LocationCollectionService.isRunning
+        )
     }
 
     /**
@@ -219,7 +316,12 @@ class SettingsViewModel(
             LocationScheduler.enableLocationCollection(context)
             // 배터리 최적화가 아직 해제되지 않았으면 요청
             if (!isBatteryOptimizationDisabled) {
-                _uiState.update { it.copy(shouldRequestBatteryOptimization = true) }
+                _uiState.update {
+                    it.copy(
+                        shouldRequestBatteryOptimization = true,
+                        shouldShowSamsungBatteryDialog = DeviceUtil.isSamsungDevice()
+                    )
+                }
             }
         }
 
@@ -255,7 +357,12 @@ class SettingsViewModel(
             _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "위치 수집이 시작되었습니다") }
             // 배터리 최적화가 아직 해제되지 않았으면 요청
             if (!checkBatteryOptimizationDisabled()) {
-                _uiState.update { it.copy(shouldRequestBatteryOptimization = true) }
+                _uiState.update {
+                    it.copy(
+                        shouldRequestBatteryOptimization = true,
+                        shouldShowSamsungBatteryDialog = DeviceUtil.isSamsungDevice()
+                    )
+                }
             }
         }
     }
@@ -421,6 +528,13 @@ class SettingsViewModel(
      */
     fun dismissBatteryOptimizationRequest() {
         _uiState.update { it.copy(shouldRequestBatteryOptimization = false) }
+    }
+
+    /**
+     * 삼성 배터리 설정 다이얼로그 이벤트 클리어 (UI에서 처리 후 호출)
+     */
+    fun dismissSamsungBatteryDialog() {
+        _uiState.update { it.copy(shouldShowSamsungBatteryDialog = false) }
     }
 
     /**

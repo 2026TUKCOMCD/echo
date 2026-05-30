@@ -1,7 +1,11 @@
 package com.example.graduation_project
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -43,8 +47,9 @@ import com.example.graduation_project.presentation.onboarding.OnboardingScreen
 import com.example.graduation_project.presentation.settings.SettingsScreen
 import com.example.graduation_project.presentation.settings.DisplaySettingsViewModel
 import com.example.graduation_project.data.location.LocationScheduler
-import com.example.graduation_project.presentation.permission.PermissionChecker
-import com.example.graduation_project.BuildConfig
+import com.example.graduation_project.data.location.MorningAlarmReceiver
+import com.example.graduation_project.presentation.permission.SamsungBatterySettingsDialog
+import com.example.graduation_project.util.DeviceUtil
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import kotlinx.coroutines.Dispatchers
@@ -52,11 +57,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URLDecoder
 import java.net.URLEncoder
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.example.graduation_project.presentation.permission.LocationCollectionConfirmDialog
+import com.example.graduation_project.presentation.permission.LocationPermissionGuideDialog
 
 class MainActivity : ComponentActivity() {
 
     private val displayViewModel: DisplaySettingsViewModel by viewModels { DisplaySettingsViewModel.Factory }
 
+    // 권한 다이얼로그 표시 여부 (알림에서 앱 열었을 때)
+    private var shouldShowPermissionDialog = mutableStateOf(false)
     /**
      * 앱 재설치 감지 후 알람 재예약
      * - 버전 코드가 변경되었거나 처음 실행 시에만 알람 재예약
@@ -82,8 +95,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // 앱 재설치 감지 후 알람 재예약
-        rescheduleAlarmsIfReinstalled()
+        // 알림에서 권한 다이얼로그 표시 요청 확인
+        handlePermissionDialogIntent(intent)
 
         // 알림 딥링크 처리
         val navigateTo = intent.getStringExtra("navigate_to")
@@ -91,8 +104,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             val displaySettings by displayViewModel.settings.collectAsState()
             Graduation_projectTheme(displaySettings = displaySettings) {
-                AppNavHost(navigateTo = navigateTo, displayViewModel = displayViewModel)
+                AppNavHost(
+                    navigateTo = navigateTo,
+                    displayViewModel = displayViewModel,
+                    shouldShowPermissionDialog = shouldShowPermissionDialog.value,
+                    onPermissionDialogHandled = { shouldShowPermissionDialog.value = false }
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handlePermissionDialogIntent(intent)
+    }
+
+    private fun handlePermissionDialogIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(MorningAlarmReceiver.EXTRA_SHOW_PERMISSION_DIALOG, false) == true) {
+            shouldShowPermissionDialog.value = true
         }
     }
 }
@@ -115,13 +144,158 @@ private object Routes {
 private val tabRoutes = EchoTab.entries.map { it.route }.toSet()
 
 @Composable
-private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySettingsViewModel) {
+private fun AppNavHost(
+    navigateTo: String? = null,
+    displayViewModel: DisplaySettingsViewModel,
+    shouldShowPermissionDialog: Boolean = false,
+    onPermissionDialogHandled: () -> Unit = {}
+) {
     val context = LocalContext.current
     val application = context.applicationContext as Application
     val authRepository = remember { AuthRepository(tokenStorage = TokenStorage(application)) }
     val userRepository = remember { UserRepository() }
     val coroutineScope = rememberCoroutineScope()
     val navController = rememberNavController()
+
+    // 권한 다이얼로그 상태
+    var showConfirmDialog by remember { mutableStateOf(false) }
+    var showGuideDialog by remember { mutableStateOf(false) }
+    var showSamsungBatteryDialog by remember { mutableStateOf(false) }
+    var permissionStep by remember { mutableStateOf(0) } // 0: 대기, 1: 위치, 2: 백그라운드, 3: 배터리, 4: 삼성
+
+    // 위치 권한 요청 런처
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        if (fineGranted) {
+            // 다음 단계: 백그라운드 위치 권한
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                permissionStep = 2
+            } else {
+                // Android 9 이하는 배터리 최적화로
+                permissionStep = 3
+            }
+        } else {
+            // 거부됨 - 설정 안내
+            showGuideDialog = true
+            permissionStep = 0
+        }
+    }
+
+    // 백그라운드 위치 권한 요청 런처
+    val backgroundLocationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            // 다음 단계: 배터리 최적화
+            permissionStep = 3
+        } else {
+            // 거부됨 - 설정 안내
+            showGuideDialog = true
+            permissionStep = 0
+        }
+    }
+
+    // 권한 단계별 처리
+    LaunchedEffect(permissionStep) {
+        when (permissionStep) {
+            1 -> {
+                // 위치 권한 요청
+                locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            }
+            2 -> {
+                // 백그라운드 위치 권한 요청
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                }
+            }
+            3 -> {
+                // 배터리 최적화 해제 요청
+                val powerManager = context.getSystemService(PowerManager::class.java)
+                if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                }
+                // 삼성 기기인 경우 추가 설정 안내
+                if (DeviceUtil.isSamsungDevice()) {
+                    permissionStep = 4
+                } else {
+                    // 완료 - 위치 수집 시작 시도
+                    LocationScheduler.enableLocationCollection(context)
+                    permissionStep = 0
+                }
+            }
+            4 -> {
+                // 삼성 기기 추가 배터리 설정 안내
+                showSamsungBatteryDialog = true
+            }
+        }
+    }
+
+    // 알림에서 앱 열었을 때 확인 다이얼로그 표시
+    LaunchedEffect(shouldShowPermissionDialog) {
+        if (shouldShowPermissionDialog) {
+            val result = LocationScheduler.checkPrerequisites(context)
+            if (result != LocationScheduler.PrerequisiteResult.ALL_SATISFIED) {
+                showConfirmDialog = true
+            }
+            onPermissionDialogHandled()
+        }
+    }
+
+    // 위치 수집 허용 확인 다이얼로그
+    if (showConfirmDialog) {
+        LocationCollectionConfirmDialog(
+            onAllow = {
+                showConfirmDialog = false
+                // 순차적 권한 요청 시작
+                permissionStep = 1
+            },
+            onDeny = {
+                showConfirmDialog = false
+                showGuideDialog = true
+            }
+        )
+    }
+
+    // 설정 안내 다이얼로그
+    if (showGuideDialog) {
+        LocationPermissionGuideDialog(
+            onDismiss = { showGuideDialog = false }
+        )
+    }
+
+    // 삼성 기기 배터리 설정 안내 다이얼로그
+    if (showSamsungBatteryDialog) {
+        SamsungBatterySettingsDialog(
+            onDismiss = {
+                showSamsungBatteryDialog = false
+                permissionStep = 0
+                // 위치 수집 시작 시도
+                LocationScheduler.enableLocationCollection(context)
+            },
+            onOpenSettings = {
+                // 삼성 배터리 설정 화면으로 이동
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    // 실패 시 일반 설정 화면
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+        )
+    }
 
     // EncryptedSharedPreferences 초기화는 Android Keystore를 사용하므로
     // 메인 스레드에서 동기 호출 시 ANR/크래시 발생. IO 스레드에서 비동기 처리.

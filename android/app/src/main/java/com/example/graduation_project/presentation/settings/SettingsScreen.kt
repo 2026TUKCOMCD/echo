@@ -83,6 +83,7 @@ import com.example.graduation_project.presentation.common.parseBirthday
 import com.example.graduation_project.presentation.health.openHealthConnectSettings
 import com.example.graduation_project.data.local.DisplaySettingsStorage
 import com.example.graduation_project.presentation.permission.PermissionChecker
+import com.example.graduation_project.presentation.permission.SamsungBatterySettingsDialog
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
 
@@ -98,6 +99,7 @@ fun SettingsScreen(
     val displaySettings by displayViewModel.settings.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingField by remember { mutableStateOf<String?>(null) }
+    var showSamsungBatteryDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -125,6 +127,30 @@ fun SettingsScreen(
             }
             viewModel.dismissBatteryOptimizationRequest()
         }
+    }
+
+    // 삼성 기기 배터리 설정 안내 다이얼로그 (ViewModel에서 삼성 기기 여부 판단)
+    LaunchedEffect(uiState.shouldShowSamsungBatteryDialog) {
+        if (uiState.shouldShowSamsungBatteryDialog) {
+            showSamsungBatteryDialog = true
+            viewModel.dismissSamsungBatteryDialog()
+        }
+    }
+
+    if (showSamsungBatteryDialog) {
+        SamsungBatterySettingsDialog(
+            onDismiss = { showSamsungBatteryDialog = false },
+            onOpenSettings = {
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+        )
     }
 
     LaunchedEffect(uiState.savedMessage) {
@@ -423,11 +449,9 @@ fun SettingsScreen(
                         }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
-                    // 위치 수집 상태 토글
-                    LocationCollectionToggleRow(
-                        isRunning = uiState.isLocationCollectionRunning,
-                        hasPermission = uiState.hasBackgroundLocationPermission,
-                        onToggle = { viewModel.toggleLocationCollection() }
+                    // 위치 수집 상태 표시 (토글 없이 상태만)
+                    LocationCollectionStatusRow(
+                        isRunning = uiState.isLocationCollectionRunning
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow(
@@ -730,13 +754,11 @@ private fun MicrophonePermissionStatusRow(
 }
 
 /**
- * 위치 수집 상태 토글
+ * 위치 수집 상태 표시 (토글 없이 상태만 표시)
  */
 @Composable
-private fun LocationCollectionToggleRow(
-    isRunning: Boolean,
-    hasPermission: Boolean,
-    onToggle: () -> Unit
+private fun LocationCollectionStatusRow(
+    isRunning: Boolean
 ) {
     val colors = LocalEchoColors.current
     Row(
@@ -746,7 +768,12 @@ private fun LocationCollectionToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("위치 수집 상태", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+            Text(
+                text = "위치 수집 상태",
+                fontSize = 15.sp,
+                fontFamily = OutfitFontFamily,
+                color = colors.textSecondary
+            )
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -766,20 +793,8 @@ private fun LocationCollectionToggleRow(
                 )
             }
         }
-        Switch(
-            checked = isRunning,
-            onCheckedChange = { onToggle() },
-            enabled = hasPermission,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = colors.accentGreen,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = colors.bgMuted
-            )
-        )
     }
 }
-
 
 @Composable
 private fun TextFieldDialog(
@@ -1183,6 +1198,7 @@ private fun LocationDebugDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 // 요약 정보
                 Surface(
@@ -1236,6 +1252,12 @@ private fun LocationDebugDialog(
 
                 Spacer(Modifier.height(12.dp))
 
+                // 상태 정보 (디버그)
+                debugData.statusInfo?.let { status ->
+                    LocationStatusSection(status = status)
+                    Spacer(Modifier.height(12.dp))
+                }
+
                 // 포인트 목록
                 if (debugData.points.isEmpty()) {
                     Box(
@@ -1260,9 +1282,7 @@ private fun LocationDebugDialog(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         debugData.points.forEach { point ->
@@ -1316,4 +1336,134 @@ private fun LocationDebugDialog(
             }
         }
     )
+}
+
+/**
+ * 위치 수집 상태 정보 섹션 (디버그용)
+ */
+@Composable
+private fun LocationStatusSection(status: LocationStatusInfo) {
+    val colors = LocalEchoColors.current
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = colors.bgMuted
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                "시스템 상태",
+                fontSize = 12.sp,
+                fontFamily = OutfitFontFamily,
+                color = colors.textSecondary,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            // 위치 서비스 상태
+            StatusRow(
+                label = "위치 서비스",
+                isOk = status.isLocationEnabled,
+                okText = "켜짐",
+                errorText = "꺼짐 ⚠️"
+            )
+            StatusRow(
+                label = "GPS",
+                isOk = status.isGpsEnabled,
+                okText = "켜짐",
+                errorText = "꺼짐"
+            )
+            StatusRow(
+                label = "네트워크 위치",
+                isOk = status.isNetworkEnabled,
+                okText = "켜짐",
+                errorText = "꺼짐"
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 권한 상태
+            StatusRow(
+                label = "정밀 위치 권한",
+                isOk = status.hasFineLocation,
+                okText = "허용됨",
+                errorText = "거부됨 ⚠️"
+            )
+            StatusRow(
+                label = "백그라운드 권한",
+                isOk = status.hasBackgroundLocation,
+                okText = "허용됨",
+                errorText = "거부됨 ⚠️"
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 기타 상태
+            StatusRow(
+                label = "배터리 최적화",
+                isOk = status.isBatteryOptimizationIgnored,
+                okText = "제외됨",
+                errorText = "활성화됨 ⚠️"
+            )
+            StatusRow(
+                label = "비행기 모드",
+                isOk = !status.isAirplaneModeOn,
+                okText = "꺼짐",
+                errorText = "켜짐 ⚠️"
+            )
+
+            // 삼성 기기 힌트
+            if (status.isSamsungDevice && status.isBatteryOptimizationIgnored && !status.isServiceRunning) {
+                Spacer(Modifier.height(8.dp))
+                val warningColor = Color(0xFFFF9800) // Orange/Amber
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = warningColor.copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        "💡 삼성 기기: 설정 → 배터리 → 백그라운드 사용 제한에서 이 앱을 제외해주세요",
+                        fontSize = 11.sp,
+                        fontFamily = OutfitFontFamily,
+                        color = warningColor,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 상태 표시 행
+ */
+@Composable
+private fun StatusRow(
+    label: String,
+    isOk: Boolean,
+    okText: String,
+    errorText: String
+) {
+    val colors = LocalEchoColors.current
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            fontFamily = OutfitFontFamily,
+            color = colors.textSecondary
+        )
+        Text(
+            if (isOk) okText else errorText,
+            fontSize = 13.sp,
+            fontFamily = OutfitFontFamily,
+            color = if (isOk) colors.accentGreen else colors.accentRed,
+            fontWeight = if (!isOk) FontWeight.Medium else FontWeight.Normal
+        )
+    }
 }
