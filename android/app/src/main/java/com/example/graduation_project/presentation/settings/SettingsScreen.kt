@@ -1198,6 +1198,7 @@ private fun LocationDebugDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 // 요약 정보
                 Surface(
@@ -1281,9 +1282,7 @@ private fun LocationDebugDialog(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         debugData.points.forEach { point ->
