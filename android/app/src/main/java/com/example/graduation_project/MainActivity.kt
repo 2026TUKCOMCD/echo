@@ -48,8 +48,6 @@ import com.example.graduation_project.presentation.settings.SettingsScreen
 import com.example.graduation_project.presentation.settings.DisplaySettingsViewModel
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.data.location.MorningAlarmReceiver
-import com.example.graduation_project.BuildConfig
-import com.example.graduation_project.presentation.permission.PermissionChecker
 import com.example.graduation_project.presentation.permission.SamsungBatterySettingsDialog
 import com.example.graduation_project.util.DeviceUtil
 import com.example.graduation_project.ui.theme.EchoAccentGreen
@@ -72,25 +70,6 @@ class MainActivity : ComponentActivity() {
 
     // 권한 다이얼로그 표시 여부 (알림에서 앱 열었을 때)
     private var shouldShowPermissionDialog = mutableStateOf(false)
-    /**
-     * 앱 재설치 감지 후 알람 재예약
-     * - 버전 코드가 변경되었거나 처음 실행 시에만 알람 재예약
-     */
-    private fun rescheduleAlarmsIfReinstalled() {
-        val prefs = getSharedPreferences("app_state", MODE_PRIVATE)
-        val savedVersionCode = prefs.getLong("last_version_code", -1)
-        val currentVersionCode = BuildConfig.VERSION_CODE.toLong()
-
-        if (savedVersionCode != currentVersionCode) {
-            if (PermissionChecker.hasForegroundLocationPermission(this)) {
-                LocationScheduler.enableLocationCollection(this)
-            }
-            prefs.edit()
-                .putLong("last_version_code", currentVersionCode)
-                .putBoolean("needs_permission_recheck", true)
-                .apply()
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
