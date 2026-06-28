@@ -14,7 +14,7 @@
 | **OS** | Windows |
 | **개발 언어** | Kotlin |
 | **프레임워크** | Spring Framework, Android Jetpack |
-| **DB** | Postgre |
+| **DB** | MySQL |
 | **개발도구** | Android Studio, Intellij |
 
 ## 🏗️ 운영 환경
@@ -30,7 +30,7 @@
 | 구분 | 상세 사양 | 비고 |
 | :--- | :--- | :--- |
 | **데모 서버** | AWS EC2 | vCPU: 2, RAM: 2GB (Amazon Linux 2023) |
-| **DB** | RDS PostgreSQL |
+| **DB** | RDS MySQL |
 | **데모 앱** | GitHub Actions, Docker(재생성 배포) |
 | **AI 모델** | GPT-4o-mini | 
 
