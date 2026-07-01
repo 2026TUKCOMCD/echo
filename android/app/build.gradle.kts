@@ -31,7 +31,7 @@ android {
         }
         create("prod") {
             dimension = "server"
-            buildConfigField("String", "BASE_URL", "\"http://13.209.21.186:8080\"")
+            buildConfigField("String", "BASE_URL", "\"http://3.35.8.201:8080\"")
         }
     }
 
