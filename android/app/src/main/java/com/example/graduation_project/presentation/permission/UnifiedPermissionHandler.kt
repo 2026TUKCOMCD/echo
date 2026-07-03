@@ -27,6 +27,15 @@ private const val KEY_PERMISSION_FLOW_COMPLETED = "permission_flow_completed"
 private const val KEY_NEEDS_PERMISSION_RECHECK = "needs_permission_recheck"
 
 /**
+ * 정확한 알람 권한이 없으면 시스템 설정으로 안내 (Android 12+)
+ */
+private fun requestExactAlarmPermissionIfNeeded(context: Context) {
+    if (!PermissionChecker.hasExactAlarmPermission(context)) {
+        PermissionChecker.openExactAlarmSettings(context)
+    }
+}
+
+/**
  * 권한 요청 단계
  */
 enum class PermissionStep {
@@ -111,8 +120,8 @@ fun UnifiedPermissionHandler(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         // 알림 권한 허용 시 정확한 알람 권한도 요청
-        if (granted && !PermissionChecker.hasExactAlarmPermission(context)) {
-            PermissionChecker.openExactAlarmSettings(context)
+        if (granted) {
+            requestExactAlarmPermissionIfNeeded(context)
         }
         currentStep = PermissionStep.HEALTH_CONNECT
     }
@@ -164,11 +173,13 @@ fun UnifiedPermissionHandler(
             PermissionStep.NOTIFICATION -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     if (PermissionChecker.hasNotificationPermission(context)) {
+                        requestExactAlarmPermissionIfNeeded(context)
                         currentStep = PermissionStep.HEALTH_CONNECT
                     } else {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 } else {
+                    requestExactAlarmPermissionIfNeeded(context)
                     currentStep = PermissionStep.HEALTH_CONNECT
                 }
             }
