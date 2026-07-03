@@ -28,17 +28,16 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "대화 알람 수신")
 
-        // 위치 권한 확인
+        // 위치 권한 확인 (알림 문구 분기용으로만 사용)
         val hasLocationPermission = hasBackgroundLocationPermission(context)
 
-        if (hasLocationPermission) {
-            // 위치 수집 서비스 종료 (대화 시간에 자동 종료)
-            LocationCollectionService.stop(context)
-            Log.d(TAG, "위치 수집 서비스 종료")
+        // 위치 수집 서비스 종료 (대화 시간에 자동 종료) - 권한 여부와 무관하게 항상 시도
+        LocationCollectionService.stop(context)
+        Log.d(TAG, "위치 수집 서비스 종료")
 
-            // 다음날 위치 수집 알람 스케줄링
-            LocationScheduler.scheduleMorningAlarm(context)
-        }
+        // 다음날 위치 수집 알람 재스케줄링 - 권한 여부와 무관하게 항상 재예약
+        // (권한 미충족 시에는 알람이 울려도 MorningAlarmReceiver → checkPrerequisites에서 서비스 시작만 스킵됨)
+        LocationScheduler.scheduleMorningAlarm(context)
 
         // 알림 표시 (권한 상태에 따라 다른 내용)
         showNotification(context, hasLocationPermission)
