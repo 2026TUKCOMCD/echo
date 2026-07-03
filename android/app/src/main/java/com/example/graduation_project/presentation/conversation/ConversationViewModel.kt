@@ -307,6 +307,10 @@ class ConversationViewModel(
         if (_uiState.value.conversationState is ConversationState.Ended) {
             resetToIdle()
         }
+        // 이미 대화가 진행 중이면(Listening/Recording/Sending/Playing 등) 재시작하지 않음.
+        // canTransitionTo(Sending)만으로는 endConversation()/sendMessage()를 위해 열어둔
+        // Listening/Recording → Sending 전이까지 통과시켜버려 재진입을 막지 못함.
+        if (_uiState.value.conversationState !is ConversationState.Idle) return
         viewModelScope.launch {
             isServerRetryInProgress = false
             // Idle → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)

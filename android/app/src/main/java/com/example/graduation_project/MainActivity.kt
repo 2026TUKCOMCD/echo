@@ -21,6 +21,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,8 +79,8 @@ class MainActivity : ComponentActivity() {
         // 알림에서 권한 다이얼로그 표시 요청 확인
         handlePermissionDialogIntent(intent)
 
-        // 알림 딥링크 처리
-        val navigateTo = intent.getStringExtra("navigate_to")
+        // 알림 딥링크 처리 (회전 등 재생성 시 재실행 방지 위해 콜드 스타트에만 적용)
+        val navigateTo = if (savedInstanceState == null) intent.getStringExtra("navigate_to") else null
 
         setContent {
             val displaySettings by displayViewModel.settings.collectAsState()
@@ -279,10 +280,12 @@ private fun AppNavHost(
 
     // EncryptedSharedPreferences 초기화는 Android Keystore를 사용하므로
     // 메인 스레드에서 동기 호출 시 ANR/크래시 발생. IO 스레드에서 비동기 처리.
-    var startDestination by remember { mutableStateOf<String?>(null) }
+    var startDestination by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
-        val hasToken = withContext(Dispatchers.IO) { authRepository.hasAccessToken() }
-        startDestination = if (hasToken) Routes.CHECKING else Routes.LOGIN
+        if (startDestination == null) {
+            val hasToken = withContext(Dispatchers.IO) { authRepository.hasAccessToken() }
+            startDestination = if (hasToken) Routes.CHECKING else Routes.LOGIN
+        }
     }
 
     // 알림에서 홈 화면으로 이동 요청 시 처리
