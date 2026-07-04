@@ -1,6 +1,7 @@
 package com.example.graduation_project.presentation.home
 
 import android.app.Application
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,7 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Thunderstorm
@@ -29,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -69,61 +73,66 @@ private fun HomeScreenContent(
     onStartConversation: () -> Unit
 ) {
     val colors = LocalEchoColors.current
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bgPage)
-            .padding(horizontal = 32.dp),
+            .padding(horizontal = 32.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            if (date.isNotBlank()) {
-                Text(
-                    text = date,
-                    fontSize = 16.sp,
-                    fontFamily = OutfitFontFamily,
-                    color = colors.textSecondary
-                )
-            }
-
-            if (weather != null) {
+        // 가로모드에서는 날짜/날씨 행을 숨겨 공간 확보 (캐릭터 이미지는 축소하지 않고 유지)
+        if (!isLandscape) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
                 if (date.isNotBlank()) {
-                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "·",
+                        text = date,
+                        fontSize = 16.sp,
+                        fontFamily = OutfitFontFamily,
+                        color = colors.textSecondary
+                    )
+                }
+
+                if (weather != null) {
+                    if (date.isNotBlank()) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "·",
+                            fontSize = 14.sp,
+                            color = colors.textTertiary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Icon(
+                        imageVector = getWeatherIcon(weather.description),
+                        contentDescription = weather.description,
+                        modifier = Modifier.size(16.dp),
+                        tint = colors.textTertiary
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "${weather.temperature}°C",
                         fontSize = 14.sp,
+                        fontFamily = OutfitFontFamily,
                         color = colors.textTertiary
                     )
-                    Spacer(Modifier.width(8.dp))
                 }
-                Icon(
-                    imageVector = getWeatherIcon(weather.description),
-                    contentDescription = weather.description,
-                    modifier = Modifier.size(16.dp),
-                    tint = colors.textTertiary
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = "${weather.temperature}°C",
-                    fontSize = 14.sp,
-                    fontFamily = OutfitFontFamily,
-                    color = colors.textTertiary
-                )
             }
-        }
 
-        Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
+        }
 
         AnimatedWebpImage(
             resId = R.raw.echo_05_greeting,
-            modifier = Modifier.size(180.dp)
+            modifier = Modifier.size(if (isLandscape) 100.dp else 180.dp)
         )
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(if (isLandscape) 16.dp else 32.dp))
 
         Text(
             text = if (userName.isNotBlank()) "안녕하세요, ${userName}님" else "안녕하세요",
@@ -133,20 +142,23 @@ private fun HomeScreenContent(
             color = colors.textPrimary
         )
 
-        Spacer(Modifier.height(8.dp))
+        // 가로모드에서는 부제목(만나는 시간)을 숨겨 공간 확보
+        if (!isLandscape) {
+            Spacer(Modifier.height(8.dp))
 
-        Text(
-            text = if (!conversationTime.isNullOrBlank()) {
-                "${formatConversationTime(conversationTime)}에 만나요"
-            } else {
-                "함께 이야기 나눠요"
-            },
-            fontSize = 18.sp,
-            fontFamily = OutfitFontFamily,
-            color = colors.textSecondary
-        )
+            Text(
+                text = if (!conversationTime.isNullOrBlank()) {
+                    "${formatConversationTime(conversationTime)}에 만나요"
+                } else {
+                    "함께 이야기 나눠요"
+                },
+                fontSize = 18.sp,
+                fontFamily = OutfitFontFamily,
+                color = colors.textSecondary
+            )
+        }
 
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(if (isLandscape) 20.dp else 40.dp))
 
         Button(
             onClick = onStartConversation,
