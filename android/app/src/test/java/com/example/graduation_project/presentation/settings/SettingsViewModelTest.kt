@@ -9,6 +9,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowPowerManager
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.location.LocationCollectionService
+import com.example.graduation_project.data.location.LocationCollectionStorage
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.repository.UserRepository
@@ -19,6 +20,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -127,6 +129,24 @@ class SettingsViewModelTest {
             "삼성 기기가 아니면 삼성 다이얼로그 이벤트가 발생하지 않아야 함",
             viewModel.uiState.value.shouldShowSamsungBatteryDialog
         )
+    }
+
+    // ===== checkAndUpdateLocationCollectionStatus 자동 시작 (1개) =====
+
+    @Test
+    fun `checkAndUpdateLocationCollectionStatus가_범위내이고_미실행중이면_enableLocationCollection_호출`() {
+        // Given: 대화 시간이 설정되어 있고(23:59), 수집 시작 시간(00:00)~대화 시간 사이가 사실상 하루 전체를
+        // 덮도록 해서 실제 현재 시각과 무관하게 "범위 내"가 되도록 함. 서비스는 미실행 상태(기본 스텁).
+        LocationCollectionStorage(context).saveStartTime("00:00")
+        coEvery { mockUserRepository.getPreferences() } returns
+            ApiResult.Success(UserPreferences(conversationTime = "23:59"))
+
+        // When: ViewModel 생성 (init에서 loadSettings() → checkAndUpdateLocationCollectionStatus() 호출)
+        SettingsViewModel(context, mockUserRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: 범위 내인데 서비스가 실행 중이 아니므로 자동 시작 시도
+        verify { LocationScheduler.enableLocationCollection(any()) }
     }
 
     // ===== 정확한 알람 권한 (2개) =====

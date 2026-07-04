@@ -493,6 +493,10 @@ class SettingsViewModel(
             // 범위 밖인데 서비스가 실행 중이면 중지
             LocationCollectionService.stop(context)
             _uiState.update { it.copy(isLocationCollectionRunning = false) }
+        } else if (!LocationCollectionService.isRunning && isInRange) {
+            // 범위 내인데 서비스가 실행 중이 아니면 자동 시작 (권한 등은 enableLocationCollection이 재확인)
+            LocationScheduler.enableLocationCollection(context)
+            _uiState.update { it.copy(isLocationCollectionRunning = LocationCollectionService.isRunning) }
         }
     }
 

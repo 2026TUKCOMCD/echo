@@ -213,7 +213,7 @@ class LocationCollectionService : Service() {
             // 타임아웃 설정 (30초)
             val location = withTimeout(LOCATION_TIMEOUT_MS) {
                 fusedLocationClient.getCurrentLocation(
-                    Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                    Priority.PRIORITY_HIGH_ACCURACY,
                     cancellationToken.token
                 ).await()
             }

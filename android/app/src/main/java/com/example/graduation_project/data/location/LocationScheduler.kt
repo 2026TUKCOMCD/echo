@@ -46,6 +46,18 @@ object LocationScheduler {
     private const val LOW_BATTERY_NOTIFICATION_COOLDOWN_MS = 60 * 60 * 1000L // 1시간
 
     /**
+     * 시작/종료 시간(분 단위) 기준으로 현재 시간이 범위 내인지 확인.
+     * 시작 시간이 종료 시간보다 늦으면 자정을 넘기는 범위로 간주 (예: 23:00 ~ 06:00).
+     */
+    internal fun isTimeInRange(currentMinutes: Int, startMinutes: Int, endMinutes: Int): Boolean {
+        return if (startMinutes <= endMinutes) {
+            currentMinutes in startMinutes until endMinutes
+        } else {
+            currentMinutes >= startMinutes || currentMinutes < endMinutes
+        }
+    }
+
+    /**
      * 사용자 설정 시간에 알람 스케줄링
      *
      * 현재 시간이 설정 시간 이후면 다음날에 예약.
@@ -182,7 +194,7 @@ object LocationScheduler {
         val endMinutes = endHour * 60 + endMinute
 
         // 위치 수집 시간 범위 내인지 확인
-        val isInCollectionTimeRange = currentMinutes in startMinutes until endMinutes
+        val isInCollectionTimeRange = isTimeInRange(currentMinutes, startMinutes, endMinutes)
 
         if (isInCollectionTimeRange) {
             // 시간 범위 내 → 즉시 서비스 시작
@@ -222,7 +234,7 @@ object LocationScheduler {
         val endMinutes = endHour * 60 + endMinute
 
         // 위치 수집 시간 범위 내인지 확인
-        val isInCollectionTimeRange = currentMinutes in startMinutes until endMinutes
+        val isInCollectionTimeRange = isTimeInRange(currentMinutes, startMinutes, endMinutes)
 
         if (isInCollectionTimeRange) {
             // 시간 범위 내 → 즉시 서비스 시작
@@ -458,7 +470,7 @@ object LocationScheduler {
         val startMinutes = startHour * 60 + startMinute
         val endMinutes = endHour * 60 + endMinute
 
-        val isInRange = currentMinutes in startMinutes until endMinutes
+        val isInRange = isTimeInRange(currentMinutes, startMinutes, endMinutes)
         Log.d(TAG, "시간 범위 체크: 현재=${currentMinutes}분, 범위=${startMinutes}~${endMinutes}분, 결과=$isInRange")
         return isInRange
     }
