@@ -62,6 +62,7 @@ data class SettingsUiState(
     val hasBackgroundLocationPermission: Boolean = false,
     val hasHealthConnectPermission: Boolean = false,
     val hasNotificationPermission: Boolean = true,
+    val hasExactAlarmPermission: Boolean = true,
     val isBatteryOptimizationDisabled: Boolean = false,
     // 배터리 최적화 해제 요청 이벤트 (UI에서 처리)
     val shouldRequestBatteryOptimization: Boolean = false,
@@ -255,6 +256,7 @@ class SettingsViewModel(
         val hasLocation = PermissionChecker.hasForegroundLocationPermission(context)
         val hasBackgroundLocation = PermissionChecker.hasBackgroundLocationPermission(context)
         val hasNotification = PermissionChecker.hasNotificationPermission(context)
+        val hasExactAlarm = PermissionChecker.hasExactAlarmPermission(context)
         val isBatteryOptimizationDisabled = checkBatteryOptimizationDisabled()
 
         _uiState.update {
@@ -265,6 +267,7 @@ class SettingsViewModel(
                 hasLocationPermission = hasLocation,
                 hasBackgroundLocationPermission = hasBackgroundLocation,
                 hasNotificationPermission = hasNotification,
+                hasExactAlarmPermission = hasExactAlarm,
                 isBatteryOptimizationDisabled = isBatteryOptimizationDisabled
             )
         }
@@ -301,6 +304,7 @@ class SettingsViewModel(
                 hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
                 hasBackgroundLocationPermission = currentBackgroundPermission,
                 hasNotificationPermission = PermissionChecker.hasNotificationPermission(context),
+                hasExactAlarmPermission = PermissionChecker.hasExactAlarmPermission(context),
                 isBatteryOptimizationDisabled = isBatteryOptimizationDisabled
             )
         }

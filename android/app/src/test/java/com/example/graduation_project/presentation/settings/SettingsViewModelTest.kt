@@ -68,6 +68,7 @@ class SettingsViewModelTest {
         every { PermissionChecker.hasForegroundLocationPermission(any()) } returns false
         every { PermissionChecker.hasBackgroundLocationPermission(any()) } returns false
         every { PermissionChecker.hasNotificationPermission(any()) } returns true
+        every { PermissionChecker.hasExactAlarmPermission(any()) } returns true
         every { LocationCollectionService.isRunning } returns false
         every { LocationScheduler.enableLocationCollection(any()) } returns true
     }
@@ -125,6 +126,43 @@ class SettingsViewModelTest {
         assertFalse(
             "삼성 기기가 아니면 삼성 다이얼로그 이벤트가 발생하지 않아야 함",
             viewModel.uiState.value.shouldShowSamsungBatteryDialog
+        )
+    }
+
+    // ===== 정확한 알람 권한 (2개) =====
+
+    @Test
+    fun `loadSettings이_정확한_알람_권한_상태를_반영한다`() = runTest {
+        // Given: 정확한 알람 권한 없음
+        every { PermissionChecker.hasExactAlarmPermission(any()) } returns false
+
+        // When: ViewModel 생성 (init에서 loadSettings 호출)
+        val viewModel = SettingsViewModel(context, mockUserRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: 정확한 알람 권한 없음 상태가 반영됨
+        assertFalse(
+            "정확한 알람 권한이 없으면 hasExactAlarmPermission이 false여야 함",
+            viewModel.uiState.value.hasExactAlarmPermission
+        )
+    }
+
+    @Test
+    fun `refreshPermissionStatus가_정확한_알람_권한_최신_상태를_반영한다`() = runTest {
+        // Given: 정확한 알람 권한 있음 상태로 시작
+        every { PermissionChecker.hasExactAlarmPermission(any()) } returns true
+        val viewModel = SettingsViewModel(context, mockUserRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: 정확한 알람 권한이 해제된 뒤 재확인
+        every { PermissionChecker.hasExactAlarmPermission(any()) } returns false
+        viewModel.refreshPermissionStatus()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: 최신 상태(false)가 반영됨
+        assertFalse(
+            "정확한 알람 권한이 해제되면 refreshPermissionStatus 후 false로 갱신되어야 함",
+            viewModel.uiState.value.hasExactAlarmPermission
         )
     }
 
