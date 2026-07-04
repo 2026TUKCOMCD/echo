@@ -109,6 +109,18 @@ object ConversationAlarmScheduler {
     }
 
     /**
+     * 로그아웃 시 호출: 알람 취소 + 저장된 설정 삭제 + 표시 중인 알림 제거.
+     * (미정리 시 로그아웃한 사용자에게 알람이 계속 울리고,
+     *  같은 기기의 다음 사용자가 이전 사용자의 알람 설정을 물려받음)
+     */
+    fun cancelAndClear(context: Context) {
+        cancelAlarm(context)
+        ConversationAlarmStorage(context).clear()
+        ConversationAlarmReceiver.cancelNotification(context)
+        Log.d(TAG, "대화 알람 및 저장 설정 전체 정리 완료")
+    }
+
+    /**
      * 저장된 설정으로 알람 재스케줄링 (부팅 시 사용)
      */
     fun rescheduleFromStorage(context: Context) {
