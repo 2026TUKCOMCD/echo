@@ -33,6 +33,7 @@ import io.mockk.slot
 import io.mockk.unmockkObject
 import io.mockk.unmockkStatic
 import io.mockk.verify
+import io.mockk.verifyOrder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -288,6 +289,29 @@ class ConversationViewModelTest {
                 "마이크를 사용할 수 없어요. 마이크 권한을 확인해주세요.",
                 viewModel.uiState.value.errorMessage
             )
+        }
+
+    // ===== 재생 전 녹음 중지 테스트 =====
+
+    @Test
+    fun `AI 음성 재생 시작 전에 녹음이 먼저 중지된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+
+            coEvery { mockRepository.sendMessage(any()) } returns
+                ApiResult.Success(ConversationMessageResponse(audioData = "dummy-audio"))
+
+            // Listening → Recording → sendMessage
+            viewModel.updateConversationState(ConversationState.Recording)
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            // 활성 녹음 세션이 있는 채로 재생을 시작하면 첫 부분이 깨지므로,
+            // 반드시 녹음 중지 → 재생 시작 순서여야 함
+            verifyOrder {
+                mockAudioRecordManager.stop()
+                mockAudioPlayerManager.play("dummy-audio")
+            }
         }
 
     // ===== 백그라운드 전환 테스트 =====

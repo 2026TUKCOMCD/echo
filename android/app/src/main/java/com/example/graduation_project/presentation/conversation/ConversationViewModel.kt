@@ -282,6 +282,18 @@ class ConversationViewModel(
     }
 
     /**
+     * AI 응답 음성을 재생합니다.
+     * - 재생 시작 전에 녹음을 먼저 중지해 재생 첫 부분이 깨지는 것을 방지
+     *   (활성 녹음 세션이 있는 상태로 재생을 시작하면 실기기에서 오디오
+     *   라우팅/에코 제거 경로 전환으로 첫 수백 ms가 깨져서 들림)
+     */
+    private fun playAiAudio(audioData: String) {
+        stopRecording()
+        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
+        audioPlayerManager.play(audioData)
+    }
+
+    /**
      * 서버에 TTS 재생성을 요청합니다.
      * - 로컬 재시도 소진 또는 DecodeError 발생 시 호출
      * - 서버의 마지막 AI 응답 텍스트를 TTS로 재생성하여 반환
@@ -299,7 +311,7 @@ class ConversationViewModel(
                 is ApiResult.Success -> {
                     val audioData = result.data.audioData
                     if (audioData != null) {
-                        audioPlayerManager.play(audioData)
+                        playAiAudio(audioData)
                     } else {
                         isServerRetryInProgress = false
                         showTextFallback()
@@ -398,10 +410,9 @@ class ConversationViewModel(
                         )
                     }
 
-                    // AI 응답 음성 재생
+                    // AI 응답 음성 재생 (재생 전 녹음 중지 포함)
                     response.audioData?.let { audioData ->
-                        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
-                        audioPlayerManager.play(audioData)
+                        playAiAudio(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
                         transitionTo(ConversationState.Listening)
@@ -479,10 +490,9 @@ class ConversationViewModel(
                         )
                     }
 
-                    // AI 응답 음성 재생
+                    // AI 응답 음성 재생 (재생 전 녹음 중지 포함)
                     response.audioData?.let { audioData ->
-                        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
-                        audioPlayerManager.play(audioData)
+                        playAiAudio(audioData)
                     } ?: run {
                         // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
                         transitionTo(ConversationState.Listening)

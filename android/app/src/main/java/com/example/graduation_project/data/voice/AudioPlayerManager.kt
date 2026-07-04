@@ -1,5 +1,6 @@
 package com.example.graduation_project.data.voice
 
+import android.media.AudioAttributes
 import android.media.MediaDataSource
 import android.media.MediaPlayer
 import android.util.Base64
@@ -171,6 +172,13 @@ class AudioPlayerManager {
             val dataSource = ByteArrayMediaDataSource(audioBytes)
 
             val player = MediaPlayer().apply {
+                // 음성(TTS) 콘텐츠임을 명시해 기기가 올바른 오디오 경로/볼륨 정책을 적용하도록 함
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
                 setDataSource(dataSource)
 
                 setOnCompletionListener {
