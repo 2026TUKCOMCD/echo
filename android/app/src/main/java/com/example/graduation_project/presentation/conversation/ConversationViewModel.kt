@@ -79,7 +79,8 @@ class ConversationViewModel(
             AppDatabase.getInstance(application).locationPointDao()
         ),
         stayPointDetector = StayPointDetectorImpl()
-    )
+    ),
+    private val audioPlayerManager: AudioPlayerManager = AudioPlayerManager()
 ) : AndroidViewModel(application) {
 
     private val getHealthDataUseCase = GetHealthDataUseCase(healthRepository)
@@ -94,15 +95,19 @@ class ConversationViewModel(
     // 로컬 대화 세션 ID (대화 시작 시 생성, 종료 시 초기화)
     private var conversationId: String? = null
 
-    // AI 응답 음성 재생 관리자
-    private val audioPlayerManager = AudioPlayerManager()
-
     // PROCESSING 상태 타이머 Job
     private var processingTimerJob: Job? = null
 
 
     // 서버 TTS 재요청 진행 중 여부 (무한 루프 방지)
     private var isServerRetryInProgress = false
+
+    // 녹음 오류 자동 복구 시도 횟수 (연속 실패 시 무한 재시도 방지)
+    private var recorderRecoveryAttempts = 0
+    private val MAX_RECORDER_RECOVERY_ATTEMPTS = 3
+
+    // 백그라운드 전환으로 오디오를 중지했는지 여부 (복귀 시 재개 판단용)
+    private var wasAudioStoppedForBackground = false
 
     // [TEST ONLY] true로 설정하면 음성 재생 시 강제로 DecodeError 발생 → 서버 TTS 재요청 흐름 테스트
     private val forceDecodeErrorForTest = false
@@ -137,6 +142,7 @@ class ConversationViewModel(
                     return
                 }
                 Log.d(TAG, "AudioRecordListener.onRecordingStart() - 음성 감지됨")
+                recorderRecoveryAttempts = 0  // 마이크 정상 동작 확인 → 복구 카운터 리셋
                 _uiState.update { it.copy(isSpeechDetected = true) }
                 transitionTo(ConversationState.Recording)
             }
@@ -156,9 +162,45 @@ class ConversationViewModel(
             override fun onError(exception: AudioRecordException) {
                 Log.e(TAG, "AudioRecordListener.onError()", exception)
                 _uiState.update { it.copy(isSpeechDetected = false, isRecordingPreparing = false) }
-                // VAD 오류 시 Listening 상태 유지 (재시도 가능)
+                // 마이크가 죽은 채 Listening 화면만 남는 것 방지 → 자동 복구 시도
+                recoverRecordingAfterError()
             }
         })
+    }
+
+    /**
+     * 녹음 오류 후 자동 복구를 시도합니다.
+     * - Listening/Recording 상태에서 녹음이 죽으면 잠시 후 다시 발화 대기를 시작
+     * - 연속 실패가 누적되면(권한 회수 등 복구 불가 상황) 사용자에게 안내하고 중단
+     */
+    private fun recoverRecordingAfterError() {
+        // 백그라운드 전환으로 의도적으로 녹음을 중지한 경우에는 복구하지 않음
+        // (stop() 호출 시에도 VAD 코루틴 취소가 onError로 전파되기 때문)
+        if (wasAudioStoppedForBackground) return
+
+        val state = _uiState.value.conversationState
+        if (state !is ConversationState.Listening && state !is ConversationState.Recording) return
+
+        if (recorderRecoveryAttempts >= MAX_RECORDER_RECOVERY_ATTEMPTS) {
+            Log.w(TAG, "녹음 복구 시도 초과 - 사용자 안내")
+            _uiState.update {
+                it.copy(errorMessage = "마이크를 사용할 수 없어요. 마이크 권한을 확인해주세요.")
+            }
+            return
+        }
+
+        recorderRecoveryAttempts++
+        viewModelScope.launch {
+            delay(RECORDER_RECOVERY_DELAY_MS)
+            // Recording 상태에서 죽었으면 발화 대기 상태로 되돌린 후 재시작
+            if (_uiState.value.conversationState is ConversationState.Recording) {
+                transitionTo(ConversationState.Listening)
+            }
+            if (_uiState.value.conversationState is ConversationState.Listening) {
+                Log.d(TAG, "녹음 자동 복구 시도 ($recorderRecoveryAttempts/$MAX_RECORDER_RECOVERY_ATTEMPTS)")
+                audioRecordManager.resumeListening()
+            }
+        }
     }
 
     /**
@@ -182,7 +224,9 @@ class ConversationViewModel(
                 stopRecording()
 
                 // Preparing/Retrying → Playing 전환 (재시도 성공 시 폴백 숨김)
-                isServerRetryInProgress = false
+                // 주의: isServerRetryInProgress는 여기서 리셋하지 않음.
+                // 재생이 시작된 후 중간에 실패하는 경우(잘린 스트림 등)에도 서버 재요청은
+                // 1회로 제한되어야 하므로, 완주(onPlaybackComplete) 시에만 리셋한다.
                 _uiState.update {
                     it.copy(
                         playbackStatus = PlaybackStatus.PLAYING,
@@ -499,15 +543,17 @@ class ConversationViewModel(
      */
     fun endConversation() {
         viewModelScope.launch {
-            // Listening → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
+            // Listening/Playing → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
             if (!transitionTo(ConversationState.Sending)) return@launch
+
+            // 사용자가 종료를 확정했으므로 재생/녹음을 즉시 중지 (재생 중 종료 포함)
+            audioPlayerManager.stop()
+            audioRecordManager.stop()
 
             val result = repository.endConversation()
 
             when (result) {
                 is ApiResult.Success -> {
-                    audioPlayerManager.stop()  // 재시도 중이어도 즉시 중지
-                    audioRecordManager.stop()  // 녹음 중지
                     stopProcessingTimer()  // PROCESSING 타이머 중지
                     conversationId = null
                     // Sending → Ended
@@ -544,8 +590,9 @@ class ConversationViewModel(
                 }
 
                 is ApiResult.Error -> {
-                    // Sending → Listening
+                    // Sending → Listening (종료 확정 시 오디오를 이미 중지했으므로 발화 대기 재개)
                     transitionTo(ConversationState.Listening)
+                    startRecording()
                     _uiState.update { it.copy(errorMessage = getErrorMessage(result.exception)) }
                 }
             }
@@ -569,6 +616,54 @@ class ConversationViewModel(
         // Ended → Idle
         transitionTo(ConversationState.Idle)
         _uiState.update { it.copy(messages = emptyList(), sessionId = null, currentError = null) }
+    }
+
+    /**
+     * 앱이 백그라운드로 전환될 때 호출 (화면 회전 등 구성 변경은 제외)
+     * - 마이크 녹음 즉시 중지 (백그라운드에서 마이크가 계속 켜져 있는 것 방지)
+     * - TTS 재생 즉시 중지 (백그라운드에서 소리가 계속 나는 것 방지)
+     */
+    fun onAppBackgrounded() {
+        val state = _uiState.value.conversationState
+        if (state !is ConversationState.Playing &&
+            state !is ConversationState.Listening &&
+            state !is ConversationState.Recording
+        ) {
+            return
+        }
+
+        Log.d(TAG, "onAppBackgrounded() - 오디오 중지 (현재 상태: $state)")
+        // stop() 과정에서 발생하는 onError가 자동 복구를 트리거하지 않도록 플래그를 먼저 설정
+        wasAudioStoppedForBackground = true
+        audioPlayerManager.stop()
+        stopRecording()
+
+        if (state is ConversationState.Playing) {
+            _uiState.update { it.copy(playbackStatus = PlaybackStatus.NONE) }
+        }
+    }
+
+    /**
+     * 앱이 포그라운드로 복귀할 때 호출
+     * - 백그라운드 전환 시 오디오를 중지했던 경우에만 발화 대기 재개
+     * - 재생 중이던 TTS는 이미 중단되었으므로 Listening으로 전환 후 재개
+     */
+    fun onAppForegrounded() {
+        if (!wasAudioStoppedForBackground) return
+        wasAudioStoppedForBackground = false
+
+        when (_uiState.value.conversationState) {
+            is ConversationState.Playing, is ConversationState.Recording -> {
+                Log.d(TAG, "onAppForegrounded() - Listening으로 전환 후 발화 대기 재개")
+                transitionTo(ConversationState.Listening)
+                startRecording()
+            }
+            is ConversationState.Listening -> {
+                Log.d(TAG, "onAppForegrounded() - 발화 대기 재개")
+                startRecording()
+            }
+            else -> { /* Idle/Sending/Ended - 재개할 오디오 없음 */ }
+        }
     }
 
     /**
@@ -887,6 +982,9 @@ class ConversationViewModel(
 
     companion object {
         private const val TAG = "ConversationViewModel"
+
+        // 녹음 오류 자동 복구 전 대기 시간 (즉시 재시도 시 같은 오류 반복 방지)
+        private const val RECORDER_RECOVERY_DELAY_MS = 1000L
 
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")

@@ -12,11 +12,15 @@ import com.example.graduation_project.data.model.ConversationEndResponse
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.repository.ConversationRepository
+import com.example.graduation_project.data.voice.AudioPlayerManager
 import com.example.graduation_project.data.voice.AudioRecordManager
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.IHealthRepository
+import com.example.graduation_project.domain.voice.AudioRecordException
+import com.example.graduation_project.domain.voice.AudioRecordListener
 import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.presentation.model.ConversationState
+import io.mockk.CapturingSlot
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -25,8 +29,10 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.mockkStatic
+import io.mockk.slot
 import io.mockk.unmockkObject
 import io.mockk.unmockkStatic
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -69,10 +75,12 @@ class ConversationViewModelTest {
     private val mockApplication = mockk<Application>(relaxed = true)
     private val mockAudioRecordState = MutableStateFlow<AudioRecordState>(AudioRecordState.Idle)
     private val mockAudioRecordManager = mockk<AudioRecordManager>(relaxed = true)
+    private val mockAudioPlayerManager = mockk<AudioPlayerManager>(relaxed = true)
     private val mockHealthRepository = mockk<IHealthRepository>(relaxed = true)
     private val mockLocationDataManager = mockk<LocationDataManager>(relaxed = true)
 
     private lateinit var viewModel: ConversationViewModel
+    private val audioRecordListenerSlot: CapturingSlot<AudioRecordListener> = slot()
 
     @Before
     fun setUp() {
@@ -94,6 +102,7 @@ class ConversationViewModelTest {
         every { ConversationAlarmReceiver.showFarewellNotification(any()) } just Runs
 
         every { mockAudioRecordManager.state } returns mockAudioRecordState
+        every { mockAudioRecordManager.setListener(capture(audioRecordListenerSlot)) } just Runs
         every { mockHealthRepository.getAvailability() } returns HealthConnectAvailability.NotSupported
 
         viewModel = ConversationViewModel(
@@ -102,7 +111,8 @@ class ConversationViewModelTest {
             messageDao = mockMessageDao,
             audioRecordManager = mockAudioRecordManager,
             healthRepository = mockHealthRepository,
-            locationDataManager = mockLocationDataManager
+            locationDataManager = mockLocationDataManager,
+            audioPlayerManager = mockAudioPlayerManager
         )
     }
 
@@ -220,6 +230,114 @@ class ConversationViewModelTest {
             advanceUntilIdle()
 
             assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+        }
+
+    // ===== 재생 중 대화 종료 테스트 =====
+
+    @Test
+    fun `Playing 상태에서 endConversation 호출 시 Ended로 전환된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // audioData가 있어야 Playing 상태가 유지됨 (없으면 즉시 Listening으로 전환)
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Success(ConversationStartResponse(message = "안녕하세요", audioData = "dummy-audio"))
+            viewModel.startConversation()
+            advanceUntilIdle()
+            // 현재 상태: Playing (AI가 말하는 중)
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+
+            coEvery { mockRepository.endConversation() } returns
+                ApiResult.Success(ConversationEndResponse())
+
+            viewModel.endConversation()
+            advanceUntilIdle()
+
+            // 재생 중에도 대화 종료가 동작해야 함 (기존에는 조용히 무시되던 버그)
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+        }
+
+    // ===== 녹음 오류 자동 복구 테스트 =====
+
+    @Test
+    fun `녹음 오류 발생 시 Listening 상태면 자동으로 재시도한다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+
+            // 녹음 오류 발생 (권한 회수, 마이크 점유 등)
+            audioRecordListenerSlot.captured.onError(AudioRecordException.UnknownError())
+            advanceUntilIdle()
+
+            // 마이크가 죽은 채 방치되지 않고 자동 복구를 시도해야 함
+            verify { mockAudioRecordManager.resumeListening() }
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+        }
+
+    @Test
+    fun `녹음 오류가 연속으로 발생하면 복구 시도를 중단하고 안내 메시지를 표시한다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+
+            // 최대 복구 횟수(3회) + 1회 오류 발생
+            repeat(4) {
+                audioRecordListenerSlot.captured.onError(AudioRecordException.UnknownError())
+                advanceUntilIdle()
+            }
+
+            // 복구는 3회까지만 시도되고 이후에는 사용자 안내
+            verify(exactly = 3) { mockAudioRecordManager.resumeListening() }
+            assertEquals(
+                "마이크를 사용할 수 없어요. 마이크 권한을 확인해주세요.",
+                viewModel.uiState.value.errorMessage
+            )
+        }
+
+    // ===== 백그라운드 전환 테스트 =====
+
+    @Test
+    fun `백그라운드 전환 후 복귀하면 Listening으로 재개된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Success(ConversationStartResponse(message = "안녕하세요", audioData = "dummy-audio"))
+            viewModel.startConversation()
+            advanceUntilIdle()
+            // 현재 상태: Playing
+
+            viewModel.onAppBackgrounded()
+            viewModel.onAppForegrounded()
+            advanceUntilIdle()
+
+            // 재생은 중단되었으므로 발화 대기(Listening)로 재개
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+            verify { mockAudioRecordManager.start() }
+        }
+
+    @Test
+    fun `백그라운드 전환으로 녹음 중지 시 발생하는 오류는 자동 복구를 트리거하지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+
+            // 백그라운드 전환 → stopRecording() 과정에서 VAD 취소가 onError로 전파되는 상황 재현
+            viewModel.onAppBackgrounded()
+            audioRecordListenerSlot.captured.onError(AudioRecordException.UnknownError())
+            advanceUntilIdle()
+
+            // 의도적 중지이므로 백그라운드에서 마이크를 다시 켜면 안 됨
+            verify(exactly = 0) { mockAudioRecordManager.resumeListening() }
+        }
+
+    @Test
+    fun `백그라운드 전환 없이 복귀 이벤트만 오면 아무것도 하지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Success(ConversationStartResponse(message = "안녕하세요", audioData = "dummy-audio"))
+            viewModel.startConversation()
+            advanceUntilIdle()
+            // 현재 상태: Playing (화면 회전 등으로 ON_START만 오는 경우 재현)
+
+            viewModel.onAppForegrounded()
+            advanceUntilIdle()
+
+            // 백그라운드로 중지한 적이 없으므로 상태 유지 (재생 중 회전해도 대화 유지)
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
         }
 
     // ===== 헬퍼 =====
