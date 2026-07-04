@@ -264,6 +264,35 @@ class LocationSchedulerTest {
         assertEquals(currentHour < 21, result)
     }
 
+    // ===== isTimeInRange 자정 넘김 (3개) =====
+
+    @Test
+    fun `isTimeInRange_시작이_종료보다_늦고_현재가_시작_이후면_true`() {
+        // Given: start=23:00(1380분), end=06:00(360분), current=23:30(1410분)
+        val result = LocationScheduler.isTimeInRange(1410, 1380, 360)
+
+        // Then
+        assertTrue(result)
+    }
+
+    @Test
+    fun `isTimeInRange_시작이_종료보다_늦고_현재가_종료_이전이면_true`() {
+        // Given: start=23:00(1380분), end=06:00(360분), current=02:00(120분)
+        val result = LocationScheduler.isTimeInRange(120, 1380, 360)
+
+        // Then
+        assertTrue(result)
+    }
+
+    @Test
+    fun `isTimeInRange_시작이_종료보다_늦고_현재가_그_사이면_false`() {
+        // Given: start=23:00(1380분), end=06:00(360분), current=12:00(720분) → 범위 밖
+        val result = LocationScheduler.isTimeInRange(720, 1380, 360)
+
+        // Then
+        assertFalse(result)
+    }
+
     // ===== enableLocationCollection (3개) =====
 
     @Test

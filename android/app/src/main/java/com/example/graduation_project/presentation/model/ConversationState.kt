@@ -8,12 +8,14 @@ package com.example.graduation_project.presentation.model
  *                                       → (실패) IDLE
  *
  * PLAYING → 재생 완료 → LISTENING
+ *         → endConversation() → SENDING (재생 중에도 대화 종료 가능)
  *
  * LISTENING → VAD 발화 감지 → RECORDING
  *           → endConversation() → SENDING → (성공) ENDED
  *
  * RECORDING → sendMessage() → SENDING → (성공) PLAYING
  *                                      → (실패) LISTENING
+ *           → 녹음 오류/백그라운드 복귀 → LISTENING (발화 대기로 복구)
  *
  * ENDED → 사용자가 시작 버튼 클릭 → IDLE
  */
@@ -37,8 +39,9 @@ sealed class ConversationState {
     }
 
     data object Recording : ConversationState() {
-        // sendMessage() 호출 시에만 Sending으로 전이
-        override fun canTransitionTo(next: ConversationState) = next is Sending
+        // sendMessage() → Sending, 녹음 오류/백그라운드 복귀 → Listening
+        override fun canTransitionTo(next: ConversationState) =
+            next is Sending || next is Listening
     }
 
     data object Sending : ConversationState() {
@@ -51,8 +54,9 @@ sealed class ConversationState {
     }
 
     data object Playing : ConversationState() {
-        // TTS 재생 완료 후 다음 발화 대기
-        override fun canTransitionTo(next: ConversationState) = next is Listening
+        // TTS 재생 완료 → Listening, 재생 중 endConversation() → Sending
+        override fun canTransitionTo(next: ConversationState) =
+            next is Listening || next is Sending
     }
 
     data object Ended : ConversationState() {
