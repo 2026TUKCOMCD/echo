@@ -505,6 +505,15 @@ fun SettingsScreen(
                         }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    // 정확한 알람 권한 상태 (Android 12+, 대화 시간 알림을 정확한 시각에 받기 위해 필요)
+                    PermissionStatusRow(
+                        label = "정확한 알람 권한",
+                        isGranted = uiState.hasExactAlarmPermission,
+                        grantedText = "허용됨",
+                        deniedText = "허용 필요 (터치하여 설정)",
+                        onClick = { PermissionChecker.openExactAlarmSettings(context) }
+                    )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     // 앱 권한 설정 - 권한 페이지로 직접 이동
                     NavigationRow(
                         label = "앱 권한 설정",

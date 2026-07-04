@@ -41,6 +41,9 @@ supertone:
   model: sona_speech_2
   api-key: ${SUPERTONE_API_KEY}
 
+server:
+  forward-headers-strategy: native
+
 logging:
   level:
     com.example.echo.location: DEBUG

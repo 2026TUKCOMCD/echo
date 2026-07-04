@@ -1,6 +1,7 @@
 package com.example.graduation_project.presentation.conversation
 
 import android.app.Activity
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -130,6 +134,7 @@ private fun ConversationScreenContent(
     onRetryClick: () -> Unit = {}
 ) {
     val colors = LocalEchoColors.current
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     Scaffold(
         containerColor = colors.bgPage,
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -138,16 +143,16 @@ private fun ConversationScreenContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 32.dp),
+                .padding(horizontal = 32.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.weight(1f))
-
-            // 캐릭터 이미지 영역
+            // 캐릭터 이미지 영역 (가로모드에서는 축소하여 버튼이 가려지지 않도록 함)
             CharacterWebpSection(
                 state = uiState.conversationState,
                 error = uiState.currentError,
-                modifier = Modifier.size(240.dp)
+                modifier = Modifier.size(if (isLandscape) 140.dp else 240.dp)
             )
 
             Spacer(Modifier.height(32.dp))
@@ -159,7 +164,7 @@ private fun ConversationScreenContent(
                 currentUserSpeech = uiState.currentUserSpeech
             )
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(32.dp))
 
             // 하단 버튼 영역
             BottomActionSection(
