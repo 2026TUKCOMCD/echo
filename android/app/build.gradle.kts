@@ -115,6 +115,9 @@ dependencies {
     // Security (EncryptedSharedPreferences)
     implementation(libs.androidx.security.crypto)
 
+    // SQLCipher (Room DB 암호화)
+    implementation(libs.sqlcipher.android)
+
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
