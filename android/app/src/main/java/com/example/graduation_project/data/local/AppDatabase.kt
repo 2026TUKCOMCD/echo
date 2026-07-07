@@ -10,6 +10,7 @@ import com.example.graduation_project.data.local.dao.LocationPointDao
 import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.LocationPointEntity
 import com.example.graduation_project.data.local.entity.MessageEntity
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 /**
  * Room 데이터베이스 클래스
@@ -68,11 +69,28 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         private fun buildDatabase(context: Context): AppDatabase {
+            val appContext = context.applicationContext
+
+            // 1) DB 비밀번호 준비
+            val passphrase = DatabasePassphrase.getOrCreate(appContext)
+
+            // 2) 최초 암호화 적용 시: 기존 평문 DB가 있으면 삭제.
+            //    (암호화 DB는 평문 파일을 열 수 없어 크래시가 나므로, 최초 1회만 지운다.)
+            if (!DatabasePassphrase.isDbEncrypted(appContext)) {
+                appContext.deleteDatabase(DATABASE_NAME) // 없으면 아무 일도 안 함
+                DatabasePassphrase.markDbEncrypted(appContext)
+            }
+
+            // 3) SQLCipher 네이티브 로드 후 암호화 팩토리로 Room 빌드
+            System.loadLibrary("sqlcipher")
+            val factory = SupportOpenHelperFactory(passphrase)
+
             return Room.databaseBuilder(
-                context.applicationContext,
+                appContext,
                 AppDatabase::class.java,
                 DATABASE_NAME
             )
+                .openHelperFactory(factory)
                 .addMigrations(MIGRATION_1_2)
                 // Migration 실패 시에만 fallback (안전망)
                 .fallbackToDestructiveMigration(dropAllTables = true)
