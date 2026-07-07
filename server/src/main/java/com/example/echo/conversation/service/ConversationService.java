@@ -17,7 +17,6 @@ import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
@@ -34,7 +33,6 @@ public class ConversationService {
     private final DiaryService diaryService;
     private final HealthDataService healthDataService;
 
-    @Transactional
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
         if (healthData != null) {
@@ -64,7 +62,6 @@ public class ConversationService {
                 .build();
     }
 
-    @Transactional
     public ConversationResponse processUserMessage(Long userId, MultipartFile audioFile) {
         // 1. 컨텍스트 조회
         UserContext context = contextService.getContext(userId);
@@ -107,7 +104,6 @@ public class ConversationService {
                 .build();
     }
 
-    @Transactional
     public void endConversation(Long userId) {
         log.info("대화 종료 시작 - userId: {}", userId);
 
