@@ -18,8 +18,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
 @Service
@@ -82,7 +82,7 @@ public class ContextService {
         UserContext context = UserContext.builder()
                 .userId(userId)
                 .date(LocalDate.now())
-                .conversationHistory(new ArrayList<>())
+                .conversationHistory(new CopyOnWriteArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
                 .preferences(preferences)
                 .todayWeather(weather)

@@ -11,8 +11,8 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @Data
 @Builder
@@ -23,7 +23,7 @@ public class UserContext {
     private LocalDate date;
 
     @Builder.Default
-    private List<ConversationTurn> conversationHistory = new ArrayList<>();
+    private List<ConversationTurn> conversationHistory = new CopyOnWriteArrayList<>();
 
     private EnrichedHealthData enrichedHealthData;
     private UserPreferences preferences;
