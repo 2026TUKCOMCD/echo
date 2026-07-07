@@ -47,6 +47,7 @@ import com.example.graduation_project.presentation.home.HomeScreen
 import com.example.graduation_project.presentation.onboarding.OnboardingScreen
 import com.example.graduation_project.presentation.settings.SettingsScreen
 import com.example.graduation_project.presentation.settings.DisplaySettingsViewModel
+import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.data.location.MorningAlarmReceiver
 import com.example.graduation_project.presentation.permission.SamsungBatterySettingsDialog
@@ -137,6 +138,14 @@ private fun AppNavHost(
     val userRepository = remember { UserRepository() }
     val coroutineScope = rememberCoroutineScope()
     val navController = rememberNavController()
+
+    // 로그아웃 공통 처리: 사용자별 알람/위치 수집 정리 후 토큰 삭제
+    // (미정리 시 로그아웃 후에도 대화 알람이 계속 울리고 위치가 계속 수집됨)
+    val performLogout: suspend () -> Unit = {
+        ConversationAlarmScheduler.cancelAndClear(context)
+        LocationScheduler.disableLocationCollection(context)
+        withContext(Dispatchers.IO) { authRepository.logout() }
+    }
 
     // 권한 다이얼로그 상태
     var showConfirmDialog by remember { mutableStateOf(false) }
@@ -424,7 +433,7 @@ private fun AppNavHost(
                     displayViewModel = displayViewModel,
                     onLogout = {
                         coroutineScope.launch {
-                            withContext(Dispatchers.IO) { authRepository.logout() }
+                            performLogout()
                             navController.navigate(Routes.LOGIN) {
                                 popUpTo(0) { inclusive = true }
                             }
@@ -438,7 +447,7 @@ private fun AppNavHost(
                 ConversationScreen(
                     onLogout = {
                         coroutineScope.launch {
-                            withContext(Dispatchers.IO) { authRepository.logout() }
+                            performLogout()
                             navController.navigate(Routes.LOGIN) {
                                 popUpTo(0) { inclusive = true }
                             }

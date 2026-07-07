@@ -280,12 +280,24 @@ class SettingsViewModel(
             when (val result = userRepository.getPreferences()) {
                 is ApiResult.Success -> {
                     _uiState.update { applyPrefs(it, result.data).copy(isLoading = false) }
+                    // 서버 대화 시간과 로컬 알람 저장소 동기화 (다른 기기에서 변경한 경우 반영)
+                    syncAlarmWithServerTime(result.data.conversationTime)
                     // 대화 시간 로드 후 위치 수집 상태 확인
                     checkAndUpdateLocationCollectionStatus()
                 }
                 is ApiResult.Error -> _uiState.update { it.copy(isLoading = false) }
             }
         }
+    }
+
+    /**
+     * 서버의 대화 시간과 로컬 알람 저장소가 다르면 동기화하고 알람을 재예약.
+     * (다른 기기에서 시간을 변경한 경우 UI 표시 시간과 실제 알람 발화 시간이 어긋나는 것 방지)
+     */
+    private fun syncAlarmWithServerTime(serverTime: String?) {
+        if (serverTime == alarmStorage.getConversationTime()) return
+        alarmStorage.saveConversationTime(serverTime)
+        updateAlarmSchedule(serverTime)  // 비활성화 상태거나 time=null이면 내부에서 cancelAlarm
     }
 
     /**
@@ -416,16 +428,25 @@ class SettingsViewModel(
 
                     // 현재 시간이 위치 수집 범위 내이면 자동으로 서비스 시작
                     val locationStartTime = _uiState.value.locationCollectionStartTime
+                    var autoStarted = false
                     if (!savedTime.isNullOrBlank() && isCurrentTimeInRange(locationStartTime, savedTime)) {
                         val context = getApplication<Application>()
                         if (!LocationCollectionService.isRunning && _uiState.value.hasBackgroundLocationPermission) {
                             LocationCollectionService.start(context)
-                            _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "저장되었습니다. 위치 수집이 자동으로 시작되었습니다") }
-                            return@launch
+                            autoStarted = true
                         }
                     }
 
-                    _uiState.update { applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다") }
+                    // 자동 시작 여부와 무관하게 항상 isSaving 해제 + 서버 응답 반영
+                    // (자동 시작 분기에서 early return 하면 isSaving이 true로 남아 설정 화면 전체가 잠김)
+                    _uiState.update {
+                        applyPrefs(it, result.data).copy(
+                            isSaving = false,
+                            isLocationCollectionRunning = autoStarted || it.isLocationCollectionRunning,
+                            savedMessage = if (autoStarted) "저장되었습니다. 위치 수집이 자동으로 시작되었습니다"
+                                           else "저장되었습니다"
+                        )
+                    }
                 }
                 is ApiResult.Error -> _uiState.update {
                     it.copy(isSaving = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
@@ -449,23 +470,39 @@ class SettingsViewModel(
     }
 
     fun setAlarmEnabled(enabled: Boolean) {
-        alarmStorage.setAlarmEnabled(enabled)
-        _uiState.update { it.copy(alarmEnabled = enabled) }
+        val time = _uiState.value.conversationTime
 
-        var time = _uiState.value.conversationTime
-
-        // 시간이 설정되지 않은 경우 기본 시간(09:00) 설정
+        // 시간이 설정되지 않은 상태에서 켜는 경우: 기본 시간(21:00)을 서버에 먼저 저장
+        // 서버 저장이 실패하면 아무것도 켜지 않고 안내 (서버-로컬-UI 불일치로 인한 유령 알람 방지)
         if (enabled && time.isNullOrBlank()) {
-            time = DEFAULT_CONVERSATION_TIME
-            alarmStorage.saveConversationTime(time)
-            _uiState.update { it.copy(conversationTime = time) }
-
-            // 서버에도 기본 시간 저장
             viewModelScope.launch {
-                userRepository.updateConversationTime(time)
+                when (userRepository.updateConversationTime(DEFAULT_CONVERSATION_TIME)) {
+                    is ApiResult.Success -> {
+                        alarmStorage.setAlarmEnabled(true)
+                        alarmStorage.saveConversationTime(DEFAULT_CONVERSATION_TIME)
+                        _uiState.update {
+                            it.copy(
+                                alarmEnabled = true,
+                                conversationTime = DEFAULT_CONVERSATION_TIME,
+                                savedMessage = "알림이 설정되었습니다"
+                            )
+                        }
+                        updateAlarmSchedule(DEFAULT_CONVERSATION_TIME)
+                    }
+                    is ApiResult.Error -> _uiState.update {
+                        it.copy(
+                            alarmEnabled = false,
+                            errorMessage = "알림을 설정하지 못했습니다. 잠시 후 다시 시도해주세요."
+                        )
+                    }
+                }
             }
+            return
         }
 
+        // 시간이 이미 있는 켜기/끄기: 서버 변경 불필요, 로컬만 갱신
+        alarmStorage.setAlarmEnabled(enabled)
+        _uiState.update { it.copy(alarmEnabled = enabled) }
         updateAlarmSchedule(time)
 
         val message = if (enabled) "알림이 설정되었습니다" else "알림이 해제되었습니다"

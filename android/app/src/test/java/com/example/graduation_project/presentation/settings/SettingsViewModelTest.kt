@@ -7,6 +7,9 @@ import android.os.PowerManager
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowPowerManager
+import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
+import com.example.graduation_project.data.alarm.ConversationAlarmStorage
+import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationCollectionStorage
@@ -15,8 +18,10 @@ import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.repository.UserRepository
 import com.example.graduation_project.presentation.permission.PermissionChecker
 import com.example.graduation_project.util.DeviceUtil
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
@@ -28,6 +33,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -65,6 +71,7 @@ class SettingsViewModelTest {
         mockkObject(LocationScheduler)
         mockkObject(LocationCollectionService)
         mockkObject(DeviceUtil)
+        mockkObject(ConversationAlarmScheduler)
 
         // 기본값 설정
         every { PermissionChecker.hasForegroundLocationPermission(any()) } returns false
@@ -73,6 +80,8 @@ class SettingsViewModelTest {
         every { PermissionChecker.hasExactAlarmPermission(any()) } returns true
         every { LocationCollectionService.isRunning } returns false
         every { LocationScheduler.enableLocationCollection(any()) } returns true
+        every { ConversationAlarmScheduler.scheduleAlarm(any(), any()) } just Runs
+        every { ConversationAlarmScheduler.cancelAlarm(any()) } just Runs
     }
 
     @After
@@ -129,6 +138,93 @@ class SettingsViewModelTest {
             "삼성 기기가 아니면 삼성 다이얼로그 이벤트가 발생하지 않아야 함",
             viewModel.uiState.value.shouldShowSamsungBatteryDialog
         )
+    }
+
+    // ===== 대화 시간 저장 (isSaving 복귀) =====
+
+    @Test
+    fun `updateConversationTime_위치수집_자동시작_경로에서도_isSaving이_false로_복귀한다`() = runTest {
+        // Given: 배경 위치 권한 있음 + 서비스 미실행 + 현재 시간이 수집 범위(00:00~23:59) 내
+        every { PermissionChecker.hasBackgroundLocationPermission(any()) } returns true
+        every { LocationCollectionService.start(any()) } just Runs
+        LocationCollectionStorage(context).saveStartTime("00:00")
+        coEvery { mockUserRepository.updateConversationTime(any()) } returns
+            ApiResult.Success(UserPreferences(conversationTime = "23:59"))
+
+        val viewModel = SettingsViewModel(context, mockUserRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: 대화 시간 변경 (자동 시작 분기로 진입)
+        viewModel.updateConversationTime("23:59")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: 자동 시작 경로에서도 isSaving이 해제되고 응답 값이 UI에 반영되어야 함
+        // (기존 버그: early return으로 isSaving=true가 남아 설정 화면 전체가 잠김)
+        assertFalse("isSaving이 해제되어야 함", viewModel.uiState.value.isSaving)
+        assertEquals("23:59", viewModel.uiState.value.conversationTime)
+        assertTrue(viewModel.uiState.value.isLocationCollectionRunning)
+    }
+
+    // ===== 서버-로컬 알람 시간 동기화 =====
+
+    @Test
+    fun `loadSettings가_서버_대화시간과_로컬저장소가_다르면_동기화하고_재예약한다`() = runTest {
+        // Given: 로컬에는 20:00으로 저장 + 알람 활성화, 서버는 21:30 반환 (다른 기기에서 변경한 상황)
+        val alarmStorage = ConversationAlarmStorage(context)
+        alarmStorage.saveConversationTime("20:00")
+        alarmStorage.setAlarmEnabled(true)
+        coEvery { mockUserRepository.getPreferences() } returns
+            ApiResult.Success(UserPreferences(conversationTime = "21:30"))
+
+        // When: ViewModel 생성 (init에서 loadSettings 호출)
+        SettingsViewModel(context, mockUserRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: 로컬 저장소가 서버 값으로 동기화되고 알람이 재예약되어야 함
+        assertEquals("21:30", alarmStorage.getConversationTime())
+        verify { ConversationAlarmScheduler.scheduleAlarm(any(), "21:30") }
+    }
+
+    // ===== 알람 켜기 기본시간 서버 저장 =====
+
+    @Test
+    fun `알람켜기_기본시간_서버저장_실패시_롤백하고_오류를_표시한다`() = runTest {
+        // Given: 대화 시간 미설정 + 서버 저장 실패 (오프라인 등)
+        coEvery { mockUserRepository.updateConversationTime(any()) } returns
+            ApiResult.Error(ApiException.NetworkError())
+
+        val viewModel = SettingsViewModel(context, mockUserRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: 알람 토글 ON
+        viewModel.setAlarmEnabled(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: 아무것도 켜지지 않고 오류 안내 (서버-로컬-UI 불일치로 인한 유령 알람 방지)
+        assertFalse(viewModel.uiState.value.alarmEnabled)
+        assertFalse(ConversationAlarmStorage(context).isAlarmEnabled())
+        assertTrue(viewModel.uiState.value.errorMessage != null)
+        verify(exactly = 0) { ConversationAlarmScheduler.scheduleAlarm(any(), any()) }
+    }
+
+    @Test
+    fun `알람켜기_기본시간_서버저장_성공시_로컬저장_및_알람예약한다`() = runTest {
+        // Given: 대화 시간 미설정 + 서버 저장 성공
+        coEvery { mockUserRepository.updateConversationTime(any()) } returns
+            ApiResult.Success(UserPreferences(conversationTime = "21:00"))
+
+        val viewModel = SettingsViewModel(context, mockUserRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: 알람 토글 ON
+        viewModel.setAlarmEnabled(true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: 기본 시간(21:00)으로 로컬 저장 + 알람 예약
+        assertTrue(viewModel.uiState.value.alarmEnabled)
+        assertEquals("21:00", ConversationAlarmStorage(context).getConversationTime())
+        assertTrue(ConversationAlarmStorage(context).isAlarmEnabled())
+        verify { ConversationAlarmScheduler.scheduleAlarm(any(), "21:00") }
     }
 
     // ===== checkAndUpdateLocationCollectionStatus 자동 시작 (1개) =====
