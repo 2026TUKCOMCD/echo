@@ -23,4 +23,9 @@ public class OpenAIFeignConfig {
             requestTemplate.header("Authorization", "Bearer " + apiKey);
         };
     }
+
+    @Bean
+    public feign.Request.Options openAIRequestOptions() {
+        return new feign.Request.Options(10_000, 30_000); // connect 10s, read 30s
+    }
 }
