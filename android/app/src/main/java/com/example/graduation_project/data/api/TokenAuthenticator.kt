@@ -9,6 +9,7 @@ import okhttp3.Authenticator
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
+import retrofit2.HttpException
 
 class TokenAuthenticator(
     private val tokenStorage: TokenStorage,
@@ -37,8 +38,16 @@ class TokenAuthenticator(
                     val tokenResponse = authApi.refresh(RefreshRequest(refreshToken))
                     tokenStorage.saveTokens(tokenResponse.accessToken, tokenResponse.refreshToken)
                     tokenResponse.accessToken
+                } catch (e: HttpException) {
+                    // 서버가 refresh 토큰을 명시적으로 거부한 경우(만료/무효)에만 로그아웃 처리.
+                    // 그 외 서버 오류(5xx 등)는 토큰을 보존해 이후 재시도가 가능하도록 함.
+                    if (e.code() == 401 || e.code() == 403) {
+                        tokenStorage.clear()
+                    }
+                    null
                 } catch (e: Exception) {
-                    tokenStorage.clear()
+                    // 네트워크 오류/타임아웃 등 일시적 실패 - 토큰을 지우지 않아
+                    // 연결 복구 후 정상 로그인 상태를 유지한다.
                     null
                 }
             }
