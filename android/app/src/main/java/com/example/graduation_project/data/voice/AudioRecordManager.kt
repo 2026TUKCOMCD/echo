@@ -87,6 +87,8 @@ class AudioRecordManager @VisibleForTesting internal constructor(
             return // 이미 활성 상태
         }
 
+        // 이전 실행의 scope가 남아 있으면 취소해 collector 누수 방지
+        scope?.cancel()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
         _state.value = AudioRecordState.Preparing
