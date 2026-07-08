@@ -30,7 +30,7 @@ public class ModelRotationService {
     private final Clock clock;
 
     /**
-     * 오늘 사용할 모델을 반환한다.
+     * 오늘 사용할 모델을 반환한다. (예: "anthropic/claude-sonnet-5")
      */
     public String currentModel() {
         List<String> models = chatProperties.getModels();
@@ -41,6 +41,35 @@ public class ModelRotationService {
         long day = LocalDate.now(clock).toEpochDay();
         int index = Math.floorMod(day, models.size());
         return models.get(index);
+    }
+
+    /**
+     * 오늘의 모델을 사람이 읽기 좋은(음성으로 발화 가능한) 이름으로 반환한다.
+     * 예: "anthropic/claude-sonnet-5" -> "Claude Sonnet 5", "openai/gpt-5.5" -> "GPT 5.5"
+     */
+    public String currentModelDisplayName() {
+        return toDisplayName(currentModel());
+    }
+
+    private static String toDisplayName(String modelId) {
+        String slug = modelId.contains("/") ? modelId.substring(modelId.indexOf('/') + 1) : modelId;
+        String[] parts = slug.split("-");
+
+        StringBuilder displayName = new StringBuilder();
+        for (String part : parts) {
+            if (displayName.length() > 0) {
+                displayName.append(' ');
+            }
+            displayName.append("gpt".equalsIgnoreCase(part) ? "GPT" : capitalize(part));
+        }
+        return displayName.toString();
+    }
+
+    private static String capitalize(String word) {
+        if (word.isEmpty()) {
+            return word;
+        }
+        return Character.toUpperCase(word.charAt(0)) + word.substring(1);
     }
 
     @Scheduled(cron = "0 0 0 * * *", zone = "Asia/Seoul")

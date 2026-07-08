@@ -2,7 +2,7 @@
  * AI 응답 생성 서비스
  *
  * 역할: OpenRouter API를 호출하여 AI 응답 생성
- * - generateGreeting(): 대화 시작 시 첫 인사 생성
+ * - generateGreeting(): 대화 시작 시 첫 인사 생성 (오늘의 로테이션 모델을 음성으로 안내하는 문장 포함)
  * - generateResponse(): 사용자 메시지에 대한 응답 생성
  *
  * 데이터 흐름:
@@ -36,6 +36,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class AIService {
+
+    private static final String MODEL_ANNOUNCEMENT_FORMAT = "오늘은 %s 모델과 함께 대화를 나눠요. ";
 
     private final OpenRouterClient openRouterClient;
     private final ModelRotationService modelRotationService;
@@ -76,9 +78,10 @@ public class AIService {
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
             String greeting = extractContent(response);
+            String announcedGreeting = String.format(MODEL_ANNOUNCEMENT_FORMAT, modelRotationService.currentModelDisplayName()) + greeting;
 
-            log.debug("Generated greeting: {}", greeting);
-            return greeting;
+            log.debug("Generated greeting: {}", announcedGreeting);
+            return announcedGreeting;
         } catch (FeignException e) {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 인사 생성 실패: " + e.getMessage(), e);

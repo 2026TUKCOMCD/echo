@@ -44,6 +44,7 @@ class AIServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(modelRotationService.currentModel()).thenReturn("anthropic/claude-sonnet-5");
+        lenient().when(modelRotationService.currentModelDisplayName()).thenReturn("Claude Sonnet 5");
 
         OpenRouterChatProperties chatProperties = new OpenRouterChatProperties();
         chatProperties.setTemperature(0.7);
@@ -72,7 +73,7 @@ class AIServiceTest {
         String result = aiService.generateGreeting(systemPrompt, context);
 
         // Then
-        assertThat(result).isEqualTo("안녕하세요! 오늘 하루는 어떠셨어요?");
+        assertThat(result).isEqualTo("오늘은 Claude Sonnet 5 모델과 함께 대화를 나눠요. 안녕하세요! 오늘 하루는 어떠셨어요?");
 
         // 메시지 구조 검증
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);

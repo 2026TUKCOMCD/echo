@@ -71,4 +71,13 @@ class ModelRotationServiceTest {
 
         assertThat(first).isEqualTo(second);
     }
+
+    @Test
+    @DisplayName("currentModelDisplayName - 후보 4개 모두 음성으로 자연스러운 표시 이름으로 변환")
+    void currentModelDisplayName_forEachCandidate() {
+        assertThat(serviceAt(0).currentModelDisplayName()).isEqualTo("GPT 5.5");           // openai/gpt-5.5
+        assertThat(serviceAt(1).currentModelDisplayName()).isEqualTo("Claude Sonnet 5");   // anthropic/claude-sonnet-5
+        assertThat(serviceAt(2).currentModelDisplayName()).isEqualTo("Gemini 3.1 Flash Lite"); // google/gemini-3.1-flash-lite
+        assertThat(serviceAt(3).currentModelDisplayName()).isEqualTo("Claude Haiku 4.5");  // anthropic/claude-haiku-4.5
+    }
 }
