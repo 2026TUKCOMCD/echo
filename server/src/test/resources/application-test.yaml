@@ -37,6 +37,7 @@ openrouter:
       - anthropic/claude-sonnet-5
       - google/gemini-3.1-flash-lite
       - anthropic/claude-haiku-4.5
+      - openai/gpt-4o-mini
     temperature: 0.7
     max-tokens: 512
 
