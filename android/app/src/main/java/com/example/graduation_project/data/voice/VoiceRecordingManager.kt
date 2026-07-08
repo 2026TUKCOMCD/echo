@@ -6,6 +6,7 @@ import com.example.graduation_project.domain.voice.VadConfig
 import com.example.graduation_project.domain.voice.VadException
 import com.example.graduation_project.domain.voice.VadListener
 import com.example.graduation_project.domain.voice.VadState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -102,6 +103,9 @@ class VoiceRecordingManager(
                     finalizeSpeech()
                 }
 
+            } catch (e: CancellationException) {
+                // 정상적인 stop()에 의한 취소 - 에러가 아니므로 그대로 전파
+                throw e
             } catch (e: VadException) {
                 _vadState.value = VadState.Error(e)
                 listener?.onError(e)
