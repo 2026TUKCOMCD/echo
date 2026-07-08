@@ -17,10 +17,6 @@ public class OpenAIFeignConfig {
 
     @Bean
     public RequestInterceptor openAIRequestInterceptor() {
-        System.out.println("=== OpenAIFeignConfig initialized, API Key (last 4): " + (apiKey != null && apiKey.length() > 4 ? "..." + apiKey.substring(apiKey.length() - 4) : "NULL or SHORT") + " ===");
-        return requestTemplate -> {
-            System.out.println("=== Interceptor called, API Key (last 4): " + (apiKey != null && apiKey.length() > 4 ? "..." + apiKey.substring(apiKey.length() - 4) : "NULL or SHORT") + " ===");
-            requestTemplate.header("Authorization", "Bearer " + apiKey);
-        };
+        return requestTemplate -> requestTemplate.header("Authorization", "Bearer " + apiKey);
     }
 }

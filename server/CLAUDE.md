@@ -42,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **ORM**: Spring Data JPA
 - **HTTP 클라이언트**: Spring Cloud OpenFeign 2025.0.0
 - **캐싱**: Caffeine (프롬프트 템플릿 캐싱)
-- **외부 API**: OpenAI (GPT-4o-mini, Whisper:STT), Azure Cognitive Services TTS
+- **외부 API**: OpenRouter (채팅, 매일 다른 모델로 자동 로테이션), OpenAI (Whisper:STT), Azure Cognitive Services TTS
 - **API 문서**: springdoc-openapi 2.3.0 (Swagger UI 적용, http://localhost:8080/swagger-ui.html)
 
 ## 아키텍처
@@ -67,7 +67,7 @@ ConversationController
 |--------|--------------------------------------------------------------------------|
 | `conversation` | 대화 세션 오케스트레이션 (컨트롤러, 서비스)                                                |
 | `voice` | STT/TTS 처리 (STT: OpenAI Whisper, TTS: Azure Cognitive Services) |
-| `ai` | OpenAI Chat Completion API 호출 (GPT-4o-mini)                                              |
+| `ai` | OpenRouter Chat Completion API 호출 (매일 자동으로 다른 모델 로테이션)                                              |
 | `prompt` | 시스템 프롬프트 빌드 및 템플릿 관리 (Entity/Repository/캐싱)                                                              |
 | `context` | 세션별 사용자 컨텍스트 관리 (ConcurrentHashMap 기반)                                   |
 | `diary` | 대화 요약 및 일기 생성                                                            |
@@ -91,7 +91,7 @@ ConversationController
 ## 설정
 
 - **application.yaml**: DB 연결, JPA 설정, Open AI API
-- **OpenAI API 키**: application-local.yaml 사용 ( 보안 목적 )
+- **OpenAI/OpenRouter API 키**: application-local.yaml 사용 ( 보안 목적 )
 
 ## 외부 API 연동
 
@@ -99,7 +99,7 @@ ConversationController
 |-----|------|---------------------------------|
 | STT | 구현 완료 | `STTClient` → OpenAI Whisper    |
 | TTS | 구현 완료 | `TTSClient` → Azure Cognitive Services TTS |
-| AI 응답 | 구현 완료 | `OpenAIClient` → OpenAI GPT-4o-mini |
+| AI 응답 | 구현 완료 | `OpenRouterClient` → OpenRouter (매일 자동으로 다른 모델 로테이션, `ModelRotationService`) |
 | 날씨 | 더미 구현 | `WeatherClient` → OpenWeatherMap |
 
 ## 주의사항
