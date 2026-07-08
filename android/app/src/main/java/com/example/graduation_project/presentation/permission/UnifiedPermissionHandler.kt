@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +19,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.health.connect.client.HealthConnectClient
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.presentation.health.openHealthConnectSettings
 
@@ -77,6 +81,23 @@ fun UnifiedPermissionHandler(
 
     var hasCompletedOnboarding by remember {
         mutableStateOf(previouslyCompleted && !needsRecheck)
+    }
+
+    // 마이크 권한 보유 여부 (Compose 상태로 보관해, ON_RESUME 재확인 시 recomposition 유발)
+    var hasMicPermission by remember {
+        mutableStateOf(PermissionChecker.hasMicrophonePermission(context))
+    }
+
+    // 설정 앱에서 권한을 허용하고 돌아온 경우를 감지하기 위해 ON_RESUME마다 재확인
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasMicPermission = PermissionChecker.hasMicrophonePermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // 마이크 권한 요청 런처
@@ -209,8 +230,8 @@ fun UnifiedPermissionHandler(
 
     // 이미 온보딩 완료 또는 모든 필수 권한 있음
     if (hasCompletedOnboarding || currentStep == PermissionStep.COMPLETED) {
-        // 마이크 권한 체크 (필수)
-        if (!PermissionChecker.hasMicrophonePermission(context)) {
+        // 마이크 권한 체크 (필수) - Compose 상태를 읽어, ON_RESUME 재확인 시 recomposition되도록 함
+        if (!hasMicPermission) {
             MicrophonePermissionSettingsDialog(
                 onOpenSettings = { PermissionChecker.openAppSettings(context) }
             )
