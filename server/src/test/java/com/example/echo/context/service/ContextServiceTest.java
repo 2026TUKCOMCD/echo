@@ -20,6 +20,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.BDDMockito.*;
@@ -304,6 +309,74 @@ class ContextServiceTest {
             // when & then (예외 발생하지 않아야 함)
             assertThatCode(() -> contextService.finalizeContext(nonExistentUserId))
                     .doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("concurrentAddConversationTurn 메서드 - 동시성 테스트")
+    class ConcurrentAddConversationTurn {
+
+        @Test
+        @DisplayName("성공: 동시성 환경에서 모든 대화 턴이 정확히 추가된다")
+        void success_addsAllTurnsInConcurrentEnvironment() throws InterruptedException {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
+
+            contextService.initializeContext(userId, mockHealthData);
+            int totalThreads = 10;
+            int turnsPerThread = 100;
+            int expectedTurns = totalThreads * turnsPerThread;
+
+            ExecutorService executorService = Executors.newFixedThreadPool(totalThreads);
+            CountDownLatch latch = new CountDownLatch(totalThreads);
+            List<Exception> exceptions = new ArrayList<>();
+
+            // when
+            for (int i = 0; i < totalThreads; i++) {
+                final int threadId = i;
+                executorService.submit(() -> {
+                    try {
+                        for (int j = 0; j < turnsPerThread; j++) {
+                            contextService.addConversationTurn(
+                                    userId,
+                                    "스레드 " + threadId + " 메시지 " + j,
+                                    "스레드 " + threadId + " 응답 " + j
+                            );
+                        }
+                    } catch (Exception e) {
+                        synchronized (exceptions) {
+                            exceptions.add(e);
+                        }
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            // 모든 스레드가 완료될 때까지 대기
+            latch.await();
+            executorService.shutdown();
+
+            // then
+            // 예외가 발생하지 않았는지 확인
+            assertThat(exceptions).isEmpty();
+
+            // 정확히 1000개의 턴이 추가되었는지 확인
+            UserContext context = contextService.getContext(userId);
+            assertThat(context.getConversationHistory()).hasSize(expectedTurns);
+
+            // 모든 턴이 순회 가능한지 확인 (CopyOnWriteArrayList의 안전한 순회 검증)
+            int count = 0;
+            for (var turn : context.getConversationHistory()) {
+                assertThat(turn.getUserMessage()).isNotNull();
+                assertThat(turn.getAiResponse()).isNotNull();
+                assertThat(turn.getTimestamp()).isNotNull();
+                count++;
+            }
+            assertThat(count).isEqualTo(expectedTurns);
         }
     }
 }
