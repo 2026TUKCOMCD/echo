@@ -32,6 +32,9 @@ class VadProcessor(
      */
     fun initialize() {
         try {
+            // 재초기화 시 기존 네이티브 리소스를 먼저 해제 (누수 방지)
+            vad?.close()
+            vad = null
             vad = Vad.builder()
                 .setContext(context)
                 .setSampleRate(getSampleRate())
