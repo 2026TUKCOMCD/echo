@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>모델별 독립 채팅</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --surface: #fff; --border: #dde1e6; --text: #1a1d23;
+    --muted: #5b6472; --accent: #0f8f88; --user-bg: #e3f4f2; --ai-bg: #f3f4f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  }
+  header {
+    padding: 16px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .config {
+    display: flex; flex-wrap: wrap; gap: 12px; padding: 14px 20px;
+    background: var(--surface); border-bottom: 1px solid var(--border); align-items: center;
+  }
+  .config label { font-size: 13px; color: var(--muted); }
+  .config input[type="password"] {
+    font-family: ui-monospace, monospace; font-size: 13px; padding: 6px 8px;
+    border: 1px solid var(--border); border-radius: 6px; width: 320px;
+  }
+  button {
+    font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 8px;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button.secondary { background: var(--surface); color: var(--accent); }
+  button.small { padding: 5px 10px; font-size: 12.5px; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .board {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px; padding: 16px 20px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    display: flex; flex-direction: column; min-height: 460px; max-height: 75vh;
+  }
+  .card h2 {
+    font-size: 13.5px; font-family: ui-monospace, monospace; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); margin: 0; color: var(--accent);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .card h2 button { padding: 3px 8px; font-size: 11px; }
+  .thread { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { font-size: 13.5px; line-height: 1.5; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; }
+  .msg.user { background: var(--user-bg); align-self: flex-end; max-width: 90%; }
+  .msg.ai { background: var(--ai-bg); align-self: flex-start; max-width: 90%; }
+  .msg.pending { color: var(--muted); font-style: italic; }
+
+  .card-composer {
+    display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border);
+  }
+  .card-composer textarea {
+    flex: 1; resize: none; min-height: 38px; font-size: 13px; padding: 6px 8px;
+    border: 1px solid var(--border); border-radius: 6px; font-family: inherit;
+  }
+
+  footer { padding: 10px 20px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>모델별 독립 채팅 — develop v8 시스템 프롬프트 고정</h1>
+  <p>각 모델 카드가 독립된 대화 스레드를 가집니다. 모델마다 다른 메시지를 보내 대화를 다르게 이어갈 수 있습니다.</p>
+</header>
+
+<div class="config">
+  <label>OpenRouter API 키
+    <input type="password" id="apiKey" placeholder="sk-or-v1-...">
+  </label>
+  <button class="secondary" id="exportBtn">전체 내보내기 (.txt)</button>
+  <button class="secondary" id="resetBtn">전체 초기화</button>
+</div>
+
+<div class="board" id="board"></div>
+
+<footer>세션은 브라우저 localStorage(model_chat_individual 전용 키)에 자동 저장됩니다. side-by-side 비교 페이지와는 별도 저장소를 사용해 서로 충돌하지 않습니다.</footer>
+
+<script>
+const STORAGE_KEY = "echo_model_chat_individual_v1";
+
+const MODELS = [
+  "openai/gpt-5.5",
+  "anthropic/claude-sonnet-5",
+  "anthropic/claude-sonnet-4.5",
+  "anthropic/claude-haiku-4.5",
+];
+
+const SYSTEM_PROMPT = `당신은 경도인지장애(MCI) 어르신의 따뜻한 말벗 AI입니다.
+오늘의 날씨와 방문 장소를 실마리 삼아, 어르신의 소중한 옛 추억을 함께 꺼내드리세요.
+
+────────────────────────────
+[어르신 정보]
+────────────────────────────
+이름: 김옥순 / 나이: 78세 / 생일: 1948-03-15
+취미: 텃밭 가꾸기 / 과거 직업: 초등학교 교사
+가족: 딸 둘, 사위, 손주 셋 / 선호 주제: 정원 가꾸기, 옛날 이야기
+
+────────────────────────────
+[오늘의 맥락 — 대화 실마리]
+────────────────────────────
+현재 위치: 대전
+현재 날씨: 맑음, 24도
+
+[오늘 다녀오신 곳] (체류 시간 순)
+한밭수목원 (체류 2시간, 방문 시점 날씨: 맑음, 23도)
+
+[건강 상태] (안부 확인용만)
+수면 평가: 적당 / 기상 평가: 평소와 비슷
+
+────────────────────────────
+[응답 규칙 — 반드시 지킬 것]
+────────────────────────────
+① 응답은 최대 2문장. 부정 감정 표현 시 최대 3문장.
+② 질문은 한 턴에 반드시 1개만. 어떤 경우에도 2개 금지.
+③ "기억나세요?", "기억하세요?" 등 기억력을 테스트하는 표현 금지.
+④ 건강 수치(걸음 수 숫자, 수면 시간 숫자) 직접 언급 금지.
+⑤ 데이터에 없는 내용 절대 만들지 말 것.
+
+────────────────────────────
+[대화 원칙]
+────────────────────────────
+- 오늘의 방문 장소는 AI가 먼저 알려주는 단서이지, 기억을 테스트하는 것이 아님
+- 목표는 어르신의 20~40대 자전적 기억(인생에서 가장 생생한 시절)을 자연스럽게 떠올리게 하는 것
+- 어르신의 말을 반영하여 더 이야기하게 유도할 것 (CTRS 반영 경청)
+- 어르신 기억이 사실과 달라도 교정하지 않음 → "그러셨군요, 좋으셨겠어요."
+- 어르신이 피곤해하시면 "오늘은 여기서 마무리할까요?" 여쭤보고 종료
+
+────────────────────────────
+[대화 흐름 — 3단계]
+────────────────────────────
+총 7~10턴을 목표로 한다.
+
+▶ [1단계: 날씨 인사 + 안부] (1~2턴)
+  - 날씨(맑음, 24도)로 자연스럽게 시작
+  - 수면 평가(적당)를 참고해 "잘 주무셨어요?" 수준의 안부만
+  - 건강 수치 절대 언급 금지
+
+▶ [2단계: 위치 단서 → 과거 회상 연결] (2~3턴)
+  - AI가 먼저 오늘 방문 장소를 언급: "오늘 OO 근처에 다녀오셨네요."
+  - 그 장소와 관련된 어르신의 20~40대 시절 기억으로 자연스럽게 전환
+    예: "그 근처에서 젊으실 때 기억이 있으신가요?"
+  - 방문 장소가 없으면 날씨나 취미(텃밭 가꾸기)를 실마리로 과거 회상 유도
+  - 방문 시점 날씨도 활용 가능: "그때도 이렇게 따뜻했나요?"
+
+▶ [3단계: 과거 회상 심화 — SFAM 3단계] (4~5턴)
+  사실(Fact) → 감정(Feeling) → 의미(Meaning) 순서로 심화:
+  - 사실: "그때 무엇을 하셨나요? / 누구와 함께 계셨나요?"
+  - 감정: "그때 기분이 어떠셨어요? / 많이 좋으셨겠어요."
+  - 의미: "그 시절이 어르신께 어떤 의미였나요?"
+
+  취미(텃밭 가꾸기), 직업(초등학교 교사), 가족(딸 둘, 사위, 손주 셋)과 연결하여 깊이 탐색.
+  어르신이 한 주제에서 풍부하게 말씀하시면 그 흐름을 따라감.
+
+  [공감 표현 — Hardee 5단계]
+  - 환영: "말씀해 주셔서 감사해요."
+  - 경청: 말을 끊지 않고 끝까지 듣는 태도
+  - 공감: "많이 좋으셨겠어요", "그때 많이 힘드셨겠어요" 등 감정 반영
+  - 탐색: 어르신 말씀을 되짚으며 한 가지만 더 질문
+  - 확인: "그 시절 정말 소중한 시간이셨겠어요." 식으로 가치를 인정
+
+▶ [마무리] (1~2턴)
+  - 오늘 회상한 긍정적인 기억 한 가지를 짧게 되짚음
+  - 따뜻하게 인사로 마무리. 이 단계에서는 질문 없음.
+
+────────────────────────────
+[이탈 발화 및 무응답 대응]
+────────────────────────────
+▷ 단답/무관한 발화 → 자연스럽게 받아준 뒤 주제로 부드럽게 돌아옴
+▷ 단답 2회 연속 → 해당 주제 내려놓고 다음 단계로 이동
+▷ 무응답 1회 → "천천히 생각해 보셔도 돼요." 후 동일 주제 유지
+▷ 무응답 2회 연속 → 부드럽게 마무리로 전환
+▷ 부정적 감정 → 공감만, 질문 없음. 다음 턴에 긍정적 주제로 전환
+▷ 피로/혼란 신호 → "오늘은 여기서 마무리할까요?" 여쭤보고 종료
+
+────────────────────────────
+[안전 프로토콜]
+────────────────────────────
+- 우울/자해 신호 감지 시: "오늘 많이 힘드신 것 같아요. 잠시 쉬어가는 건 어떨까요?"로 전환
+- 의료 응급 언급 시: 즉시 119 연락 권유
+- 학대/방임 신호 감지 시: 공감 후 보호자 상담 권유
+
+────────────────────────────
+[절대 금지]
+────────────────────────────
+- 오늘 날짜/요일/연도를 묻는 질문 ("오늘이 며칠인지 아세요?")
+- 최근 기억 테스트 ("오늘 뭐 드셨어요?", "아까 뭐 하셨어요?")
+- 틀린 기억 교정 ("그건 아닌데요", "다시 생각해 보세요")
+- 복잡한 다단계 질문 (한 번에 한 가지만)
+- 의학적 조언 ("치매에는 이게 좋대요")
+- 데이터에 없는 내용 추측하여 언급`;
+
+let state = loadState();
+
+function defaultState() {
+  const threads = {};
+  MODELS.forEach(m => { threads[m] = []; });
+  return { apiKey: "", threads };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    const base = defaultState();
+    MODELS.forEach(m => {
+      if (parsed.threads && parsed.threads[m]) base.threads[m] = parsed.threads[m];
+    });
+    base.apiKey = parsed.apiKey || "";
+    return base;
+  } catch {
+    return defaultState();
+  }
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function cssId(model) {
+  return model.replace(/[^a-zA-Z0-9]/g, "_");
+}
+
+function renderMsg(msg) {
+  const div = document.createElement("div");
+  div.className = "msg " + (msg.role === "user" ? "user" : "ai") + (msg.pending ? " pending" : "");
+  div.textContent = msg.content;
+  return div;
+}
+
+function renderBoard() {
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+  MODELS.forEach(m => {
+    const id = cssId(m);
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const h2 = document.createElement("h2");
+    h2.textContent = m;
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "small secondary";
+    clearBtn.textContent = "지우기";
+    clearBtn.addEventListener("click", () => {
+      state.threads[m] = [];
+      saveState();
+      renderBoard();
+    });
+    h2.appendChild(clearBtn);
+
+    const thread = document.createElement("div");
+    thread.className = "thread";
+    thread.id = "thread_" + id;
+    state.threads[m].forEach(msg => thread.appendChild(renderMsg(msg)));
+
+    const composer = document.createElement("div");
+    composer.className = "card-composer";
+    const textarea = document.createElement("textarea");
+    textarea.placeholder = `${m}에게 보낼 메시지...`;
+    textarea.id = "input_" + id;
+    const sendBtn = document.createElement("button");
+    sendBtn.textContent = "전송";
+    sendBtn.id = "send_" + id;
+    sendBtn.addEventListener("click", () => sendToModel(m));
+    textarea.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendToModel(m);
+    });
+    composer.appendChild(textarea);
+    composer.appendChild(sendBtn);
+
+    card.appendChild(h2);
+    card.appendChild(thread);
+    card.appendChild(composer);
+    board.appendChild(card);
+    thread.scrollTop = thread.scrollHeight;
+  });
+}
+
+async function callModel(model, messages, apiKey) {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 1024 }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    return `[ERROR ${res.status}] ${text}`;
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "[EMPTY RESPONSE]";
+}
+
+async function sendToModel(model) {
+  const id = cssId(model);
+  const textarea = document.getElementById("input_" + id);
+  const text = textarea.value.trim();
+  if (!text) return;
+  const apiKey = document.getElementById("apiKey").value.trim();
+  if (!apiKey) { alert("OpenRouter API 키를 입력해주세요."); return; }
+  state.apiKey = apiKey;
+
+  state.threads[model].push({ role: "user", content: text });
+  textarea.value = "";
+  saveState();
+  renderBoard();
+
+  const sendBtn = document.getElementById("send_" + id);
+  sendBtn.disabled = true;
+
+  const thread = document.getElementById("thread_" + id);
+  const pending = renderMsg({ role: "assistant", content: "…", pending: true });
+  thread.appendChild(pending);
+  thread.scrollTop = thread.scrollHeight;
+
+  const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...state.threads[model]];
+  const reply = await callModel(model, messages, apiKey);
+  state.threads[model].push({ role: "assistant", content: reply });
+  saveState();
+  renderBoard();
+}
+
+function exportTranscript() {
+  let out = `Echo 모델별 독립 채팅 내보내기 — ${new Date().toISOString()}\n\n`;
+  MODELS.forEach(m => {
+    out += `\n===== ${m} =====\n\n`;
+    state.threads[m].forEach(msg => {
+      out += `[${msg.role}] ${msg.content}\n\n`;
+    });
+  });
+  const blob = new Blob([out], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `model-chat-individual-${Date.now()}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function resetAll() {
+  if (!confirm("모든 모델의 대화 기록을 초기화할까요?")) return;
+  state = defaultState();
+  saveState();
+  renderBoard();
+}
+
+document.getElementById("apiKey").value = state.apiKey;
+document.getElementById("exportBtn").addEventListener("click", exportTranscript);
+document.getElementById("resetBtn").addEventListener("click", resetAll);
+
+renderBoard();
+</script>
+</body>
+</html>
