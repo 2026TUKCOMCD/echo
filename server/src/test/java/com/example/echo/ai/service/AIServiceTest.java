@@ -1,6 +1,7 @@
 package com.example.echo.ai.service;
 
-import com.example.echo.ai.client.OpenAIClient;
+import com.example.echo.ai.client.OpenRouterClient;
+import com.example.echo.ai.config.OpenRouterChatProperties;
 import com.example.echo.ai.dto.ChatCompletionRequest;
 import com.example.echo.ai.dto.ChatCompletionResponse;
 import com.example.echo.ai.exception.AIException;
@@ -12,10 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -25,6 +24,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -32,18 +32,25 @@ import static org.mockito.Mockito.when;
 class AIServiceTest {
 
     @Mock
-    private OpenAIClient openAIClient;
+    private OpenRouterClient openRouterClient;
 
-    @InjectMocks
+    @Mock
+    private ModelRotationService modelRotationService;
+
     private AIService aiService;
 
     private UserContext context;
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(aiService, "model", "gpt-4o-mini");
-        ReflectionTestUtils.setField(aiService, "temperature", 0.7);
-        ReflectionTestUtils.setField(aiService, "maxTokens", 1024);
+        lenient().when(modelRotationService.currentModel()).thenReturn("anthropic/claude-sonnet-5");
+        lenient().when(modelRotationService.currentModelDisplayName()).thenReturn("Claude Sonnet 5");
+
+        OpenRouterChatProperties chatProperties = new OpenRouterChatProperties();
+        chatProperties.setTemperature(0.7);
+        chatProperties.setMaxTokens(1024);
+
+        aiService = new AIService(openRouterClient, modelRotationService, chatProperties);
 
         context = UserContext.builder()
                 .userId(1L)
@@ -59,18 +66,18 @@ class AIServiceTest {
         String systemPrompt = "당신은 친근한 대화 상대입니다.";
         ChatCompletionResponse response = createMockResponse("안녕하세요! 오늘 하루는 어떠셨어요?");
 
-        when(openAIClient.createChatCompletion(any(ChatCompletionRequest.class)))
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
                 .thenReturn(response);
 
         // When
         String result = aiService.generateGreeting(systemPrompt, context);
 
         // Then
-        assertThat(result).isEqualTo("안녕하세요! 오늘 하루는 어떠셨어요?");
+        assertThat(result).isEqualTo("오늘은 Claude Sonnet 5 모델과 함께 대화를 나눠요. 안녕하세요! 오늘 하루는 어떠셨어요?");
 
         // 메시지 구조 검증
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
-        when(openAIClient.createChatCompletion(captor.capture())).thenReturn(response);
+        when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
         aiService.generateGreeting(systemPrompt, context);
 
         ChatCompletionRequest capturedRequest = captor.getValue();
@@ -89,7 +96,7 @@ class AIServiceTest {
         when(feignException.status()).thenReturn(500);
         when(feignException.getMessage()).thenReturn("Internal Server Error");
 
-        when(openAIClient.createChatCompletion(any(ChatCompletionRequest.class)))
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
                 .thenThrow(feignException);
 
         // When & Then
@@ -116,7 +123,7 @@ class AIServiceTest {
 
         ChatCompletionResponse response = createMockResponse("좋은 질문이네요!");
 
-        when(openAIClient.createChatCompletion(any(ChatCompletionRequest.class)))
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
                 .thenReturn(response);
 
         // When
@@ -127,7 +134,7 @@ class AIServiceTest {
 
         // 메시지 구조 검증: system(1) + history(user+assistant)(2) + current user(1) = 4
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
-        when(openAIClient.createChatCompletion(captor.capture())).thenReturn(response);
+        when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
         aiService.generateResponse(systemPrompt, history, userMessage);
 
         ChatCompletionRequest capturedRequest = captor.getValue();
@@ -152,7 +159,7 @@ class AIServiceTest {
         when(feignException.status()).thenReturn(429);
         when(feignException.getMessage()).thenReturn("Rate Limit Exceeded");
 
-        when(openAIClient.createChatCompletion(any(ChatCompletionRequest.class)))
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
                 .thenThrow(feignException);
 
         // When & Then
@@ -175,7 +182,7 @@ class AIServiceTest {
         ChatCompletionResponse nullChoicesResponse = mock(ChatCompletionResponse.class);
         when(nullChoicesResponse.getChoices()).thenReturn(null);
 
-        when(openAIClient.createChatCompletion(any(ChatCompletionRequest.class)))
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
                 .thenReturn(nullChoicesResponse);
 
         // When
@@ -188,7 +195,7 @@ class AIServiceTest {
         ChatCompletionResponse emptyChoicesResponse = mock(ChatCompletionResponse.class);
         when(emptyChoicesResponse.getChoices()).thenReturn(Collections.emptyList());
 
-        when(openAIClient.createChatCompletion(any(ChatCompletionRequest.class)))
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
                 .thenReturn(emptyChoicesResponse);
 
         // When

@@ -17,7 +17,7 @@ spring:
     init:
       mode: never
 
-# OpenAI API 설정
+# OpenAI API 설정 (STT 전용)
 openai:
   api:
     url: https://api.openai.com/v1
@@ -25,8 +25,19 @@ openai:
   whisper:
     model: whisper-1
     language: ko
+
+# OpenRouter API 설정 (채팅 전용)
+openrouter:
+  api:
+    url: https://openrouter.ai/api/v1
+    key: ${OPENROUTER_API_KEY:}
   chat:
-    model: gpt-4o-mini
+    models:
+      - openai/gpt-5.5
+      - anthropic/claude-sonnet-5
+      - google/gemini-3.1-flash-lite
+      - anthropic/claude-haiku-4.5
+      - openai/gpt-4o-mini
     temperature: 0.7
     max-tokens: 512
 
