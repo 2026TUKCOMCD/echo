@@ -6,8 +6,8 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- Keystore로 암호화된 파일은 백업/복원 후 키 불일치로 크래시를 유발하므로 제외 (Android 30 이하) -->
+    <exclude domain="sharedpref" path="secure_auth_prefs.xml"/>
+    <exclude domain="sharedpref" path="secure_db_prefs.xml"/>
+    <exclude domain="database" path="echo_database"/>
 </full-backup-content>
