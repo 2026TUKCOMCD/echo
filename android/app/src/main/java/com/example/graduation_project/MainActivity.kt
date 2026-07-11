@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -345,13 +346,22 @@ private fun AppNavHost(
             modifier = Modifier.padding(paddingValues)
         ) {
             composable(Routes.CHECKING) {
+                val checkingContext = LocalContext.current
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = EchoAccentGreen)
                 }
                 LaunchedEffect(Unit) {
                     val destination = when (val result = userRepository.getOnboardingStatus()) {
                         is ApiResult.Success -> if (result.data.completed) EchoTab.HOME.route else Routes.ONBOARDING
-                        is ApiResult.Error -> Routes.LOGIN
+                        is ApiResult.Error -> {
+                            // 조용히 로그인 화면으로 돌아가면 사용자가 원인을 알 수 없으므로 실패 사유 표시
+                            Toast.makeText(
+                                checkingContext,
+                                "로그인 상태 확인 실패: ${result.exception.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            Routes.LOGIN
+                        }
                     }
                     navController.navigate(destination) {
                         popUpTo(Routes.CHECKING) { inclusive = true }
@@ -362,15 +372,10 @@ private fun AppNavHost(
             composable(Routes.LOGIN) {
                 LoginScreen(
                     onLoginSuccess = {
-                        coroutineScope.launch {
-                            val destination = when (val result = userRepository.getOnboardingStatus()) {
-                                is ApiResult.Success -> if (result.data.completed) EchoTab.HOME.route else Routes.ONBOARDING
-                                // 네트워크/서버 오류 시 CHECKING으로 이동해 재시도 — 온보딩 강제 진입 방지
-                                is ApiResult.Error -> Routes.CHECKING
-                            }
-                            navController.navigate(destination) {
-                                popUpTo(Routes.LOGIN) { inclusive = true }
-                            }
+                        // 온보딩 상태 확인 동안 로그인 화면이 멈춘 것처럼 보이지 않도록
+                        // 즉시 CHECKING(전체 화면 스피너)으로 전환하고, 확인/분기는 CHECKING에서 처리
+                        navController.navigate(Routes.CHECKING) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
                         }
                     },
                     onNavigateToSignup = {
