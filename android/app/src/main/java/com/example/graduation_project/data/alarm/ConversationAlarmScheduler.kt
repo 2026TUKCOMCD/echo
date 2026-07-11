@@ -121,7 +121,9 @@ object ConversationAlarmScheduler {
     }
 
     /**
-     * 저장된 설정으로 알람 재스케줄링 (부팅 시 사용)
+     * 저장된 설정으로 알람 재스케줄링 (부팅, 앱 시작 시 사용)
+     *
+     * 같은 requestCode의 PendingIntent를 덮어쓰므로 중복 호출해도 알람은 하나만 유지됨
      */
     fun rescheduleFromStorage(context: Context) {
         val storage = ConversationAlarmStorage(context)
@@ -138,6 +140,6 @@ object ConversationAlarmScheduler {
         }
 
         scheduleAlarm(context, time)
-        Log.d(TAG, "부팅 후 대화 알람 재스케줄링 완료: $time")
+        Log.d(TAG, "저장된 설정으로 대화 알람 재스케줄링 완료: $time")
     }
 }

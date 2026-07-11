@@ -185,6 +185,23 @@ class SettingsViewModelTest {
         verify { ConversationAlarmScheduler.scheduleAlarm(any(), "21:30") }
     }
 
+    @Test
+    fun `loadSettings가_서버_대화시간과_로컬저장소가_같아도_알람을_재예약한다`() = runTest {
+        // Given: 로컬과 서버 모두 21:30 (강제 종료 등으로 AlarmManager 등록만 사라진 상황 가정)
+        val alarmStorage = ConversationAlarmStorage(context)
+        alarmStorage.saveConversationTime("21:30")
+        alarmStorage.setAlarmEnabled(true)
+        coEvery { mockUserRepository.getPreferences() } returns
+            ApiResult.Success(UserPreferences(conversationTime = "21:30"))
+
+        // When: ViewModel 생성 (init에서 loadSettings 호출)
+        SettingsViewModel(context, mockUserRepository)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: 시간이 같아도 설정 화면 진입만으로 끊긴 알람이 복구되어야 함
+        verify { ConversationAlarmScheduler.scheduleAlarm(any(), "21:30") }
+    }
+
     // ===== 알람 켜기 기본시간 서버 저장 =====
 
     @Test

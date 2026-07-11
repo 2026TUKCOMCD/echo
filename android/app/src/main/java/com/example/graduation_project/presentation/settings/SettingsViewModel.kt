@@ -291,11 +291,13 @@ class SettingsViewModel(
     }
 
     /**
-     * 서버의 대화 시간과 로컬 알람 저장소가 다르면 동기화하고 알람을 재예약.
+     * 서버의 대화 시간으로 로컬 알람 저장소를 동기화하고 알람을 재예약.
      * (다른 기기에서 시간을 변경한 경우 UI 표시 시간과 실제 알람 발화 시간이 어긋나는 것 방지)
+     *
+     * 시간이 같아도 항상 재예약: 강제 종료 등으로 AlarmManager 등록만 사라진 경우
+     * 설정 화면 진입만으로 알람이 복구되도록 함 (같은 PendingIntent 덮어쓰기라 중복 예약 없음)
      */
     private fun syncAlarmWithServerTime(serverTime: String?) {
-        if (serverTime == alarmStorage.getConversationTime()) return
         alarmStorage.saveConversationTime(serverTime)
         updateAlarmSchedule(serverTime)  // 비활성화 상태거나 time=null이면 내부에서 cancelAlarm
     }
