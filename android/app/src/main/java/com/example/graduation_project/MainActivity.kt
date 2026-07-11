@@ -64,8 +64,12 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.sp
 import com.example.graduation_project.presentation.permission.LocationCollectionConfirmDialog
 import com.example.graduation_project.presentation.permission.LocationPermissionGuideDialog
+import com.example.graduation_project.util.CrashReporter
 
 class MainActivity : ComponentActivity() {
 
@@ -93,6 +97,11 @@ class MainActivity : ComponentActivity() {
                     shouldShowPermissionDialog = shouldShowPermissionDialog.value,
                     onPermissionDialogHandled = { shouldShowPermissionDialog.value = false }
                 )
+
+                // 디버그 빌드: 이전 실행에서 크래시가 있었으면 스택트레이스 표시 (ADB 없는 기기 디버깅용)
+                if (BuildConfig.DEBUG) {
+                    DebugCrashDialog()
+                }
             }
         }
     }
@@ -106,6 +115,40 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(MorningAlarmReceiver.EXTRA_SHOW_PERMISSION_DIALOG, false) == true) {
             shouldShowPermissionDialog.value = true
         }
+    }
+}
+
+/**
+ * 디버그 빌드 전용: 이전 실행의 크래시 스택트레이스를 다이얼로그로 표시
+ */
+@Composable
+private fun DebugCrashDialog() {
+    val context = LocalContext.current
+    var crashText by remember { mutableStateOf(CrashReporter.readLastCrash(context)) }
+
+    crashText?.let { text ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                CrashReporter.clear(context)
+                crashText = null
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    CrashReporter.clear(context)
+                    crashText = null
+                }) {
+                    androidx.compose.material3.Text("닫기")
+                }
+            },
+            title = { androidx.compose.material3.Text("이전 실행 크래시 (디버그)") },
+            text = {
+                androidx.compose.material3.Text(
+                    text = text.take(4000),
+                    fontSize = 11.sp,
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            }
+        )
     }
 }
 
