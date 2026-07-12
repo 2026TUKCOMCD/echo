@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -63,8 +64,12 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.sp
 import com.example.graduation_project.presentation.permission.LocationCollectionConfirmDialog
 import com.example.graduation_project.presentation.permission.LocationPermissionGuideDialog
+import com.example.graduation_project.util.CrashReporter
 
 class MainActivity : ComponentActivity() {
 
@@ -92,6 +97,11 @@ class MainActivity : ComponentActivity() {
                     shouldShowPermissionDialog = shouldShowPermissionDialog.value,
                     onPermissionDialogHandled = { shouldShowPermissionDialog.value = false }
                 )
+
+                // 디버그 빌드: 이전 실행에서 크래시가 있었으면 스택트레이스 표시 (ADB 없는 기기 디버깅용)
+                if (BuildConfig.DEBUG) {
+                    DebugCrashDialog()
+                }
             }
         }
     }
@@ -105,6 +115,40 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(MorningAlarmReceiver.EXTRA_SHOW_PERMISSION_DIALOG, false) == true) {
             shouldShowPermissionDialog.value = true
         }
+    }
+}
+
+/**
+ * 디버그 빌드 전용: 이전 실행의 크래시 스택트레이스를 다이얼로그로 표시
+ */
+@Composable
+private fun DebugCrashDialog() {
+    val context = LocalContext.current
+    var crashText by remember { mutableStateOf(CrashReporter.readLastCrash(context)) }
+
+    crashText?.let { text ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                CrashReporter.clear(context)
+                crashText = null
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    CrashReporter.clear(context)
+                    crashText = null
+                }) {
+                    androidx.compose.material3.Text("닫기")
+                }
+            },
+            title = { androidx.compose.material3.Text("이전 실행 크래시 (디버그)") },
+            text = {
+                androidx.compose.material3.Text(
+                    text = text.take(4000),
+                    fontSize = 11.sp,
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            }
+        )
     }
 }
 
@@ -345,13 +389,22 @@ private fun AppNavHost(
             modifier = Modifier.padding(paddingValues)
         ) {
             composable(Routes.CHECKING) {
+                val checkingContext = LocalContext.current
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = EchoAccentGreen)
                 }
                 LaunchedEffect(Unit) {
                     val destination = when (val result = userRepository.getOnboardingStatus()) {
                         is ApiResult.Success -> if (result.data.completed) EchoTab.HOME.route else Routes.ONBOARDING
-                        is ApiResult.Error -> Routes.LOGIN
+                        is ApiResult.Error -> {
+                            // 조용히 로그인 화면으로 돌아가면 사용자가 원인을 알 수 없으므로 실패 사유 표시
+                            Toast.makeText(
+                                checkingContext,
+                                "로그인 상태 확인 실패: ${result.exception.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            Routes.LOGIN
+                        }
                     }
                     navController.navigate(destination) {
                         popUpTo(Routes.CHECKING) { inclusive = true }
@@ -362,15 +415,10 @@ private fun AppNavHost(
             composable(Routes.LOGIN) {
                 LoginScreen(
                     onLoginSuccess = {
-                        coroutineScope.launch {
-                            val destination = when (val result = userRepository.getOnboardingStatus()) {
-                                is ApiResult.Success -> if (result.data.completed) EchoTab.HOME.route else Routes.ONBOARDING
-                                // 네트워크/서버 오류 시 CHECKING으로 이동해 재시도 — 온보딩 강제 진입 방지
-                                is ApiResult.Error -> Routes.CHECKING
-                            }
-                            navController.navigate(destination) {
-                                popUpTo(Routes.LOGIN) { inclusive = true }
-                            }
+                        // 온보딩 상태 확인 동안 로그인 화면이 멈춘 것처럼 보이지 않도록
+                        // 즉시 CHECKING(전체 화면 스피너)으로 전환하고, 확인/분기는 CHECKING에서 처리
+                        navController.navigate(Routes.CHECKING) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
                         }
                     },
                     onNavigateToSignup = {

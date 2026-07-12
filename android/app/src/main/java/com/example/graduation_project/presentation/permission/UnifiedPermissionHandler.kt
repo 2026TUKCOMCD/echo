@@ -140,11 +140,13 @@ fun UnifiedPermissionHandler(
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        // 알림 권한 허용 시 정확한 알람 권한도 요청
+        // 알람 예약은 알림 권한과 별개이므로, 알림 거부 여부와 무관하게 정확한 알람 권한 요청
+        requestExactAlarmPermissionIfNeeded(context)
         if (granted) {
-            requestExactAlarmPermissionIfNeeded(context)
+            currentStep = PermissionStep.HEALTH_CONNECT
+        } else {
+            showNotificationSettingsDialog = true
         }
-        currentStep = PermissionStep.HEALTH_CONNECT
     }
 
     // Health Connect 권한 요청 런처
@@ -284,6 +286,8 @@ fun UnifiedPermissionHandler(
             onOpenSettings = {
                 PermissionChecker.openAppSettings(context)
                 showNotificationSettingsDialog = false
+                // 설정에서 돌아온 뒤 흐름이 멈추지 않도록 다음 단계로 진행
+                currentStep = PermissionStep.HEALTH_CONNECT
             }
         )
     }

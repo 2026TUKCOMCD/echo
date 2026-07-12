@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import com.example.graduation_project.MainActivity
 import java.util.Calendar
 
 /**
@@ -60,28 +61,30 @@ object ConversationAlarmScheduler {
 
         // 정확한 시간에 알람 설정
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (alarmManager.canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        calendar.timeInMillis,
-                        pendingIntent
-                    )
-                } else {
-                    // 정확한 알람 권한 없으면 일반 알람 사용
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        calendar.timeInMillis,
-                        pendingIntent
-                    )
-                    Log.w(TAG, "정확한 알람 권한 없음 - 일반 알람 사용")
-                }
+            val canScheduleExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                    alarmManager.canScheduleExactAlarms()
+
+            if (canScheduleExact) {
+                // setAlarmClock: 시스템이 알람시계로 취급해 Doze/배터리 최적화의 영향을 가장 덜 받음
+                // (setExactAndAllowWhileIdle보다 강한 보장, 상태바에 알람 아이콘 표시됨)
+                val showIntent = PendingIntent.getActivity(
+                    context,
+                    ALARM_REQUEST_CODE,
+                    Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(calendar.timeInMillis, showIntent),
+                    pendingIntent
+                )
             } else {
-                alarmManager.setExactAndAllowWhileIdle(
+                // 정확한 알람 권한이 없는 경우 일반 알람으로 폴백 (Android 12에서 권한을 직접 끈 경우)
+                alarmManager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     calendar.timeInMillis,
                     pendingIntent
                 )
+                Log.w(TAG, "정확한 알람 권한 없음 - 일반 알람 사용")
             }
 
             Log.d(TAG, "대화 알람 스케줄링 완료: ${calendar.time}")
@@ -121,7 +124,9 @@ object ConversationAlarmScheduler {
     }
 
     /**
-     * 저장된 설정으로 알람 재스케줄링 (부팅 시 사용)
+     * 저장된 설정으로 알람 재스케줄링 (부팅, 앱 시작 시 사용)
+     *
+     * 같은 requestCode의 PendingIntent를 덮어쓰므로 중복 호출해도 알람은 하나만 유지됨
      */
     fun rescheduleFromStorage(context: Context) {
         val storage = ConversationAlarmStorage(context)
@@ -138,6 +143,6 @@ object ConversationAlarmScheduler {
         }
 
         scheduleAlarm(context, time)
-        Log.d(TAG, "부팅 후 대화 알람 재스케줄링 완료: $time")
+        Log.d(TAG, "저장된 설정으로 대화 알람 재스케줄링 완료: $time")
     }
 }

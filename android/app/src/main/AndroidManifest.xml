@@ -21,8 +21,11 @@
     <!-- 부팅 시 자동 시작 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- 정확한 알람 (Android 12+) -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 정확한 알람: Android 12는 SCHEDULE_EXACT_ALARM(기본 허용),
+         Android 13+는 USE_EXACT_ALARM(설치 시 자동 허용, 사용자 조작 불필요).
+         SCHEDULE_EXACT_ALARM은 Android 14+에서 기본 거부라 어르신 사용자가 직접 켜기 어려움 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <!-- 알림 권한 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

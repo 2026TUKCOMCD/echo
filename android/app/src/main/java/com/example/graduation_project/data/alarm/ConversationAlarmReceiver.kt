@@ -70,6 +70,11 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
     }
 
     private fun showNotification(context: Context, hasLocationPermission: Boolean) {
+        if (!hasNotificationPermission(context)) {
+            Log.w(TAG, "POST_NOTIFICATIONS 권한 없음 - 대화 알림 표시 불가")
+            return
+        }
+
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Android 8.0+ 알림 채널 생성
@@ -159,6 +164,20 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
         private const val FAREWELL_TIMEOUT_MS = 3 * 60 * 1000L   // 3분
 
         /**
+         * 알림 표시 권한 확인 (Android 13+)
+         * 권한 없이 notify()를 호출하면 예외 없이 조용히 무시되므로 사전에 확인
+         */
+        private fun hasNotificationPermission(context: Context): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        }
+
+        /**
          * 대화 알림 취소 (대화 시작 시 호출)
          */
         fun cancelNotification(context: Context) {
@@ -171,6 +190,11 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
          * 대화 종료 알림 표시 (3분 후 자동 사라짐)
          */
         fun showFarewellNotification(context: Context) {
+            if (!hasNotificationPermission(context)) {
+                Log.w(TAG, "POST_NOTIFICATIONS 권한 없음 - 대화 종료 알림 표시 불가")
+                return
+            }
+
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
             // Android 8.0+ 알림 채널 생성
