@@ -4,16 +4,17 @@
    for details.
 -->
 <data-extraction-rules>
+    <!-- Keystore로 암호화된 파일은 백업해도 복호화 키(하드웨어 바인딩)가 함께 복원되지 않아,
+         복원 후 예전 암호문 + 새 키 불일치로 AEADBadTagException이 발생해 앱이 크래시한다.
+         암호화 저장소와 그 저장소로 잠기는 DB는 백업/기기 이전 대상에서 제외. -->
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="sharedpref" path="secure_auth_prefs.xml"/>
+        <exclude domain="sharedpref" path="secure_db_prefs.xml"/>
+        <exclude domain="database" path="echo_database"/>
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="secure_auth_prefs.xml"/>
+        <exclude domain="sharedpref" path="secure_db_prefs.xml"/>
+        <exclude domain="database" path="echo_database"/>
     </device-transfer>
-    -->
 </data-extraction-rules>
