@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -85,6 +86,14 @@ fun ConversationScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 대화 중(Idle이 아닐 때)에는 화면이 자동으로 꺼지지 않도록 유지
+    val view = LocalView.current
+    val isConversationActive = uiState.conversationState !is ConversationState.Idle
+    DisposableEffect(isConversationActive) {
+        view.keepScreenOn = isConversationActive
+        onDispose { view.keepScreenOn = false }
     }
 
     LaunchedEffect(uiState.errorMessage) {
