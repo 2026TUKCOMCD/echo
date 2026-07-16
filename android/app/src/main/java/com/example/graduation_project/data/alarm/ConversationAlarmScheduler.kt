@@ -129,14 +129,7 @@ object ConversationAlarmScheduler {
      * 같은 requestCode의 PendingIntent를 덮어쓰므로 중복 호출해도 알람은 하나만 유지됨
      */
     fun rescheduleFromStorage(context: Context) {
-        val storage = ConversationAlarmStorage(context)
-
-        if (!storage.isAlarmEnabled()) {
-            Log.d(TAG, "알람 비활성화 상태 - 재스케줄링 건너뜀")
-            return
-        }
-
-        val time = storage.getConversationTime()
+        val time = ConversationAlarmStorage(context).getConversationTime()
         if (time == null) {
             Log.d(TAG, "저장된 대화 시간 없음 - 재스케줄링 건너뜀")
             return

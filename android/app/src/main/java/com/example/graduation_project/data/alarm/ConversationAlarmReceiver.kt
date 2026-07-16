@@ -43,13 +43,10 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
         showNotification(context, hasLocationPermission)
 
         // 다음날 알람 재스케줄링
-        val storage = ConversationAlarmStorage(context)
-        if (storage.isAlarmEnabled()) {
-            val time = storage.getConversationTime()
-            if (time != null) {
-                ConversationAlarmScheduler.scheduleAlarm(context, time)
-                Log.d(TAG, "다음날 대화 알람 재스케줄링 완료: $time")
-            }
+        val time = ConversationAlarmStorage(context).getConversationTime()
+        if (time != null) {
+            ConversationAlarmScheduler.scheduleAlarm(context, time)
+            Log.d(TAG, "다음날 대화 알람 재스케줄링 완료: $time")
         }
     }
 
