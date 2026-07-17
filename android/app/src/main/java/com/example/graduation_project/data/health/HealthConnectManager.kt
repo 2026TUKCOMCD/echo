@@ -187,10 +187,6 @@ class HealthConnectManager(private val context: Context) {
         else -> "운동"
     }
 
-    // TODO: ExerciseRoute GPS 데이터 활용 기능 추후 재도입 예정
-    // 참고: feature/US5.5-healthconnect-route-tracking 브랜치, commit 1feb261
-    // 삭제된 메서드: readTodayExerciseRoutes(), readExerciseSessionLocations()
-
     /**
      * NotInstalled 상태일 때 Play Store로 연결.
      * Play Store 앱이 없으면 브라우저 웹 링크로 폴백.
