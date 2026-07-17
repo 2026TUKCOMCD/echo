@@ -11,6 +11,7 @@ import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationCollectionStorage
 import com.example.graduation_project.data.location.LocationScheduler
@@ -65,6 +66,11 @@ class SettingsViewModelTest {
         // UserRepository mock 설정
         mockUserRepository = mockk()
         coEvery { mockUserRepository.getPreferences() } returns ApiResult.Success(UserPreferences())
+
+        // Robolectric JVM에는 AndroidKeyStore가 없어 실제 AppDatabase(SQLCipher 비밀번호 생성)를
+        // 만들 수 없음 → 싱글톤을 목으로 대체해 Keystore 접근 차단
+        mockkObject(AppDatabase.Companion)
+        every { AppDatabase.getInstance(any()) } returns mockk(relaxed = true)
 
         // 기본 mock 설정
         mockkObject(PermissionChecker)
