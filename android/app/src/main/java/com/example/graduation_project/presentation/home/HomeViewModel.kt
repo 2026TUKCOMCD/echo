@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
+import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.location.LocationManager
@@ -39,6 +41,8 @@ class HomeViewModel(
     )
 ) : AndroidViewModel(application) {
 
+    private val alarmStorage = ConversationAlarmStorage(application)
+
     private val _uiState = MutableStateFlow(HomeUiState(date = formatToday()))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
@@ -59,8 +63,24 @@ class HomeViewModel(
                     userName = result.data.name ?: "",
                     conversationTime = result.data.conversationTime
                 )
+                syncAlarmWithServerTime(result.data.conversationTime)
             }
             is ApiResult.Error -> Unit
+        }
+    }
+
+    /**
+     * 다른 기기에서 로그인한 경우 로컬 알람 저장소가 비어 있어 대화 알람이 예약되지 않는
+     * 문제 방지: 홈 진입 시마다 서버 대화 시간 기준으로 로컬 알람을 동기화한다.
+     * (같은 PendingIntent를 덮어쓰므로 반복 호출해도 중복 예약되지 않음)
+     */
+    private fun syncAlarmWithServerTime(serverTime: String?) {
+        alarmStorage.saveConversationTime(serverTime)
+        val context = getApplication<Application>()
+        if (!serverTime.isNullOrBlank()) {
+            ConversationAlarmScheduler.scheduleAlarm(context, serverTime)
+        } else {
+            ConversationAlarmScheduler.cancelAlarm(context)
         }
     }
 
