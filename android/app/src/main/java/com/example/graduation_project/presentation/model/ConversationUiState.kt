@@ -46,7 +46,6 @@ data class MessageUiModel(
  * @param voiceAmplitude 음성 볼륨 (0.0 ~ 1.0, 이퀄라이저 애니메이션용)
  * @param messages 대화 메시지 목록
  * @param currentUserSpeech 실시간 음성 인식 텍스트 (녹음 중 표시)
- * @param userName 사용자 이름 (인사말에 표시)
  * @param errorMessage 에러 메시지 (null이면 에러 없음)
  * @param isAudioRetrying 오디오 재생 재시도 중 여부 [T2.3-3]
  * @param showAudioFallbackText 오디오 재생 실패 후 텍스트 폴백 표시 중 [T2.3-3]
@@ -70,7 +69,6 @@ data class ConversationUiState(
     val voiceAmplitude: Float = 0f,
     val messages: List<MessageUiModel> = emptyList(),
     val currentUserSpeech: String? = null,
-    val userName: String? = null,
     val errorMessage: String? = null,
     val isAudioRetrying: Boolean = false,
     val showAudioFallbackText: Boolean = false,

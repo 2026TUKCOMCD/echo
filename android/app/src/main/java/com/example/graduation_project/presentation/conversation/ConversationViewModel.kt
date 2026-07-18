@@ -86,8 +86,7 @@ class ConversationViewModel(
     private val getHealthDataUseCase = GetHealthDataUseCase(healthRepository)
 
     // 내부에서만 수정 가능한 상태
-    // TODO: 실제 사용자 정보는 DataStore/SharedPreferences에서 가져오기
-    private val _uiState = MutableStateFlow(ConversationUiState(userName = "홍길동"))
+    private val _uiState = MutableStateFlow(ConversationUiState())
 
     // 외부에서 관찰만 가능한 상태 (읽기 전용)
     val uiState: StateFlow<ConversationUiState> = _uiState.asStateFlow()
