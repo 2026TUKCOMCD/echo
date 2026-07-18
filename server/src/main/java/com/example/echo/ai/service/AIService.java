@@ -80,7 +80,7 @@ public class AIService {
             String greeting = extractContent(response);
             String announcedGreeting = String.format(MODEL_ANNOUNCEMENT_FORMAT, modelRotationService.currentModelDisplayName()) + greeting;
 
-            log.debug("Generated greeting: {}", announcedGreeting);
+            log.debug("Generated greeting - length: {}", announcedGreeting.length());
             return announcedGreeting;
         } catch (FeignException e) {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
@@ -103,8 +103,8 @@ public class AIService {
      * @throws AIException API 호출 실패 시
      */
     public String generateResponse(String systemPrompt, List<ConversationTurn> history, String userMessage) {
-        log.debug("Generating response - history size: {}, userMessage: {}",
-                history != null ? history.size() : 0, userMessage);
+        log.debug("Generating response - history size: {}, userMessage length: {}",
+                history != null ? history.size() : 0, userMessage != null ? userMessage.length() : 0);
 
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
 
@@ -149,7 +149,7 @@ public class AIService {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
             String aiResponse = extractContent(response);
 
-            log.debug("Generated response: {}", aiResponse);
+            log.debug("Generated response - length: {}", aiResponse.length());
             return aiResponse;
         } catch (FeignException e) {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
