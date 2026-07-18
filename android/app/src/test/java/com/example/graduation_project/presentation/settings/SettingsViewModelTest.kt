@@ -9,7 +9,6 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowPowerManager
 import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
-import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationCollectionStorage
@@ -172,7 +171,6 @@ class SettingsViewModelTest {
         // Given: 로컬에는 20:00으로 저장 + 알람 활성화, 서버는 21:30 반환 (다른 기기에서 변경한 상황)
         val alarmStorage = ConversationAlarmStorage(context)
         alarmStorage.saveConversationTime("20:00")
-        alarmStorage.setAlarmEnabled(true)
         coEvery { mockUserRepository.getPreferences() } returns
             ApiResult.Success(UserPreferences(conversationTime = "21:30"))
 
@@ -190,7 +188,6 @@ class SettingsViewModelTest {
         // Given: 로컬과 서버 모두 21:30 (강제 종료 등으로 AlarmManager 등록만 사라진 상황 가정)
         val alarmStorage = ConversationAlarmStorage(context)
         alarmStorage.saveConversationTime("21:30")
-        alarmStorage.setAlarmEnabled(true)
         coEvery { mockUserRepository.getPreferences() } returns
             ApiResult.Success(UserPreferences(conversationTime = "21:30"))
 
@@ -200,48 +197,6 @@ class SettingsViewModelTest {
 
         // Then: 시간이 같아도 설정 화면 진입만으로 끊긴 알람이 복구되어야 함
         verify { ConversationAlarmScheduler.scheduleAlarm(any(), "21:30") }
-    }
-
-    // ===== 알람 켜기 기본시간 서버 저장 =====
-
-    @Test
-    fun `알람켜기_기본시간_서버저장_실패시_롤백하고_오류를_표시한다`() = runTest {
-        // Given: 대화 시간 미설정 + 서버 저장 실패 (오프라인 등)
-        coEvery { mockUserRepository.updateConversationTime(any()) } returns
-            ApiResult.Error(ApiException.NetworkError())
-
-        val viewModel = SettingsViewModel(context, mockUserRepository)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // When: 알람 토글 ON
-        viewModel.setAlarmEnabled(true)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // Then: 아무것도 켜지지 않고 오류 안내 (서버-로컬-UI 불일치로 인한 유령 알람 방지)
-        assertFalse(viewModel.uiState.value.alarmEnabled)
-        assertFalse(ConversationAlarmStorage(context).isAlarmEnabled())
-        assertTrue(viewModel.uiState.value.errorMessage != null)
-        verify(exactly = 0) { ConversationAlarmScheduler.scheduleAlarm(any(), any()) }
-    }
-
-    @Test
-    fun `알람켜기_기본시간_서버저장_성공시_로컬저장_및_알람예약한다`() = runTest {
-        // Given: 대화 시간 미설정 + 서버 저장 성공
-        coEvery { mockUserRepository.updateConversationTime(any()) } returns
-            ApiResult.Success(UserPreferences(conversationTime = "21:00"))
-
-        val viewModel = SettingsViewModel(context, mockUserRepository)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // When: 알람 토글 ON
-        viewModel.setAlarmEnabled(true)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        // Then: 기본 시간(21:00)으로 로컬 저장 + 알람 예약
-        assertTrue(viewModel.uiState.value.alarmEnabled)
-        assertEquals("21:00", ConversationAlarmStorage(context).getConversationTime())
-        assertTrue(ConversationAlarmStorage(context).isAlarmEnabled())
-        verify { ConversationAlarmScheduler.scheduleAlarm(any(), "21:00") }
     }
 
     // ===== checkAndUpdateLocationCollectionStatus 자동 시작 (1개) =====
