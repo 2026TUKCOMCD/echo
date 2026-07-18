@@ -126,7 +126,7 @@ public class PromptService {
             variables.put("visitedPlacesText", visitedPlacesText);
 
             // 프롬프트에 들어가는 위치 정보 로그
-            log.info("[프롬프트] currentCity: {}", variables.get("currentCity"));
+            log.debug("[프롬프트] currentCity: {}", variables.get("currentCity"));
             log.debug("[프롬프트] visitedPlacesText:\n{}", visitedPlacesText);
         } else {
             variables.put("currentCity", "");

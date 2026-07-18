@@ -92,7 +92,7 @@ public class ContextService {
                 .build();
 
         contextStore.put(userId, context);
-        log.info("[컨텍스트] 저장 완료 - userId: {}, currentCity: {}, 방문장소 수: {}",
+        log.debug("[컨텍스트] 저장 완료 - userId: {}, currentCity: {}, 방문장소 수: {}",
                 userId,
                 locationData != null ? locationData.getCurrentCity() : "null",
                 locationData != null && locationData.getVisitedPlaces() != null
