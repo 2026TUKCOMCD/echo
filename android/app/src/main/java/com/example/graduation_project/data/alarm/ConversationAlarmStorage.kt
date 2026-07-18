@@ -7,7 +7,6 @@ import android.content.SharedPreferences
  * 대화 알람 설정을 SharedPreferences에 저장
  *
  * - 대화 시간 (HH:mm 형식)
- * - 알람 활성화 상태
  */
 class ConversationAlarmStorage(context: Context) {
 
@@ -35,19 +34,6 @@ class ConversationAlarmStorage(context: Context) {
     fun getConversationTime(): String? = prefs.getString(KEY_CONVERSATION_TIME, null)
 
     /**
-     * 알람 활성화 상태 저장
-     */
-    fun setAlarmEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_ALARM_ENABLED, enabled).apply()
-    }
-
-    /**
-     * 알람 활성화 상태 조회
-     * @return 기본값 false
-     */
-    fun isAlarmEnabled(): Boolean = prefs.getBoolean(KEY_ALARM_ENABLED, false)
-
-    /**
      * 모든 설정 초기화
      */
     fun clear() {
@@ -57,6 +43,5 @@ class ConversationAlarmStorage(context: Context) {
     companion object {
         private const val PREF_NAME = "conversation_alarm_prefs"
         private const val KEY_CONVERSATION_TIME = "conversation_time"
-        private const val KEY_ALARM_ENABLED = "alarm_enabled"
     }
 }
