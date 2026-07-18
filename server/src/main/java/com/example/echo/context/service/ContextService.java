@@ -14,8 +14,11 @@ import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,12 +29,19 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @RequiredArgsConstructor
 public class ContextService {
 
+    /**
+     * 컨텍스트 TTL - 앱 크래시/강제 종료로 endConversation()이 호출되지 못한 경우에도
+     * 마지막 접근 후 이 기간이 지나면 스케줄러가 컨텍스트를 정리한다.
+     */
+    private static final Duration CONTEXT_TTL = Duration.ofDays(1);
+
     private final ConcurrentHashMap<Long, UserContext> contextStore = new ConcurrentHashMap<>();
 
     private final UserService userService;
     private final HealthDataService healthDataService;
     private final WeatherClient weatherClient;
     private final LocationService locationService;
+    private final Clock clock;
 
     /**
      * 컨텍스트 초기화 (위치 데이터 포함)
@@ -87,7 +97,7 @@ public class ContextService {
                 .preferences(preferences)
                 .todayWeather(weather)
                 .locationData(locationData)
-                .lastAccessTime(LocalDateTime.now())
+                .lastAccessTime(LocalDateTime.now(clock))
                 .isActive(true)
                 .build();
 
@@ -127,7 +137,7 @@ public class ContextService {
         if (context == null) {
             throw new IllegalStateException("Context not found for userId: " + userId);
         }
-        context.setLastAccessTime(LocalDateTime.now());
+        context.setLastAccessTime(LocalDateTime.now(clock));
         return context;
     }
 
@@ -153,5 +163,21 @@ public class ContextService {
         } else {
             log.warn("컨텍스트 정리 실패 - 이미 제거됨 또는 존재하지 않음 - userId: {}", userId);
         }
+    }
+
+    /**
+     * 앱 크래시/강제 종료로 endConversation()이 호출되지 못해 남아있는 컨텍스트를 TTL 기준으로 정리한다.
+     */
+    @Scheduled(cron = "0 0 * * * *", zone = "Asia/Seoul")
+    public void cleanupExpiredContexts() {
+        LocalDateTime threshold = LocalDateTime.now(clock).minus(CONTEXT_TTL);
+        contextStore.entrySet().removeIf(entry -> {
+            boolean expired = entry.getValue().getLastAccessTime().isBefore(threshold);
+            if (expired) {
+                log.info("[컨텍스트] TTL 만료로 정리 - userId: {}, lastAccessTime: {}",
+                        entry.getKey(), entry.getValue().getLastAccessTime());
+            }
+            return expired;
+        });
     }
 }

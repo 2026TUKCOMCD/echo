@@ -15,11 +15,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -35,7 +38,6 @@ import static org.mockito.ArgumentMatchers.eq;
 @DisplayName("ContextService 테스트")
 class ContextServiceTest {
 
-    @InjectMocks
     private ContextService contextService;
 
     @Mock
@@ -50,6 +52,8 @@ class ContextServiceTest {
     @Mock
     private LocationService locationService;
 
+    private Clock clock;
+
     private Long userId;
     private UserPreferences mockPreferences;
     private HealthData mockHealthData;
@@ -58,6 +62,9 @@ class ContextServiceTest {
 
     @BeforeEach
     void setUp() {
+        clock = Clock.fixed(Instant.parse("2026-07-18T10:00:00Z"), ZoneId.of("Asia/Seoul"));
+        contextService = new ContextService(userService, healthDataService, weatherClient, locationService, clock);
+
         userId = 1L;
 
         mockPreferences = UserPreferences.builder()
@@ -308,6 +315,52 @@ class ContextServiceTest {
 
             // when & then (예외 발생하지 않아야 함)
             assertThatCode(() -> contextService.finalizeContext(nonExistentUserId))
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("cleanupExpiredContexts 메서드")
+    class CleanupExpiredContexts {
+
+        @Test
+        @DisplayName("성공: TTL(1일)이 지난 Context는 정리된다")
+        void success_removesExpiredContext() {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
+
+            UserContext context = contextService.initializeContext(userId, mockHealthData);
+            context.setLastAccessTime(LocalDateTime.now(clock).minusDays(1).minusMinutes(1));
+
+            // when
+            contextService.cleanupExpiredContexts();
+
+            // then
+            assertThatThrownBy(() -> contextService.getContext(userId))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Context not found");
+        }
+
+        @Test
+        @DisplayName("성공: TTL 이내의 Context는 유지된다")
+        void success_keepsContextWithinTtl() {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
+
+            UserContext context = contextService.initializeContext(userId, mockHealthData);
+            context.setLastAccessTime(LocalDateTime.now(clock).minusHours(1));
+
+            // when
+            contextService.cleanupExpiredContexts();
+
+            // then
+            assertThatCode(() -> contextService.getContext(userId))
                     .doesNotThrowAnyException();
         }
     }
