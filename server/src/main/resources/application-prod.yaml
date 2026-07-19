@@ -47,7 +47,3 @@ supertone:
 
 server:
   forward-headers-strategy: native
-
-logging:
-  level:
-    com.example.echo.location: DEBUG
