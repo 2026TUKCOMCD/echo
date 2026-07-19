@@ -35,8 +35,7 @@ sealed class ConversationError {
 
     /**
      * 오디오 재생 실패 (안전망)
-     * - 현재: 텍스트 폴백으로 단순 처리
-     * - 추후: 팀 설계 3단계 재시도 로직 추가 예정
+     * - 로컬 재생 재시도 → 서버 TTS 재요청(1회) → 텍스트 폴백 순으로 처리
      */
     data object TtsError : ConversationError()
 }

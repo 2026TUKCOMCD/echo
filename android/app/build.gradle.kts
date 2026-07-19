@@ -31,7 +31,16 @@ android {
         }
         create("prod") {
             dimension = "server"
-            buildConfigField("String", "BASE_URL", "\"http://13.209.21.186:8080\"")
+            buildConfigField("String", "BASE_URL", "\"https://echo-service.duckdns.org\"")
+        }
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
 
@@ -115,9 +124,13 @@ dependencies {
     // Security (EncryptedSharedPreferences)
     implementation(libs.androidx.security.crypto)
 
+    // SQLCipher (Room DB 암호화)
+    implementation(libs.sqlcipher.android)
+
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

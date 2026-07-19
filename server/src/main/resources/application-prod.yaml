@@ -21,6 +21,10 @@ openai:
   api:
     key: ${OPENAI_API_KEY}
 
+openrouter:
+  api:
+    key: ${OPENROUTER_API_KEY}
+
 kakao:
   api:
     key: ${KAKAO_API_KEY}
@@ -41,6 +45,5 @@ supertone:
   model: sona_speech_2
   api-key: ${SUPERTONE_API_KEY}
 
-logging:
-  level:
-    com.example.echo.location: DEBUG
+server:
+  forward-headers-strategy: native

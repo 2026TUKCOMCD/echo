@@ -1,5 +1,6 @@
 package com.example.echo.voice.controller;
 
+import com.example.echo.auth.jwt.JwtProvider;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.dto.TtsRequest;
 import com.example.echo.voice.exception.VoiceProcessingException;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
@@ -24,6 +26,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(VoiceController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class VoiceControllerTest {
 
     @Autowired
@@ -31,6 +34,9 @@ class VoiceControllerTest {
 
     @MockitoBean
     private VoiceService voiceService;
+
+    @MockitoBean
+    private JwtProvider jwtProvider;
 
     @Autowired
     private ObjectMapper objectMapper;

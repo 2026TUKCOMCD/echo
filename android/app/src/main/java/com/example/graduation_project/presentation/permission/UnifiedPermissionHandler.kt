@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,8 +19,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.health.connect.client.HealthConnectClient
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.presentation.health.openHealthConnectSettings
+
+private const val APP_STATE_PREFS = "app_state"
+private const val PERMISSION_STATE_PREFS = "permission_state"
+private const val KEY_PERMISSION_FLOW_COMPLETED = "permission_flow_completed"
+private const val KEY_NEEDS_PERMISSION_RECHECK = "needs_permission_recheck"
+
+/**
+ * 정확한 알람 권한이 없으면 시스템 설정으로 안내 (Android 12+)
+ */
+private fun requestExactAlarmPermissionIfNeeded(context: Context) {
+    if (!PermissionChecker.hasExactAlarmPermission(context)) {
+        PermissionChecker.openExactAlarmSettings(context)
+    }
+}
 
 /**
  * 권한 요청 단계
@@ -44,6 +62,8 @@ fun UnifiedPermissionHandler(
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
+    val appStatePrefs = context.getSharedPreferences(APP_STATE_PREFS, Context.MODE_PRIVATE)
+    val permPrefs = context.getSharedPreferences(PERMISSION_STATE_PREFS, Context.MODE_PRIVATE)
 
     // 현재 권한 요청 단계
     var currentStep by remember { mutableStateOf(PermissionStep.INTRO) }
@@ -54,9 +74,30 @@ fun UnifiedPermissionHandler(
     var showNotificationSettingsDialog by remember { mutableStateOf(false) }
     var showHealthConnectSettingsDialog by remember { mutableStateOf(false) }
 
-    // 이미 권한 처리를 완료했는지 (앱 재시작 시 다시 안 물어봄)
+    // 앱 업데이트/재설치(버전 코드 변경) 시 권한 재확인 필요 여부
+    val needsRecheck = appStatePrefs.getBoolean(KEY_NEEDS_PERMISSION_RECHECK, false)
+    // 이전에 권한 플로우를 완료한 적 있는지 (SharedPreferences에 영구 저장)
+    val previouslyCompleted = permPrefs.getBoolean(KEY_PERMISSION_FLOW_COMPLETED, false)
+
     var hasCompletedOnboarding by remember {
+        mutableStateOf(previouslyCompleted && !needsRecheck)
+    }
+
+    // 마이크 권한 보유 여부 (Compose 상태로 보관해, ON_RESUME 재확인 시 recomposition 유발)
+    var hasMicPermission by remember {
         mutableStateOf(PermissionChecker.hasMicrophonePermission(context))
+    }
+
+    // 설정 앱에서 권한을 허용하고 돌아온 경우를 감지하기 위해 ON_RESUME마다 재확인
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasMicPermission = PermissionChecker.hasMicrophonePermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // 마이크 권한 요청 런처
@@ -99,11 +140,13 @@ fun UnifiedPermissionHandler(
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        // 알림 권한 허용 시 정확한 알람 권한도 요청
-        if (granted && !PermissionChecker.hasExactAlarmPermission(context)) {
-            PermissionChecker.openExactAlarmSettings(context)
+        // 알람 예약은 알림 권한과 별개이므로, 알림 거부 여부와 무관하게 정확한 알람 권한 요청
+        requestExactAlarmPermissionIfNeeded(context)
+        if (granted) {
+            currentStep = PermissionStep.HEALTH_CONNECT
+        } else {
+            showNotificationSettingsDialog = true
         }
-        currentStep = PermissionStep.HEALTH_CONNECT
     }
 
     // Health Connect 권한 요청 런처
@@ -112,6 +155,8 @@ fun UnifiedPermissionHandler(
     ) { _ ->
         currentStep = PermissionStep.COMPLETED
         hasCompletedOnboarding = true
+        permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
+        appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
         onAllPermissionsHandled()
     }
 
@@ -151,11 +196,13 @@ fun UnifiedPermissionHandler(
             PermissionStep.NOTIFICATION -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     if (PermissionChecker.hasNotificationPermission(context)) {
+                        requestExactAlarmPermissionIfNeeded(context)
                         currentStep = PermissionStep.HEALTH_CONNECT
                     } else {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 } else {
+                    requestExactAlarmPermissionIfNeeded(context)
                     currentStep = PermissionStep.HEALTH_CONNECT
                 }
             }
@@ -167,11 +214,15 @@ fun UnifiedPermissionHandler(
                     } else {
                         currentStep = PermissionStep.COMPLETED
                         hasCompletedOnboarding = true
+                        permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
+                        appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
                         onAllPermissionsHandled()
                     }
                 } else {
                     currentStep = PermissionStep.COMPLETED
                     hasCompletedOnboarding = true
+                    permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
+                    appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
                     onAllPermissionsHandled()
                 }
             }
@@ -181,8 +232,8 @@ fun UnifiedPermissionHandler(
 
     // 이미 온보딩 완료 또는 모든 필수 권한 있음
     if (hasCompletedOnboarding || currentStep == PermissionStep.COMPLETED) {
-        // 마이크 권한 체크 (필수)
-        if (!PermissionChecker.hasMicrophonePermission(context)) {
+        // 마이크 권한 체크 (필수) - Compose 상태를 읽어, ON_RESUME 재확인 시 recomposition되도록 함
+        if (!hasMicPermission) {
             MicrophonePermissionSettingsDialog(
                 onOpenSettings = { PermissionChecker.openAppSettings(context) }
             )
@@ -235,6 +286,8 @@ fun UnifiedPermissionHandler(
             onOpenSettings = {
                 PermissionChecker.openAppSettings(context)
                 showNotificationSettingsDialog = false
+                // 설정에서 돌아온 뒤 흐름이 멈추지 않도록 다음 단계로 진행
+                currentStep = PermissionStep.HEALTH_CONNECT
             }
         )
     }
@@ -246,6 +299,8 @@ fun UnifiedPermissionHandler(
                 showHealthConnectSettingsDialog = false
                 currentStep = PermissionStep.COMPLETED
                 hasCompletedOnboarding = true
+                permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
+                appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
             },
             onOpenSettings = {
                 openHealthConnectSettings(context)

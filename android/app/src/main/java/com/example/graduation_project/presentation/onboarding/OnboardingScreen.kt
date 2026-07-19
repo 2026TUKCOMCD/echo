@@ -22,8 +22,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -158,7 +156,6 @@ fun OnboardingScreen(
                 onVoiceSpeedChange = viewModel::updateVoiceSpeed,
                 onVoiceToneChange = viewModel::updateVoiceTone,
                 onConversationTimeChange = viewModel::updateConversationTime,
-                onAlarmEnabledChange = viewModel::updateAlarmEnabled,
                 onSleepHoursChange = viewModel::updatePreferredSleepHours
             )
 
@@ -267,7 +264,6 @@ private fun StepContent(
     onVoiceSpeedChange: (Double) -> Unit,
     onVoiceToneChange: (String) -> Unit,
     onConversationTimeChange: (String) -> Unit,
-    onAlarmEnabledChange: (Boolean) -> Unit,
     onSleepHoursChange: (String) -> Unit
 ) {
     when (step) {
@@ -280,9 +276,7 @@ private fun StepContent(
         )
         2 -> TimePickerStep(
             selected = uiState.conversationTime,
-            onTimeSelected = onConversationTimeChange,
-            alarmEnabled = uiState.alarmEnabled,
-            onAlarmEnabledChange = onAlarmEnabledChange
+            onTimeSelected = onConversationTimeChange
         )
         3 -> EchoOutlinedTextField(
             value = uiState.guardianEmail,
@@ -335,54 +329,15 @@ private fun DatePickerStep(selected: String, onDateSelected: (String) -> Unit) {
 @Composable
 private fun TimePickerStep(
     selected: String,
-    onTimeSelected: (String) -> Unit,
-    alarmEnabled: Boolean,
-    onAlarmEnabledChange: (Boolean) -> Unit
+    onTimeSelected: (String) -> Unit
 ) {
-    val colors = LocalEchoColors.current
-    val initial = if (selected.isNotEmpty()) selected else "09:00"
+    val initial = if (selected.isNotEmpty()) selected else "21:00"
     LaunchedEffect(Unit) {
-        if (selected.isEmpty()) onTimeSelected("09:00")
+        if (selected.isEmpty()) onTimeSelected("21:00")
     }
 
     Column {
-        // 시간 설정 (핵심)
         EchoTimePickerContent(value = initial, onValueChange = onTimeSelected)
-
-        Spacer(Modifier.height(32.dp))
-
-        // 알람 토글 (부가)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = "매일 알림 받기",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = OutfitFontFamily,
-                    color = colors.textPrimary
-                )
-                Text(
-                    text = if (alarmEnabled) "설정한 시간에 알림을 보내드려요" else "알림을 받지 않습니다",
-                    fontSize = 14.sp,
-                    fontFamily = OutfitFontFamily,
-                    color = colors.textSecondary
-                )
-            }
-            Switch(
-                checked = alarmEnabled,
-                onCheckedChange = onAlarmEnabledChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = colors.accentGreen,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = colors.bgMuted
-                )
-            )
-        }
     }
 }
 

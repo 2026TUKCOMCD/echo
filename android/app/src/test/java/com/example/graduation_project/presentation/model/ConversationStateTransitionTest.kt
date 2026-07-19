@@ -10,9 +10,9 @@ import org.junit.Test
  * 허용 전이 규칙:
  * Idle      → Sending
  * Listening → Recording | Sending
- * Recording → Sending
+ * Recording → Sending | Listening (녹음 오류/백그라운드 복귀 시 발화 대기로 복구)
  * Sending   → Playing | Idle | Ended | Listening
- * Playing   → Listening
+ * Playing   → Listening | Sending (재생 중 대화 종료 허용)
  * Ended     → Idle
  */
 class ConversationStateTransitionTest {
@@ -89,8 +89,9 @@ class ConversationStateTransitionTest {
     }
 
     @Test
-    fun recording_cannotTransitionTo_Listening() {
-        assertFalse(ConversationState.Recording.canTransitionTo(ConversationState.Listening))
+    fun recording_canTransitionTo_Listening() {
+        // 녹음 오류/백그라운드 복귀 시 발화 대기로 복구
+        assertTrue(ConversationState.Recording.canTransitionTo(ConversationState.Listening))
     }
 
     @Test
@@ -153,8 +154,9 @@ class ConversationStateTransitionTest {
     }
 
     @Test
-    fun playing_cannotTransitionTo_Sending() {
-        assertFalse(ConversationState.Playing.canTransitionTo(ConversationState.Sending))
+    fun playing_canTransitionTo_Sending() {
+        // 재생 중에도 endConversation()으로 대화 종료 가능
+        assertTrue(ConversationState.Playing.canTransitionTo(ConversationState.Sending))
     }
 
     @Test

@@ -21,11 +21,17 @@
     <!-- 부팅 시 자동 시작 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- 정확한 알람 (Android 12+) -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 정확한 알람: Android 12는 SCHEDULE_EXACT_ALARM(기본 허용),
+         Android 13+는 USE_EXACT_ALARM(설치 시 자동 허용, 사용자 조작 불필요).
+         SCHEDULE_EXACT_ALARM은 Android 14+에서 기본 거부라 어르신 사용자가 직접 켜기 어려움 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <!-- 알림 권한 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 배터리 최적화 해제 요청 (위치 수집 서비스 유지) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Health Connect 읽기 권한 -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
@@ -44,7 +50,7 @@
 
     <application
         android:name=".App"
-        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -83,18 +89,24 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
-        <!-- 부팅 시 서비스/알람 자동 시작 -->
+        <!-- 부팅 시 및 앱 업데이트 시 서비스/알람 자동 시작 -->
         <receiver
             android:name=".data.receiver.BootReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
         <!-- 매일 아침 6시 위치 수집 서비스 시작 -->
         <receiver
             android:name=".data.location.MorningAlarmReceiver"
+            android:exported="false" />
+
+        <!-- 10분마다 위치 수집 알람 (Doze 모드에서도 정확하게 동작) -->
+        <receiver
+            android:name=".data.location.LocationCollectionAlarmReceiver"
             android:exported="false" />
 
         <!-- 대화 시간 알람 -->

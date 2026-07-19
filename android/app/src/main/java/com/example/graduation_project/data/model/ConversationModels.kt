@@ -47,5 +47,5 @@ data class HealthData(
     val steps: Int? = null,
     val exerciseDistanceKm: Double? = null,  // renamed: exerciseDistance → exerciseDistanceKm
     val exerciseActivity: String? = null,
-    val activityList: String? = null         // 활동 목록 (추후 구현)
+    val activityList: String? = null         // 오늘 운동 활동 목록 (쉼표 구분)
 )

@@ -15,11 +15,19 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.BDDMockito.*;
@@ -30,7 +38,6 @@ import static org.mockito.ArgumentMatchers.eq;
 @DisplayName("ContextService 테스트")
 class ContextServiceTest {
 
-    @InjectMocks
     private ContextService contextService;
 
     @Mock
@@ -45,6 +52,8 @@ class ContextServiceTest {
     @Mock
     private LocationService locationService;
 
+    private Clock clock;
+
     private Long userId;
     private UserPreferences mockPreferences;
     private HealthData mockHealthData;
@@ -53,6 +62,9 @@ class ContextServiceTest {
 
     @BeforeEach
     void setUp() {
+        clock = Clock.fixed(Instant.parse("2026-07-18T10:00:00Z"), ZoneId.of("Asia/Seoul"));
+        contextService = new ContextService(userService, healthDataService, weatherClient, locationService, clock);
+
         userId = 1L;
 
         mockPreferences = UserPreferences.builder()
@@ -304,6 +316,120 @@ class ContextServiceTest {
             // when & then (예외 발생하지 않아야 함)
             assertThatCode(() -> contextService.finalizeContext(nonExistentUserId))
                     .doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("cleanupExpiredContexts 메서드")
+    class CleanupExpiredContexts {
+
+        @Test
+        @DisplayName("성공: TTL(1일)이 지난 Context는 정리된다")
+        void success_removesExpiredContext() {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
+
+            UserContext context = contextService.initializeContext(userId, mockHealthData);
+            context.setLastAccessTime(LocalDateTime.now(clock).minusDays(1).minusMinutes(1));
+
+            // when
+            contextService.cleanupExpiredContexts();
+
+            // then
+            assertThatThrownBy(() -> contextService.getContext(userId))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Context not found");
+        }
+
+        @Test
+        @DisplayName("성공: TTL 이내의 Context는 유지된다")
+        void success_keepsContextWithinTtl() {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
+
+            UserContext context = contextService.initializeContext(userId, mockHealthData);
+            context.setLastAccessTime(LocalDateTime.now(clock).minusHours(1));
+
+            // when
+            contextService.cleanupExpiredContexts();
+
+            // then
+            assertThatCode(() -> contextService.getContext(userId))
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("concurrentAddConversationTurn 메서드 - 동시성 테스트")
+    class ConcurrentAddConversationTurn {
+
+        @Test
+        @DisplayName("성공: 동시성 환경에서 모든 대화 턴이 정확히 추가된다")
+        void success_addsAllTurnsInConcurrentEnvironment() throws InterruptedException {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
+
+            contextService.initializeContext(userId, mockHealthData);
+            int totalThreads = 10;
+            int turnsPerThread = 100;
+            int expectedTurns = totalThreads * turnsPerThread;
+
+            ExecutorService executorService = Executors.newFixedThreadPool(totalThreads);
+            CountDownLatch latch = new CountDownLatch(totalThreads);
+            List<Exception> exceptions = new ArrayList<>();
+
+            // when
+            for (int i = 0; i < totalThreads; i++) {
+                final int threadId = i;
+                executorService.submit(() -> {
+                    try {
+                        for (int j = 0; j < turnsPerThread; j++) {
+                            contextService.addConversationTurn(
+                                    userId,
+                                    "스레드 " + threadId + " 메시지 " + j,
+                                    "스레드 " + threadId + " 응답 " + j
+                            );
+                        }
+                    } catch (Exception e) {
+                        synchronized (exceptions) {
+                            exceptions.add(e);
+                        }
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            // 모든 스레드가 완료될 때까지 대기
+            latch.await();
+            executorService.shutdown();
+
+            // then
+            // 예외가 발생하지 않았는지 확인
+            assertThat(exceptions).isEmpty();
+
+            // 정확히 1000개의 턴이 추가되었는지 확인
+            UserContext context = contextService.getContext(userId);
+            assertThat(context.getConversationHistory()).hasSize(expectedTurns);
+
+            // 모든 턴이 순회 가능한지 확인 (CopyOnWriteArrayList의 안전한 순회 검증)
+            int count = 0;
+            for (var turn : context.getConversationHistory()) {
+                assertThat(turn.getUserMessage()).isNotNull();
+                assertThat(turn.getAiResponse()).isNotNull();
+                assertThat(turn.getTimestamp()).isNotNull();
+                count++;
+            }
+            assertThat(count).isEqualTo(expectedTurns);
         }
     }
 }

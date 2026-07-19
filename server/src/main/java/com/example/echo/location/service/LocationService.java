@@ -59,7 +59,7 @@ public class LocationService {
             }
         }
 
-        log.info("위치 데이터 보강 완료 - currentCity: {}, 방문장소 수: {}, 총 이동거리: {}km",
+        log.debug("위치 데이터 보강 완료 - currentCity: {}, 방문장소 수: {}, 총 이동거리: {}km",
                 currentCity, enrichedPlaces.size(), raw.getTotalDistanceKm());
 
         return LocationData.builder()

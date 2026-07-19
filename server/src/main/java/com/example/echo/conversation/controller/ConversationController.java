@@ -56,7 +56,7 @@ public class ConversationController {
         log.info("=== 대화 시작 요청 - userId: {} ===", userId);
         if (request != null && request.getLocationData() != null) {
             var loc = request.getLocationData();
-            log.info("[입력] 현재좌표: ({}, {}), 총이동거리: {}km",
+            log.debug("[입력] 현재좌표: ({}, {}), 총이동거리: {}km",
                     loc.getCurrentLatitude(), loc.getCurrentLongitude(), loc.getTotalDistanceKm());
             if (loc.getVisitedPlaces() != null) {
                 log.info("[입력] 방문장소 수: {}", loc.getVisitedPlaces().size());

@@ -14,25 +14,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.example.graduation_project.domain.permission.LocationPermissionState
 import com.example.graduation_project.domain.permission.PermissionState
 
 /**
  * 위치 권한 처리를 위한 Composable
+ * 정밀 위치(FINE)와 대략적 위치(COARSE)를 구분하여 처리
  *
  * @param onPermissionResult 권한 결과 콜백
  * @param content 권한 상태에 따른 UI 컨텐츠
  */
 @Composable
 fun LocationPermissionHandler(
-    onPermissionResult: (PermissionState) -> Unit,
+    onPermissionResult: (LocationPermissionState) -> Unit,
     content: @Composable (
-        permissionState: PermissionState,
+        permissionState: LocationPermissionState,
         requestPermission: () -> Unit,
         openSettings: () -> Unit
     ) -> Unit
 ) {
     val context = LocalContext.current
-    var permissionState by remember { mutableStateOf(checkLocationPermission(context)) }
+    var permissionState by remember { mutableStateOf(checkLocationPermissionDetailed(context)) }
     var hasRequestedOnce by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -40,12 +42,12 @@ fun LocationPermissionHandler(
     ) { permissions ->
         val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
         val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-        val isGranted = fineLocationGranted || coarseLocationGranted
 
         permissionState = when {
-            isGranted -> PermissionState.Granted
-            !shouldShowLocationPermissionRationale(context) && hasRequestedOnce -> PermissionState.PermanentlyDenied
-            else -> PermissionState.Denied
+            fineLocationGranted -> LocationPermissionState.Granted
+            coarseLocationGranted -> LocationPermissionState.CoarseOnly
+            !shouldShowLocationPermissionRationale(context) && hasRequestedOnce -> LocationPermissionState.PermanentlyDenied
+            else -> LocationPermissionState.Denied
         }
         hasRequestedOnce = true
         onPermissionResult(permissionState)
@@ -126,5 +128,27 @@ private fun shouldShowLocationPermissionRationale(context: Context): Boolean {
         }
     } else {
         true
+    }
+}
+
+/**
+ * 위치 권한 상태 상세 확인 (FINE/COARSE 구분)
+ * 위치 수집 서비스는 정밀 위치(FINE)가 필요하므로 COARSE만 허용된 경우를 구분
+ */
+fun checkLocationPermissionDetailed(context: Context): LocationPermissionState {
+    val fineLocationGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val coarseLocationGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+
+    return when {
+        fineLocationGranted -> LocationPermissionState.Granted
+        coarseLocationGranted -> LocationPermissionState.CoarseOnly
+        else -> LocationPermissionState.NotRequested
     }
 }

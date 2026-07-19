@@ -35,7 +35,6 @@ data class OnboardingUiState(
     val voiceSpeed: Double = 1.0,
     val voiceTone: String = "warm",
     val conversationTime: String = "",
-    val alarmEnabled: Boolean = true,
     val preferredSleepHours: String = "",
     val fieldError: String? = null,
     val isLoading: Boolean = false,
@@ -63,7 +62,6 @@ class OnboardingViewModel(
     fun updateVoiceSpeed(value: Double) = _uiState.update { it.copy(voiceSpeed = value) }
     fun updateVoiceTone(value: String) = _uiState.update { it.copy(voiceTone = value) }
     fun updateConversationTime(value: String) = _uiState.update { it.copy(conversationTime = value, fieldError = null) }
-    fun updateAlarmEnabled(value: Boolean) = _uiState.update { it.copy(alarmEnabled = value) }
     fun updatePreferredSleepHours(value: String) = _uiState.update { it.copy(preferredSleepHours = value, fieldError = null) }
 
     fun next() {
@@ -131,16 +129,30 @@ class OnboardingViewModel(
                     // 알람 설정 로컬 저장 및 스케줄링
                     val time = state.conversationTime.ifBlank { null }
                     alarmStorage.saveConversationTime(time)
-                    alarmStorage.setAlarmEnabled(state.alarmEnabled)
 
-                    if (state.alarmEnabled && time != null) {
+                    if (time != null) {
                         ConversationAlarmScheduler.scheduleAlarm(getApplication(), time)
                     }
 
                     _uiState.update { it.copy(isLoading = false, isCompleted = true) }
                 }
-                is ApiResult.Error -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
+                is ApiResult.Error -> {
+                    // 저장 오류 발생 시, 네트워크 타임아웃 등으로 서버에 이미 저장됐을 수 있으므로 상태 재확인
+                    when (val statusResult = userRepository.getOnboardingStatus()) {
+                        is ApiResult.Success -> if (statusResult.data.completed) {
+                            val time = state.conversationTime.ifBlank { null }
+                            alarmStorage.saveConversationTime(time)
+                            if (time != null) {
+                                ConversationAlarmScheduler.scheduleAlarm(getApplication(), time)
+                            }
+                            _uiState.update { it.copy(isLoading = false, isCompleted = true) }
+                        } else {
+                            _uiState.update { it.copy(isLoading = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.") }
+                        }
+                        is ApiResult.Error -> _uiState.update {
+                            it.copy(isLoading = false, errorMessage = "서버에 문제가 생겼습니다. 잠시 후 다시 시도해주세요.")
+                        }
+                    }
                 }
             }
         }

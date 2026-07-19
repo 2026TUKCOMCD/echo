@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 에뮬레이터에서 로컬 서버(10.0.2.2 = 호스트 PC 루프백)로 테스트할 때만 평문 HTTP 허용 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+
+    <!-- 그 외 모든 도메인(prod 등)은 HTTPS만 허용 -->
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

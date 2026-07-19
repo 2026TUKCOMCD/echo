@@ -3,6 +3,7 @@ package com.example.graduation_project.data.health
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.DistanceRecord
@@ -10,6 +11,7 @@ import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.example.graduation_project.domain.health.HealthConnectAvailability
@@ -19,6 +21,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.util.Locale
 
 /**
  * Health Connect SDK 초기화 및 가용성 확인 담당.
@@ -45,16 +48,11 @@ class HealthConnectManager(private val context: Context) {
     /**
      * Health Connect SDK 가용성 확인.
      */
-    fun checkAvailability(): HealthConnectAvailability {
-        return when (HealthConnectClient.getSdkStatus(context, HEALTH_CONNECT_PACKAGE)) {
-            HealthConnectClient.SDK_AVAILABLE ->
-                HealthConnectAvailability.Available
-            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED ->
-                HealthConnectAvailability.NotInstalled
-            else ->
-                HealthConnectAvailability.NotSupported
-        }
-    }
+    fun checkAvailability(): HealthConnectAvailability =
+        mapSdkStatus(
+            HealthConnectClient.getSdkStatus(context, HEALTH_CONNECT_PACKAGE),
+            Build.VERSION.SDK_INT
+        )
 
     /**
      * 현재 부여된 권한이 REQUIRED_PERMISSIONS를 모두 포함하는지 확인.
@@ -67,8 +65,7 @@ class HealthConnectManager(private val context: Context) {
 
     /**
      * 어제 정오(12:00) → 오늘 정오(12:00) 범위의 수면 데이터 읽기.
-     * - minutes: 전체 세션 합산 수면 시간(분)
-     * - startTime: 가장 긴 세션(주 수면)의 시작 시각 "HH:mm" → 서버 낮잠 분류용
+     * - 주 수면 세션(최장 세션) 하나만 요약 (계산 로직은 summarizeSleepSessions 참고)
      */
     suspend fun readYesterdaySleep(): SleepSummary {
         val client = HealthConnectClient.getOrCreate(context)
@@ -80,29 +77,17 @@ class HealthConnectManager(private val context: Context) {
         val response = client.readRecords(
             ReadRecordsRequest(SleepSessionRecord::class, TimeRangeFilter.between(rangeStart, rangeEnd))
         )
-        if (response.records.isEmpty()) return SleepSummary(null, null, null)
 
-        val totalMinutes = response.records.sumOf { record ->
-            (record.endTime.toEpochMilli() - record.startTime.toEpochMilli()) / 60_000L
-        }.toInt()
-
-        val mainSession = response.records.maxByOrNull { record ->
-            record.endTime.toEpochMilli() - record.startTime.toEpochMilli()
-        }
-        val startTimeStr = mainSession?.let {
-            val localTime = it.startTime.atZone(zone).toLocalTime()
-            String.format("%02d:%02d", localTime.hour, localTime.minute)
-        }
-        val wakeUpTimeStr = mainSession?.let {
-            val localTime = it.endTime.atZone(zone).toLocalTime()
-            String.format("%02d:%02d", localTime.hour, localTime.minute)
-        }
-
-        return SleepSummary(minutes = totalMinutes, startTime = startTimeStr, wakeUpTime = wakeUpTimeStr)
+        return summarizeSleepSessions(
+            response.records.map { it.startTime to it.endTime },
+            zone
+        )
     }
 
     /**
      * 오늘 자정(00:00) → 현재 범위의 걸음 수 합산.
+     * aggregate()는 여러 앱(워치+폰)이 기록한 중복 데이터를 자동 제거함
+     * (raw 레코드 단순 합산 시 동일 걸음이 두 번 집계될 수 있음)
      */
     suspend fun readTodaySteps(): Int? {
         val client = HealthConnectClient.getOrCreate(context)
@@ -110,12 +95,13 @@ class HealthConnectManager(private val context: Context) {
         val startTime = LocalDate.now(zone).atStartOfDay(zone).toInstant()
         val endTime = Instant.now()
 
-        val response = client.readRecords(
-            ReadRecordsRequest(StepsRecord::class, TimeRangeFilter.between(startTime, endTime))
+        val response = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
         )
-        if (response.records.isEmpty()) return null
-
-        return response.records.sumOf { it.count }.toInt()
+        return response[StepsRecord.COUNT_TOTAL]?.toInt()
     }
 
     /**
@@ -149,12 +135,15 @@ class HealthConnectManager(private val context: Context) {
         startTime: Instant,
         endTime: Instant
     ): Double? {
-        val response = client.readRecords(
-            ReadRecordsRequest(DistanceRecord::class, TimeRangeFilter.between(startTime, endTime))
+        // aggregate()로 중복 출처(워치+폰) 데이터 자동 제거
+        val response = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(DistanceRecord.DISTANCE_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
         )
-        if (response.records.isEmpty()) return null
-        val totalKm = response.records.sumOf { it.distance.inKilometers }
-        return if (totalKm > 0.0) totalKm else null
+        val totalKm = response[DistanceRecord.DISTANCE_TOTAL]?.inKilometers
+        return if (totalKm != null && totalKm > 0.0) totalKm else null
     }
 
     /**
@@ -198,10 +187,6 @@ class HealthConnectManager(private val context: Context) {
         else -> "운동"
     }
 
-    // TODO: ExerciseRoute GPS 데이터 활용 기능 추후 재도입 예정
-    // 참고: feature/US5.5-healthconnect-route-tracking 브랜치, commit 1feb261
-    // 삭제된 메서드: readTodayExerciseRoutes(), readExerciseSessionLocations()
-
     /**
      * NotInstalled 상태일 때 Play Store로 연결.
      * Play Store 앱이 없으면 브라우저 웹 링크로 폴백.
@@ -218,4 +203,38 @@ class HealthConnectManager(private val context: Context) {
         val resolved = context.packageManager.resolveActivity(playStoreIntent, 0)
         context.startActivity(if (resolved != null) playStoreIntent else webIntent)
     }
+}
+
+/**
+ * 수면 세션 목록에서 주 수면 세션(최장 세션) 하나를 골라 요약.
+ * - 시간과 시작/기상 시각이 같은 세션을 가리키도록 해 서버의 낮잠/야간 분류와 일관성 유지
+ * - 낮잠, 워치+폰 중복 세션이 야간 수면 시간에 합산되는 문제도 함께 방지
+ */
+internal fun summarizeSleepSessions(
+    sessions: List<Pair<Instant, Instant>>,
+    zone: ZoneId
+): SleepSummary {
+    val main = sessions.maxByOrNull { (start, end) -> end.toEpochMilli() - start.toEpochMilli() }
+        ?: return SleepSummary(null, null, null)
+    val (start, end) = main
+    val minutes = ((end.toEpochMilli() - start.toEpochMilli()) / 60_000L).toInt()
+
+    fun Instant.toHHmm(): String {
+        val localTime = atZone(zone).toLocalTime()
+        return String.format(Locale.ROOT, "%02d:%02d", localTime.hour, localTime.minute)
+    }
+
+    return SleepSummary(minutes = minutes, startTime = start.toHHmm(), wakeUpTime = end.toHHmm())
+}
+
+/**
+ * SDK 상태 → 가용성 매핑.
+ * SDK_UNAVAILABLE/PROVIDER_UPDATE_REQUIRED의 경계가 라이브러리 버전에 따라 애매하므로,
+ * HC 앱 설치가 가능한 API 28(P) 이상에서는 미가용이면 무조건 설치/업데이트 유도로 처리.
+ * (API 34+는 HC가 플랫폼 내장이라 항상 SDK_AVAILABLE)
+ */
+internal fun mapSdkStatus(status: Int, sdkInt: Int): HealthConnectAvailability = when {
+    status == HealthConnectClient.SDK_AVAILABLE -> HealthConnectAvailability.Available
+    sdkInt >= Build.VERSION_CODES.P -> HealthConnectAvailability.NotInstalled
+    else -> HealthConnectAvailability.NotSupported
 }

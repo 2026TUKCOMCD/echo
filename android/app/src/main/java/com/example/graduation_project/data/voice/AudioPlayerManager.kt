@@ -1,5 +1,6 @@
 package com.example.graduation_project.data.voice
 
+import android.media.AudioAttributes
 import android.media.MediaDataSource
 import android.media.MediaPlayer
 import android.util.Base64
@@ -10,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -170,6 +172,13 @@ class AudioPlayerManager {
             val dataSource = ByteArrayMediaDataSource(audioBytes)
 
             val player = MediaPlayer().apply {
+                // 음성(TTS) 콘텐츠임을 명시해 기기가 올바른 오디오 경로/볼륨 정책을 적용하도록 함
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
                 setDataSource(dataSource)
 
                 setOnCompletionListener {
@@ -215,6 +224,9 @@ class AudioPlayerManager {
      * [개선] 캐시된 ByteArray 재사용 (디코딩 불필요)
      */
     private fun handlePlaybackError(exception: AudioPlayException, isRetry: Boolean) {
+        // stop()이 호출되어 scope가 취소된 경우, 에러 처리하지 않음
+        if (scope?.isActive != true) return
+
         val canRetry = isRetryableError(exception) && retryCount < maxRetries
 
         if (canRetry && cachedAudioBytes != null) {

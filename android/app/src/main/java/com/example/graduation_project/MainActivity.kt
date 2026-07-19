@@ -1,7 +1,12 @@
 package com.example.graduation_project
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,6 +48,11 @@ import com.example.graduation_project.presentation.home.HomeScreen
 import com.example.graduation_project.presentation.onboarding.OnboardingScreen
 import com.example.graduation_project.presentation.settings.SettingsScreen
 import com.example.graduation_project.presentation.settings.DisplaySettingsViewModel
+import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
+import com.example.graduation_project.data.location.LocationScheduler
+import com.example.graduation_project.data.location.MorningAlarmReceiver
+import com.example.graduation_project.presentation.permission.SamsungBatterySettingsDialog
+import com.example.graduation_project.util.DeviceUtil
 import com.example.graduation_project.ui.theme.EchoAccentGreen
 import com.example.graduation_project.ui.theme.Graduation_projectTheme
 import kotlinx.coroutines.Dispatchers
@@ -49,24 +60,95 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URLDecoder
 import java.net.URLEncoder
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.sp
+import com.example.graduation_project.presentation.permission.LocationCollectionConfirmDialog
+import com.example.graduation_project.presentation.permission.LocationPermissionGuideDialog
+import com.example.graduation_project.util.CrashReporter
 
 class MainActivity : ComponentActivity() {
 
     private val displayViewModel: DisplaySettingsViewModel by viewModels { DisplaySettingsViewModel.Factory }
 
+    // 권한 다이얼로그 표시 여부 (알림에서 앱 열었을 때)
+    private var shouldShowPermissionDialog = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // 알림 딥링크 처리
-        val navigateTo = intent.getStringExtra("navigate_to")
+        // 알림에서 권한 다이얼로그 표시 요청 확인
+        handlePermissionDialogIntent(intent)
+
+        // 알림 딥링크 처리 (회전 등 재생성 시 재실행 방지 위해 콜드 스타트에만 적용)
+        val navigateTo = if (savedInstanceState == null) intent.getStringExtra("navigate_to") else null
 
         setContent {
             val displaySettings by displayViewModel.settings.collectAsState()
             Graduation_projectTheme(displaySettings = displaySettings) {
-                AppNavHost(navigateTo = navigateTo, displayViewModel = displayViewModel)
+                AppNavHost(
+                    navigateTo = navigateTo,
+                    displayViewModel = displayViewModel,
+                    shouldShowPermissionDialog = shouldShowPermissionDialog.value,
+                    onPermissionDialogHandled = { shouldShowPermissionDialog.value = false }
+                )
+
+                // 디버그 빌드: 이전 실행에서 크래시가 있었으면 스택트레이스 표시 (ADB 없는 기기 디버깅용)
+                if (BuildConfig.DEBUG) {
+                    DebugCrashDialog()
+                }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handlePermissionDialogIntent(intent)
+    }
+
+    private fun handlePermissionDialogIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(MorningAlarmReceiver.EXTRA_SHOW_PERMISSION_DIALOG, false) == true) {
+            shouldShowPermissionDialog.value = true
+        }
+    }
+}
+
+/**
+ * 디버그 빌드 전용: 이전 실행의 크래시 스택트레이스를 다이얼로그로 표시
+ */
+@Composable
+private fun DebugCrashDialog() {
+    val context = LocalContext.current
+    var crashText by remember { mutableStateOf(CrashReporter.readLastCrash(context)) }
+
+    crashText?.let { text ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                CrashReporter.clear(context)
+                crashText = null
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    CrashReporter.clear(context)
+                    crashText = null
+                }) {
+                    androidx.compose.material3.Text("닫기")
+                }
+            },
+            title = { androidx.compose.material3.Text("이전 실행 크래시 (디버그)") },
+            text = {
+                androidx.compose.material3.Text(
+                    text = text.take(4000),
+                    fontSize = 11.sp,
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            }
+        )
     }
 }
 
@@ -88,7 +170,12 @@ private object Routes {
 private val tabRoutes = EchoTab.entries.map { it.route }.toSet()
 
 @Composable
-private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySettingsViewModel) {
+private fun AppNavHost(
+    navigateTo: String? = null,
+    displayViewModel: DisplaySettingsViewModel,
+    shouldShowPermissionDialog: Boolean = false,
+    onPermissionDialogHandled: () -> Unit = {}
+) {
     val context = LocalContext.current
     val application = context.applicationContext as Application
     val authRepository = remember { AuthRepository(tokenStorage = TokenStorage(application)) }
@@ -96,12 +183,162 @@ private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySett
     val coroutineScope = rememberCoroutineScope()
     val navController = rememberNavController()
 
+    // 로그아웃 공통 처리: 사용자별 알람/위치 수집 정리 후 토큰 삭제
+    // (미정리 시 로그아웃 후에도 대화 알람이 계속 울리고 위치가 계속 수집됨)
+    val performLogout: suspend () -> Unit = {
+        ConversationAlarmScheduler.cancelAndClear(context)
+        LocationScheduler.disableLocationCollection(context)
+        withContext(Dispatchers.IO) { authRepository.logout() }
+    }
+
+    // 권한 다이얼로그 상태
+    var showConfirmDialog by remember { mutableStateOf(false) }
+    var showGuideDialog by remember { mutableStateOf(false) }
+    var showSamsungBatteryDialog by remember { mutableStateOf(false) }
+    var permissionStep by remember { mutableStateOf(0) } // 0: 대기, 1: 위치, 2: 백그라운드, 3: 배터리, 4: 삼성
+
+    // 위치 권한 요청 런처
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        if (fineGranted) {
+            // 다음 단계: 백그라운드 위치 권한
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                permissionStep = 2
+            } else {
+                // Android 9 이하는 배터리 최적화로
+                permissionStep = 3
+            }
+        } else {
+            // 거부됨 - 설정 안내
+            showGuideDialog = true
+            permissionStep = 0
+        }
+    }
+
+    // 백그라운드 위치 권한 요청 런처
+    val backgroundLocationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            // 다음 단계: 배터리 최적화
+            permissionStep = 3
+        } else {
+            // 거부됨 - 설정 안내
+            showGuideDialog = true
+            permissionStep = 0
+        }
+    }
+
+    // 권한 단계별 처리
+    LaunchedEffect(permissionStep) {
+        when (permissionStep) {
+            1 -> {
+                // 위치 권한 요청
+                locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            }
+            2 -> {
+                // 백그라운드 위치 권한 요청
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                }
+            }
+            3 -> {
+                // 배터리 최적화 해제 요청
+                val powerManager = context.getSystemService(PowerManager::class.java)
+                if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                }
+                // 삼성 기기인 경우 추가 설정 안내
+                if (DeviceUtil.isSamsungDevice()) {
+                    permissionStep = 4
+                } else {
+                    // 완료 - 위치 수집 시작 시도
+                    LocationScheduler.enableLocationCollection(context)
+                    permissionStep = 0
+                }
+            }
+            4 -> {
+                // 삼성 기기 추가 배터리 설정 안내
+                showSamsungBatteryDialog = true
+            }
+        }
+    }
+
+    // 알림에서 앱 열었을 때 확인 다이얼로그 표시
+    LaunchedEffect(shouldShowPermissionDialog) {
+        if (shouldShowPermissionDialog) {
+            val result = LocationScheduler.checkPrerequisites(context)
+            if (result != LocationScheduler.PrerequisiteResult.ALL_SATISFIED) {
+                showConfirmDialog = true
+            }
+            onPermissionDialogHandled()
+        }
+    }
+
+    // 위치 수집 허용 확인 다이얼로그
+    if (showConfirmDialog) {
+        LocationCollectionConfirmDialog(
+            onAllow = {
+                showConfirmDialog = false
+                // 순차적 권한 요청 시작
+                permissionStep = 1
+            },
+            onDeny = {
+                showConfirmDialog = false
+                showGuideDialog = true
+            }
+        )
+    }
+
+    // 설정 안내 다이얼로그
+    if (showGuideDialog) {
+        LocationPermissionGuideDialog(
+            onDismiss = { showGuideDialog = false }
+        )
+    }
+
+    // 삼성 기기 배터리 설정 안내 다이얼로그
+    if (showSamsungBatteryDialog) {
+        SamsungBatterySettingsDialog(
+            onDismiss = {
+                showSamsungBatteryDialog = false
+                permissionStep = 0
+                // 위치 수집 시작 시도
+                LocationScheduler.enableLocationCollection(context)
+            },
+            onOpenSettings = {
+                // 삼성 배터리 설정 화면으로 이동
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    // 실패 시 일반 설정 화면
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+        )
+    }
+
     // EncryptedSharedPreferences 초기화는 Android Keystore를 사용하므로
     // 메인 스레드에서 동기 호출 시 ANR/크래시 발생. IO 스레드에서 비동기 처리.
-    var startDestination by remember { mutableStateOf<String?>(null) }
+    var startDestination by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
-        val hasToken = withContext(Dispatchers.IO) { authRepository.hasAccessToken() }
-        startDestination = if (hasToken) Routes.CHECKING else Routes.LOGIN
+        if (startDestination == null) {
+            val hasToken = withContext(Dispatchers.IO) { authRepository.hasAccessToken() }
+            startDestination = if (hasToken) Routes.CHECKING else Routes.LOGIN
+        }
     }
 
     // 알림에서 홈 화면으로 이동 요청 시 처리
@@ -152,13 +389,22 @@ private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySett
             modifier = Modifier.padding(paddingValues)
         ) {
             composable(Routes.CHECKING) {
+                val checkingContext = LocalContext.current
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = EchoAccentGreen)
                 }
                 LaunchedEffect(Unit) {
                     val destination = when (val result = userRepository.getOnboardingStatus()) {
                         is ApiResult.Success -> if (result.data.completed) EchoTab.HOME.route else Routes.ONBOARDING
-                        is ApiResult.Error -> Routes.LOGIN
+                        is ApiResult.Error -> {
+                            // 조용히 로그인 화면으로 돌아가면 사용자가 원인을 알 수 없으므로 실패 사유 표시
+                            Toast.makeText(
+                                checkingContext,
+                                "로그인 상태 확인 실패: ${result.exception.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            Routes.LOGIN
+                        }
                     }
                     navController.navigate(destination) {
                         popUpTo(Routes.CHECKING) { inclusive = true }
@@ -169,15 +415,10 @@ private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySett
             composable(Routes.LOGIN) {
                 LoginScreen(
                     onLoginSuccess = {
-                        coroutineScope.launch {
-                            val completed = when (val result = userRepository.getOnboardingStatus()) {
-                                is ApiResult.Success -> result.data.completed
-                                is ApiResult.Error -> false
-                            }
-                            val destination = if (completed) EchoTab.HOME.route else Routes.ONBOARDING
-                            navController.navigate(destination) {
-                                popUpTo(Routes.LOGIN) { inclusive = true }
-                            }
+                        // 온보딩 상태 확인 동안 로그인 화면이 멈춘 것처럼 보이지 않도록
+                        // 즉시 CHECKING(전체 화면 스피너)으로 전환하고, 확인/분기는 CHECKING에서 처리
+                        navController.navigate(Routes.CHECKING) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
                         }
                     },
                     onNavigateToSignup = {
@@ -240,7 +481,7 @@ private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySett
                     displayViewModel = displayViewModel,
                     onLogout = {
                         coroutineScope.launch {
-                            withContext(Dispatchers.IO) { authRepository.logout() }
+                            performLogout()
                             navController.navigate(Routes.LOGIN) {
                                 popUpTo(0) { inclusive = true }
                             }
@@ -254,7 +495,7 @@ private fun AppNavHost(navigateTo: String? = null, displayViewModel: DisplaySett
                 ConversationScreen(
                     onLogout = {
                         coroutineScope.launch {
-                            withContext(Dispatchers.IO) { authRepository.logout() }
+                            performLogout()
                             navController.navigate(Routes.LOGIN) {
                                 popUpTo(0) { inclusive = true }
                             }

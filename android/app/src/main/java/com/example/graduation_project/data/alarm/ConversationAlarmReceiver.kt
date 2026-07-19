@@ -16,6 +16,7 @@ import com.example.graduation_project.MainActivity
 import com.example.graduation_project.R
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationScheduler
+import java.util.Calendar
 
 /**
  * 대화 알람 수신 및 알림 표시
@@ -27,29 +28,25 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "대화 알람 수신")
 
-        // 위치 권한 확인
+        // 위치 권한 확인 (알림 문구 분기용으로만 사용)
         val hasLocationPermission = hasBackgroundLocationPermission(context)
 
-        if (hasLocationPermission) {
-            // 위치 수집 서비스 종료 (대화 시간에 자동 종료)
-            LocationCollectionService.stop(context)
-            Log.d(TAG, "위치 수집 서비스 종료")
+        // 위치 수집 서비스 종료 (대화 시간에 자동 종료) - 권한 여부와 무관하게 항상 시도
+        LocationCollectionService.stop(context)
+        Log.d(TAG, "위치 수집 서비스 종료")
 
-            // 다음날 위치 수집 알람 스케줄링
-            LocationScheduler.scheduleMorningAlarm(context)
-        }
+        // 다음날 위치 수집 알람 재스케줄링 - 권한 여부와 무관하게 항상 재예약
+        // (권한 미충족 시에는 알람이 울려도 MorningAlarmReceiver → checkPrerequisites에서 서비스 시작만 스킵됨)
+        LocationScheduler.scheduleMorningAlarm(context)
 
         // 알림 표시 (권한 상태에 따라 다른 내용)
         showNotification(context, hasLocationPermission)
 
         // 다음날 알람 재스케줄링
-        val storage = ConversationAlarmStorage(context)
-        if (storage.isAlarmEnabled()) {
-            val time = storage.getConversationTime()
-            if (time != null) {
-                ConversationAlarmScheduler.scheduleAlarm(context, time)
-                Log.d(TAG, "다음날 대화 알람 재스케줄링 완료: $time")
-            }
+        val time = ConversationAlarmStorage(context).getConversationTime()
+        if (time != null) {
+            ConversationAlarmScheduler.scheduleAlarm(context, time)
+            Log.d(TAG, "다음날 대화 알람 재스케줄링 완료: $time")
         }
     }
 
@@ -70,6 +67,11 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
     }
 
     private fun showNotification(context: Context, hasLocationPermission: Boolean) {
+        if (!hasNotificationPermission(context)) {
+            Log.w(TAG, "POST_NOTIFICATIONS 권한 없음 - 대화 알림 표시 불가")
+            return
+        }
+
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Android 8.0+ 알림 채널 생성
@@ -109,7 +111,10 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
             bigText = "에코와 함께 오늘 하루를 이야기해 보세요!"
         }
 
-        // 알림 생성 (대화 시작까지 유지)
+        // 자정까지 남은 시간 계산 (대화 안 하면 자정에 자동 취소)
+        val timeoutMs = calculateMillisUntilMidnight()
+
+        // 알림 생성 (대화 시작 또는 자정에 자동 취소)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("에코와 대화할 시간이에요")
@@ -120,10 +125,26 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
             .setAutoCancel(false)  // 클릭해도 알림 유지 (대화 시작 시 취소)
             .setOngoing(true)      // 스와이프로 삭제 불가
             .setContentIntent(pendingIntent)
+            .setTimeoutAfter(timeoutMs)  // 자정에 자동 취소
             .build()
 
         notificationManager.notify(NOTIFICATION_ID, notification)
-        Log.d(TAG, "대화 알림 표시 완료 (위치 권한: $hasLocationPermission)")
+        Log.d(TAG, "대화 알림 표시 완료 (위치 권한: $hasLocationPermission, 자정까지: ${timeoutMs / 1000 / 60}분)")
+    }
+
+    /**
+     * 자정까지 남은 시간(밀리초) 계산
+     */
+    private fun calculateMillisUntilMidnight(): Long {
+        val now = Calendar.getInstance()
+        val midnight = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return midnight.timeInMillis - now.timeInMillis
     }
 
     companion object {
@@ -137,7 +158,21 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_NAVIGATE_TO = "navigate_to"
         const val NAVIGATE_TO_HOME = "home"
 
-        private const val FAREWELL_TIMEOUT_MS = 10 * 60 * 1000L  // 10분
+        private const val FAREWELL_TIMEOUT_MS = 3 * 60 * 1000L   // 3분
+
+        /**
+         * 알림 표시 권한 확인 (Android 13+)
+         * 권한 없이 notify()를 호출하면 예외 없이 조용히 무시되므로 사전에 확인
+         */
+        private fun hasNotificationPermission(context: Context): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        }
 
         /**
          * 대화 알림 취소 (대화 시작 시 호출)
@@ -149,9 +184,14 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
         }
 
         /**
-         * 대화 종료 알림 표시 (10분 후 자동 사라짐)
+         * 대화 종료 알림 표시 (3분 후 자동 사라짐)
          */
         fun showFarewellNotification(context: Context) {
+            if (!hasNotificationPermission(context)) {
+                Log.w(TAG, "POST_NOTIFICATIONS 권한 없음 - 대화 종료 알림 표시 불가")
+                return
+            }
+
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
             // Android 8.0+ 알림 채널 생성
@@ -173,7 +213,7 @@ class ConversationAlarmReceiver : BroadcastReceiver() {
                 .setContentText("내일 또 만나요!")
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true)
-                .setTimeoutAfter(FAREWELL_TIMEOUT_MS)  // 10분 후 자동 사라짐
+                .setTimeoutAfter(FAREWELL_TIMEOUT_MS)  // 3분 후 자동 사라짐
                 .build()
 
             notificationManager.notify(FAREWELL_NOTIFICATION_ID, notification)

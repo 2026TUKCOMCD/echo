@@ -31,8 +31,18 @@ openai:
   whisper:
     model: whisper-1
     language: ko
+
+# OpenRouter (채팅 전용) - 매일 아래 목록에서 하나가 자동 선택됨 (ModelRotationService)
+openrouter:
+  api:
+    url: https://openrouter.ai/api/v1
   chat:
-    model: gpt-4o-mini
+    models:
+      - openai/gpt-5.5
+      - anthropic/claude-sonnet-5
+      - google/gemini-3.1-flash-lite
+      - anthropic/claude-haiku-4.5
+      - openai/gpt-4o-mini
     temperature: 0.7
     max-tokens: 1024
 

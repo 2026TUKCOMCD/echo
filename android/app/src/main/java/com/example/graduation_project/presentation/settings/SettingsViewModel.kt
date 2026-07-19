@@ -1,6 +1,14 @@
 package com.example.graduation_project.presentation.settings
 
+import android.Manifest
 import android.app.Application
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -10,12 +18,18 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.health.HealthConnectManager
+import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationCollectionStorage
 import com.example.graduation_project.data.location.LocationScheduler
+import com.example.graduation_project.data.location.LocationStorageManager
+import com.example.graduation_project.domain.model.LocationPoint
 import com.example.graduation_project.data.model.UserPreferences
 import com.example.graduation_project.data.repository.UserRepository
+import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.presentation.permission.PermissionChecker
+import com.example.graduation_project.util.DeviceUtil
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +52,6 @@ data class SettingsUiState(
     val voiceTone: String = "warm",
     val conversationTime: String? = null,
     val preferredSleepHours: Int? = null,
-    val alarmEnabled: Boolean = false,
     // 위치 수집 설정
     val locationCollectionStartTime: String = "06:00",
     val isLocationCollectionRunning: Boolean = false,
@@ -47,10 +60,59 @@ data class SettingsUiState(
     val hasBackgroundLocationPermission: Boolean = false,
     val hasHealthConnectPermission: Boolean = false,
     val hasNotificationPermission: Boolean = true,
+    val hasExactAlarmPermission: Boolean = true,
+    val isBatteryOptimizationDisabled: Boolean = false,
+    // 배터리 최적화 해제 요청 이벤트 (UI에서 처리)
+    val shouldRequestBatteryOptimization: Boolean = false,
+    // 삼성 기기 배터리 설정 안내 다이얼로그 표시 이벤트
+    val shouldShowSamsungBatteryDialog: Boolean = false,
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // 위치 데이터 디버그
+    val locationDebugData: LocationDebugData? = null
+)
+
+/**
+ * 위치 데이터 디버그 정보
+ */
+data class LocationDebugData(
+    val todayCount: Int,
+    val lastCollectionTime: String?,
+    val points: List<LocationPointDisplay>,
+    // 상태 정보
+    val statusInfo: LocationStatusInfo? = null
+)
+
+/**
+ * 위치 수집 상태 정보 (디버그용)
+ */
+data class LocationStatusInfo(
+    // 위치 서비스 상태
+    val isLocationEnabled: Boolean,
+    val isGpsEnabled: Boolean,
+    val isNetworkEnabled: Boolean,
+    // 권한 상태
+    val hasFineLocation: Boolean,
+    val hasCoarseLocation: Boolean,
+    val hasBackgroundLocation: Boolean,
+    // 기타 상태
+    val isBatteryOptimizationIgnored: Boolean,
+    val isAirplaneModeOn: Boolean,
+    val isSamsungDevice: Boolean,
+    // 서비스 상태
+    val isServiceRunning: Boolean
+)
+
+/**
+ * 위치 포인트 표시용 데이터
+ */
+data class LocationPointDisplay(
+    val id: Int,
+    val latitude: Double,
+    val longitude: Double,
+    val time: String
 )
 
 class SettingsViewModel(
@@ -60,6 +122,10 @@ class SettingsViewModel(
 
     private val alarmStorage = ConversationAlarmStorage(application)
     private val locationStorage = LocationCollectionStorage(application)
+    private val healthConnectManager = HealthConnectManager(application)
+    private val locationStorageManager = LocationStorageManager(
+        AppDatabase.getInstance(application).locationPointDao()
+    )
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -68,11 +134,115 @@ class SettingsViewModel(
         loadSettings()
     }
 
+    /**
+     * 위치 데이터 로드 (디버그용)
+     */
+    fun loadLocationDebugData() {
+        viewModelScope.launch {
+            try {
+                val context = getApplication<Application>()
+                val points = locationStorageManager.getTodayLocations()
+                val lastCollectionTime = locationStorage.getLastCollectionTime()
+
+                // 상태 정보 수집
+                val statusInfo = collectLocationStatusInfo(context)
+
+                val debugData = LocationDebugData(
+                    todayCount = points.size,
+                    lastCollectionTime = if (lastCollectionTime > 0) {
+                        java.time.Instant.ofEpochMilli(lastCollectionTime)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+                    } else null,
+                    points = points.mapIndexed { index, point ->
+                        LocationPointDisplay(
+                            id = points.size - index,
+                            latitude = point.latitude,
+                            longitude = point.longitude,
+                            time = point.timestamp
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+                        )
+                    }.reversed(),
+                    statusInfo = statusInfo
+                )
+
+                _uiState.update { it.copy(locationDebugData = debugData) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "위치 데이터 로드 실패: ${e.message}") }
+            }
+        }
+    }
+
+    /**
+     * 위치 수집 상태 정보 수집
+     */
+    private fun collectLocationStatusInfo(context: Context): LocationStatusInfo {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+
+        // GPS 상태
+        val isGpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        val isLocationEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            locationManager.isLocationEnabled
+        } else {
+            isGpsEnabled || isNetworkEnabled
+        }
+
+        // 권한 상태
+        val hasFineLocation = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val hasCoarseLocation = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val hasBackgroundLocation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+
+        // 배터리 최적화 상태
+        val isBatteryOptimizationIgnored = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+
+        // 비행기 모드
+        val isAirplaneModeOn = Settings.Global.getInt(
+            context.contentResolver,
+            Settings.Global.AIRPLANE_MODE_ON,
+            0
+        ) != 0
+
+        // 삼성 기기 여부
+        val isSamsungDevice = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+
+        return LocationStatusInfo(
+            isLocationEnabled = isLocationEnabled,
+            isGpsEnabled = isGpsEnabled,
+            isNetworkEnabled = isNetworkEnabled,
+            hasFineLocation = hasFineLocation,
+            hasCoarseLocation = hasCoarseLocation,
+            hasBackgroundLocation = hasBackgroundLocation,
+            isBatteryOptimizationIgnored = isBatteryOptimizationIgnored,
+            isAirplaneModeOn = isAirplaneModeOn,
+            isSamsungDevice = isSamsungDevice,
+            isServiceRunning = LocationCollectionService.isRunning
+        )
+    }
+
+    /**
+     * 위치 데이터 디버그 다이얼로그 닫기
+     */
+    fun dismissLocationDebugData() {
+        _uiState.update { it.copy(locationDebugData = null) }
+    }
+
     private fun loadSettings() {
         val context = getApplication<Application>()
-
-        // 로컬 알람 설정 로드
-        val alarmEnabled = alarmStorage.isAlarmEnabled()
 
         // 위치 수집 시간 로드
         val locationStartTime = locationStorage.getStartTime()
@@ -80,27 +250,50 @@ class SettingsViewModel(
         // 권한 상태 확인
         val hasLocation = PermissionChecker.hasForegroundLocationPermission(context)
         val hasBackgroundLocation = PermissionChecker.hasBackgroundLocationPermission(context)
-        val hasHealthConnect = PermissionChecker.isHealthConnectAvailable(context)
         val hasNotification = PermissionChecker.hasNotificationPermission(context)
+        val hasExactAlarm = PermissionChecker.hasExactAlarmPermission(context)
+        val isBatteryOptimizationDisabled = checkBatteryOptimizationDisabled()
 
         _uiState.update {
             it.copy(
-                alarmEnabled = alarmEnabled,
                 locationCollectionStartTime = locationStartTime,
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = hasLocation,
                 hasBackgroundLocationPermission = hasBackgroundLocation,
-                hasHealthConnectPermission = hasHealthConnect,
-                hasNotificationPermission = hasNotification
+                hasNotificationPermission = hasNotification,
+                hasExactAlarmPermission = hasExactAlarm,
+                isBatteryOptimizationDisabled = isBatteryOptimizationDisabled
             )
         }
 
         viewModelScope.launch {
+            // Health Connect 권한 확인 (실제 권한 허용 여부)
+            val hasHealthConnectPermission = checkHealthConnectPermission()
+            _uiState.update { it.copy(hasHealthConnectPermission = hasHealthConnectPermission) }
+
             when (val result = userRepository.getPreferences()) {
-                is ApiResult.Success -> _uiState.update { applyPrefs(it, result.data).copy(isLoading = false) }
+                is ApiResult.Success -> {
+                    _uiState.update { applyPrefs(it, result.data).copy(isLoading = false) }
+                    // 서버 대화 시간과 로컬 알람 저장소 동기화 (다른 기기에서 변경한 경우 반영)
+                    syncAlarmWithServerTime(result.data.conversationTime)
+                    // 대화 시간 로드 후 위치 수집 상태 확인
+                    checkAndUpdateLocationCollectionStatus()
+                }
                 is ApiResult.Error -> _uiState.update { it.copy(isLoading = false) }
             }
         }
+    }
+
+    /**
+     * 서버의 대화 시간으로 로컬 알람 저장소를 동기화하고 알람을 재예약.
+     * (다른 기기에서 시간을 변경한 경우 UI 표시 시간과 실제 알람 발화 시간이 어긋나는 것 방지)
+     *
+     * 시간이 같아도 항상 재예약: 강제 종료 등으로 AlarmManager 등록만 사라진 경우
+     * 설정 화면 진입만으로 알람이 복구되도록 함 (같은 PendingIntent 덮어쓰기라 중복 예약 없음)
+     */
+    private fun syncAlarmWithServerTime(serverTime: String?) {
+        alarmStorage.saveConversationTime(serverTime)
+        updateAlarmSchedule(serverTime)  // time=null이면 내부에서 cancelAlarm
     }
 
     /**
@@ -111,25 +304,60 @@ class SettingsViewModel(
         val context = getApplication<Application>()
         val previousBackgroundPermission = _uiState.value.hasBackgroundLocationPermission
         val currentBackgroundPermission = PermissionChecker.hasBackgroundLocationPermission(context)
+        val isBatteryOptimizationDisabled = checkBatteryOptimizationDisabled()
 
         _uiState.update {
             it.copy(
                 isLocationCollectionRunning = LocationCollectionService.isRunning,
                 hasLocationPermission = PermissionChecker.hasForegroundLocationPermission(context),
                 hasBackgroundLocationPermission = currentBackgroundPermission,
-                hasHealthConnectPermission = PermissionChecker.isHealthConnectAvailable(context),
-                hasNotificationPermission = PermissionChecker.hasNotificationPermission(context)
+                hasNotificationPermission = PermissionChecker.hasNotificationPermission(context),
+                hasExactAlarmPermission = PermissionChecker.hasExactAlarmPermission(context),
+                isBatteryOptimizationDisabled = isBatteryOptimizationDisabled
             )
         }
 
-        // 위치 권한이 새로 허용되었으면 서비스 시작
+        // Health Connect 권한 확인 (비동기)
+        viewModelScope.launch {
+            val hasHealthConnectPermission = checkHealthConnectPermission()
+            _uiState.update { it.copy(hasHealthConnectPermission = hasHealthConnectPermission) }
+        }
+
+        // 위치 권한이 새로 허용되었으면 서비스 시작 + 배터리 최적화 해제 요청
         if (!previousBackgroundPermission && currentBackgroundPermission) {
             LocationScheduler.enableLocationCollection(context)
+            // 배터리 최적화가 아직 해제되지 않았으면 요청
+            if (!isBatteryOptimizationDisabled) {
+                _uiState.update {
+                    it.copy(
+                        shouldRequestBatteryOptimization = true,
+                        shouldShowSamsungBatteryDialog = DeviceUtil.isSamsungDevice()
+                    )
+                }
+            }
+        }
+
+        // 위치 수집 상태 확인 (범위 밖이면 자동 중지)
+        checkAndUpdateLocationCollectionStatus()
+    }
+
+    /**
+     * Health Connect 권한 확인 (SDK 설치 + 실제 권한 허용 여부)
+     */
+    private suspend fun checkHealthConnectPermission(): Boolean {
+        return try {
+            val availability = healthConnectManager.checkAvailability()
+            if (availability != HealthConnectAvailability.Available) {
+                return false
+            }
+            healthConnectManager.checkGrantedPermissions()
+        } catch (e: Exception) {
+            false
         }
     }
 
     /**
-     * 위치 수집 시작/중지 토글
+     * 위치 수집 시작/중지 토글 (수동 제어 - 시간 범위 무관)
      */
     fun toggleLocationCollection() {
         val context = getApplication<Application>()
@@ -139,6 +367,15 @@ class SettingsViewModel(
         } else {
             LocationCollectionService.start(context)
             _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "위치 수집이 시작되었습니다") }
+            // 배터리 최적화가 아직 해제되지 않았으면 요청
+            if (!checkBatteryOptimizationDisabled()) {
+                _uiState.update {
+                    it.copy(
+                        shouldRequestBatteryOptimization = true,
+                        shouldShowSamsungBatteryDialog = DeviceUtil.isSamsungDevice()
+                    )
+                }
+            }
         }
     }
 
@@ -187,16 +424,25 @@ class SettingsViewModel(
 
                     // 현재 시간이 위치 수집 범위 내이면 자동으로 서비스 시작
                     val locationStartTime = _uiState.value.locationCollectionStartTime
+                    var autoStarted = false
                     if (!savedTime.isNullOrBlank() && isCurrentTimeInRange(locationStartTime, savedTime)) {
                         val context = getApplication<Application>()
                         if (!LocationCollectionService.isRunning && _uiState.value.hasBackgroundLocationPermission) {
                             LocationCollectionService.start(context)
-                            _uiState.update { it.copy(isLocationCollectionRunning = true, savedMessage = "저장되었습니다. 위치 수집이 자동으로 시작되었습니다") }
-                            return@launch
+                            autoStarted = true
                         }
                     }
 
-                    _uiState.update { applyPrefs(it, result.data).copy(isSaving = false, savedMessage = "저장되었습니다") }
+                    // 자동 시작 여부와 무관하게 항상 isSaving 해제 + 서버 응답 반영
+                    // (자동 시작 분기에서 early return 하면 isSaving이 true로 남아 설정 화면 전체가 잠김)
+                    _uiState.update {
+                        applyPrefs(it, result.data).copy(
+                            isSaving = false,
+                            isLocationCollectionRunning = autoStarted || it.isLocationCollectionRunning,
+                            savedMessage = if (autoStarted) "저장되었습니다. 위치 수집이 자동으로 시작되었습니다"
+                                           else "저장되었습니다"
+                        )
+                    }
                 }
                 is ApiResult.Error -> _uiState.update {
                     it.copy(isSaving = false, errorMessage = "저장에 실패했습니다. 다시 시도해주세요.")
@@ -219,28 +465,32 @@ class SettingsViewModel(
         }
     }
 
-    fun setAlarmEnabled(enabled: Boolean) {
-        alarmStorage.setAlarmEnabled(enabled)
-        _uiState.update { it.copy(alarmEnabled = enabled) }
+    /**
+     * 위치 수집 상태 확인 및 자동 조정
+     * - 현재 시간이 수집 범위(시작 시간 ~ 대화 시간) 밖이면 서비스 자동 중지
+     * - 범위 내이고 권한이 있으면 서비스 자동 시작
+     */
+    private fun checkAndUpdateLocationCollectionStatus() {
+        val context = getApplication<Application>()
+        val startTime = _uiState.value.locationCollectionStartTime
+        val conversationTime = _uiState.value.conversationTime
 
-        var time = _uiState.value.conversationTime
-
-        // 시간이 설정되지 않은 경우 기본 시간(09:00) 설정
-        if (enabled && time.isNullOrBlank()) {
-            time = DEFAULT_CONVERSATION_TIME
-            alarmStorage.saveConversationTime(time)
-            _uiState.update { it.copy(conversationTime = time) }
-
-            // 서버에도 기본 시간 저장
-            viewModelScope.launch {
-                userRepository.updateConversationTime(time)
-            }
+        // 대화 시간이 설정되지 않은 경우 체크 불가
+        if (conversationTime.isNullOrBlank()) {
+            return
         }
 
-        updateAlarmSchedule(time)
+        val isInRange = isCurrentTimeInRange(startTime, conversationTime)
 
-        val message = if (enabled) "알림이 설정되었습니다" else "알림이 해제되었습니다"
-        _uiState.update { it.copy(savedMessage = message) }
+        if (LocationCollectionService.isRunning && !isInRange) {
+            // 범위 밖인데 서비스가 실행 중이면 중지
+            LocationCollectionService.stop(context)
+            _uiState.update { it.copy(isLocationCollectionRunning = false) }
+        } else if (!LocationCollectionService.isRunning && isInRange) {
+            // 범위 내인데 서비스가 실행 중이 아니면 자동 시작 (권한 등은 enableLocationCollection이 재확인)
+            LocationScheduler.enableLocationCollection(context)
+            _uiState.update { it.copy(isLocationCollectionRunning = LocationCollectionService.isRunning) }
+        }
     }
 
     /**
@@ -265,9 +515,38 @@ class SettingsViewModel(
         }
     }
 
-    companion object {
-        private const val DEFAULT_CONVERSATION_TIME = "09:00"
+    /**
+     * 배터리 최적화가 해제되어 있는지 확인
+     */
+    private fun checkBatteryOptimizationDisabled(): Boolean {
+        val context = getApplication<Application>()
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
 
+    /**
+     * 배터리 최적화 요청 이벤트 클리어 (UI에서 처리 후 호출)
+     */
+    fun dismissBatteryOptimizationRequest() {
+        _uiState.update { it.copy(shouldRequestBatteryOptimization = false) }
+    }
+
+    /**
+     * 삼성 배터리 설정 다이얼로그 이벤트 클리어 (UI에서 처리 후 호출)
+     */
+    fun dismissSamsungBatteryDialog() {
+        _uiState.update { it.copy(shouldShowSamsungBatteryDialog = false) }
+    }
+
+    /**
+     * 배터리 최적화 상태 새로고침
+     */
+    fun refreshBatteryOptimizationStatus() {
+        val isDisabled = checkBatteryOptimizationDisabled()
+        _uiState.update { it.copy(isBatteryOptimizationDisabled = isDisabled) }
+    }
+
+    companion object {
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -279,9 +558,8 @@ class SettingsViewModel(
 
     private fun updateAlarmSchedule(time: String?) {
         val context = getApplication<Application>()
-        val enabled = _uiState.value.alarmEnabled
 
-        if (enabled && !time.isNullOrBlank()) {
+        if (!time.isNullOrBlank()) {
             ConversationAlarmScheduler.scheduleAlarm(context, time)
         } else {
             ConversationAlarmScheduler.cancelAlarm(context)

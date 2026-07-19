@@ -1,23 +1,24 @@
 /*
  * AI 응답 생성 서비스
  *
- * 역할: OpenAI API를 호출하여 AI 응답 생성
- * - generateGreeting(): 대화 시작 시 첫 인사 생성
+ * 역할: OpenRouter API를 호출하여 AI 응답 생성
+ * - generateGreeting(): 대화 시작 시 첫 인사 생성 (오늘의 로테이션 모델을 음성으로 안내하는 문장 포함)
  * - generateResponse(): 사용자 메시지에 대한 응답 생성
  *
  * 데이터 흐름:
  *   PromptService에서 조합된 프롬프트(String) 수신
- *   → OpenAI Chat Completion API 호출
+ *   → OpenRouter Chat Completion API 호출 (모델은 ModelRotationService가 매일 자동 선택)
  *   → 응답 텍스트 반환
  *
  * 설정값 (application.yaml):
- *   - openai.chat.model: 사용 모델 (gpt-4o-mini)
- *   - openai.chat.temperature: 창의성 (0.7)
- *   - openai.chat.max-tokens: 최대 토큰 (1024)
+ *   - openrouter.chat.models: 로테이션 후보 모델 목록
+ *   - openrouter.chat.temperature: 창의성 (0.7)
+ *   - openrouter.chat.max-tokens: 최대 토큰 (1024)
  */
 package com.example.echo.ai.service;
 
-import com.example.echo.ai.client.OpenAIClient;
+import com.example.echo.ai.client.OpenRouterClient;
+import com.example.echo.ai.config.OpenRouterChatProperties;
 import com.example.echo.ai.dto.ChatCompletionRequest;
 import com.example.echo.ai.dto.ChatCompletionResponse;
 import com.example.echo.ai.exception.AIException;
@@ -26,7 +27,6 @@ import com.example.echo.context.domain.UserContext;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -37,16 +37,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AIService {
 
-    private final OpenAIClient openAIClient;
+    private static final String MODEL_ANNOUNCEMENT_FORMAT = "오늘은 %s 모델과 함께 대화를 나눠요. ";
 
-    @Value("${openai.chat.model}")
-    private String model;
-
-    @Value("${openai.chat.temperature}")
-    private Double temperature;
-
-    @Value("${openai.chat.max-tokens}")
-    private Integer maxTokens;
+    private final OpenRouterClient openRouterClient;
+    private final ModelRotationService modelRotationService;
+    private final OpenRouterChatProperties chatProperties;
 
     /**
      * 대화 시작 인사 생성
@@ -74,20 +69,21 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(model)
+                .model(modelRotationService.currentModel())
                 .messages(messages)
-                .temperature(temperature)
-                .maxTokens(maxTokens)
+                .temperature(chatProperties.getTemperature())
+                .maxTokens(chatProperties.getMaxTokens())
                 .build();
 
         try {
-            ChatCompletionResponse response = openAIClient.createChatCompletion(request);
+            ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
             String greeting = extractContent(response);
+            String announcedGreeting = String.format(MODEL_ANNOUNCEMENT_FORMAT, modelRotationService.currentModelDisplayName()) + greeting;
 
-            log.debug("Generated greeting: {}", greeting);
-            return greeting;
+            log.debug("Generated greeting - length: {}", announcedGreeting.length());
+            return announcedGreeting;
         } catch (FeignException e) {
-            log.error("OpenAI API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
+            log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 인사 생성 실패: " + e.getMessage(), e);
         }
     }
@@ -107,8 +103,8 @@ public class AIService {
      * @throws AIException API 호출 실패 시
      */
     public String generateResponse(String systemPrompt, List<ConversationTurn> history, String userMessage) {
-        log.debug("Generating response - history size: {}, userMessage: {}",
-                history != null ? history.size() : 0, userMessage);
+        log.debug("Generating response - history size: {}, userMessage length: {}",
+                history != null ? history.size() : 0, userMessage != null ? userMessage.length() : 0);
 
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
 
@@ -143,20 +139,20 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(model)
+                .model(modelRotationService.currentModel())
                 .messages(messages)
-                .temperature(temperature)
-                .maxTokens(maxTokens)
+                .temperature(chatProperties.getTemperature())
+                .maxTokens(chatProperties.getMaxTokens())
                 .build();
 
         try {
-            ChatCompletionResponse response = openAIClient.createChatCompletion(request);
+            ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
             String aiResponse = extractContent(response);
 
-            log.debug("Generated response: {}", aiResponse);
+            log.debug("Generated response - length: {}", aiResponse.length());
             return aiResponse;
         } catch (FeignException e) {
-            log.error("OpenAI API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
+            log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 응답 생성 실패: " + e.getMessage(), e);
         }
     }
@@ -167,13 +163,13 @@ public class AIService {
      */
     private String extractContent(ChatCompletionResponse response) {
         if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
-            log.warn("Empty response from OpenAI API");
+            log.warn("Empty response from OpenRouter API");
             return "";
         }
 
         ChatCompletionResponse.Choice choice = response.getChoices().get(0);
         if (choice.getMessage() == null || choice.getMessage().getContent() == null) {
-            log.warn("Empty message content in OpenAI response");
+            log.warn("Empty message content in OpenRouter response");
             return "";
         }
 

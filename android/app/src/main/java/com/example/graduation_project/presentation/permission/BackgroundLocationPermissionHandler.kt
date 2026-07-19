@@ -26,6 +26,9 @@ sealed class BackgroundLocationState {
     /** 전경 위치 권한 필요 (먼저 전경 권한을 받아야 함) */
     object NeedsForegroundFirst : BackgroundLocationState()
 
+    /** 정밀 위치(FINE) 권한 필요 (COARSE만 허용된 상태) */
+    object NeedsFineLocation : BackgroundLocationState()
+
     /** 백그라운드 권한 허용됨 */
     object Granted : BackgroundLocationState()
 
@@ -65,11 +68,18 @@ fun BackgroundLocationPermissionHandler(
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
         val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
 
-        state = if (fineGranted || coarseGranted) {
-            // 전경 권한 받음 → 백그라운드 권한 상태 다시 확인
-            checkBackgroundLocationState(context)
-        } else {
-            BackgroundLocationState.NeedsForegroundFirst
+        state = when {
+            fineGranted -> {
+                // 정밀 위치 권한 받음 → 백그라운드 권한 상태 다시 확인
+                checkBackgroundLocationState(context)
+            }
+            coarseGranted -> {
+                // 대략적 위치만 허용됨 → 정밀 위치 필요 안내
+                BackgroundLocationState.NeedsFineLocation
+            }
+            else -> {
+                BackgroundLocationState.NeedsForegroundFirst
+            }
         }
         onPermissionResult(state)
     }
@@ -116,20 +126,29 @@ fun BackgroundLocationPermissionHandler(
 
 /**
  * 백그라운드 위치 권한 상태 확인
+ * 위치 수집 서비스는 정밀 위치(FINE)가 필요하므로 COARSE만 있는 경우 별도 처리
  */
 fun checkBackgroundLocationState(context: Context): BackgroundLocationState {
-    // 먼저 전경 위치 권한 확인
-    val hasForeground = ContextCompat.checkSelfPermission(
+    // 정밀 위치 권한 확인 (FINE 필수)
+    val hasFineLocation = ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED ||
-    ContextCompat.checkSelfPermission(
+    ) == PackageManager.PERMISSION_GRANTED
+
+    val hasCoarseLocation = ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.ACCESS_COARSE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
 
-    if (!hasForeground) {
-        return BackgroundLocationState.NeedsForegroundFirst
+    // FINE 권한 없음
+    if (!hasFineLocation) {
+        return if (hasCoarseLocation) {
+            // COARSE만 허용됨 → 정밀 위치 필요 안내
+            BackgroundLocationState.NeedsFineLocation
+        } else {
+            // 위치 권한 없음
+            BackgroundLocationState.NeedsForegroundFirst
+        }
     }
 
     // Android 9 이하는 전경 권한만 있으면 백그라운드도 허용
