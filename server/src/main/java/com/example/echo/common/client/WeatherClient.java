@@ -141,7 +141,7 @@ public class WeatherClient {
      */
     private WeatherData callCurrentWeatherApi(Double latitude, Double longitude) {
         try {
-            log.debug("현재 날씨 조회 요청 - 위도: {}, 경도: {}", latitude, longitude);
+            log.debug("현재 날씨 조회 요청");
 
             WeatherApiResponse response = weatherApiClient.getWeather(
                     latitude,
@@ -157,7 +157,7 @@ public class WeatherClient {
             return weatherData;
 
         } catch (Exception e) {
-            log.error("현재 날씨 조회 실패 - 위도: {}, 경도: {}, 오류: {}", latitude, longitude, e.getMessage());
+            log.error("현재 날씨 조회 실패 - 오류: {}", e.getMessage());
             return null;
         }
     }
@@ -172,7 +172,7 @@ public class WeatherClient {
      */
     private VisitWeather callTimemachineApi(Double latitude, Double longitude, long timestamp) {
         try {
-            log.debug("방문 날씨 조회 요청 - 위도: {}, 경도: {}, timestamp: {}", latitude, longitude, timestamp);
+            log.debug("방문 날씨 조회 요청 - timestamp: {}", timestamp);
 
             TimemachineApiResponse response = weatherApiClient.getTimemachineWeather(
                     latitude,
@@ -194,11 +194,10 @@ public class WeatherClient {
 
         } catch (FeignException.TooManyRequests e) {
             log.error("⚠️ OpenWeatherMap API 한도 초과! 관리자 확인 필요. " +
-                    "일일 무료 한도: 1000회. 위도: {}, 경도: {}", latitude, longitude);
+                    "일일 무료 한도: 1000회.");
             return null;
         } catch (FeignException.Unauthorized e) {
-            log.error("⚠️ OpenWeatherMap API 인증 실패! API 키를 확인하세요. " +
-                    "위도: {}, 경도: {}", latitude, longitude);
+            log.error("⚠️ OpenWeatherMap API 인증 실패! API 키를 확인하세요.");
             return null;
         } catch (FeignException.Forbidden e) {
             log.error("⚠️ One Call API 3.0 구독이 필요합니다! " +
@@ -206,12 +205,12 @@ public class WeatherClient {
                     "https://home.openweathermap.org/subscriptions");
             return null;
         } catch (FeignException e) {
-            log.error("방문 날씨 조회 실패 - 위도: {}, 경도: {}, timestamp: {}, HTTP 상태: {}, 오류: {}",
-                    latitude, longitude, timestamp, e.status(), e.getMessage());
+            log.error("방문 날씨 조회 실패 - timestamp: {}, HTTP 상태: {}, 오류: {}",
+                    timestamp, e.status(), e.getMessage());
             return null;
         } catch (Exception e) {
-            log.error("방문 날씨 조회 실패 - 위도: {}, 경도: {}, timestamp: {}, 오류: {}",
-                    latitude, longitude, timestamp, e.getMessage());
+            log.error("방문 날씨 조회 실패 - timestamp: {}, 오류: {}",
+                    timestamp, e.getMessage());
             return null;
         }
     }
