@@ -1,5 +1,9 @@
 package com.example.echo.ai.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.example.echo.ai.client.OpenRouterClient;
 import com.example.echo.ai.config.OpenRouterChatProperties;
 import com.example.echo.ai.dto.ChatCompletionRequest;
@@ -8,6 +12,7 @@ import com.example.echo.ai.exception.AIException;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import feign.FeignException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,11 +20,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -41,6 +48,9 @@ class AIServiceTest {
 
     private UserContext context;
 
+    private Logger aiServiceLogger;
+    private ListAppender<ILoggingEvent> logAppender;
+
     @BeforeEach
     void setUp() {
         lenient().when(modelRotationService.currentModel()).thenReturn("anthropic/claude-sonnet-5");
@@ -55,6 +65,25 @@ class AIServiceTest {
         context = UserContext.builder()
                 .userId(1L)
                 .build();
+
+        // 로그 레벨을 DEBUG로 격상한 상황(운영 DEBUG 오버라이드 등)을 그대로 재현해서 캡처
+        aiServiceLogger = (Logger) LoggerFactory.getLogger(AIService.class);
+        aiServiceLogger.setLevel(Level.DEBUG);
+        logAppender = new ListAppender<>();
+        logAppender.start();
+        aiServiceLogger.addAppender(logAppender);
+    }
+
+    @AfterEach
+    void tearDown() {
+        aiServiceLogger.detachAppender(logAppender);
+        aiServiceLogger.setLevel(null);
+    }
+
+    private List<String> capturedLogMessages() {
+        return logAppender.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .collect(Collectors.toList());
     }
 
     // ===== generateGreeting 테스트 =====
@@ -167,6 +196,58 @@ class AIServiceTest {
                 .isInstanceOf(AIException.class)
                 .hasMessageContaining("AI 응답 생성 실패")
                 .hasCause(feignException);
+    }
+
+    // ===== 로그 회귀 방지 테스트 =====
+    // DEBUG 로그 레벨이 켜진 상황(운영 환경 오버라이드 등)에서도 대화 원문이 찍히지 않아야 한다.
+
+    @Test
+    @DisplayName("generateGreeting - DEBUG 로그에도 인사말 원문이 노출되지 않는다")
+    void generateGreeting_doesNotLogGreetingContent() {
+        // Given
+        String systemPrompt = "시스템 프롬프트";
+        String greetingContent = "이건 아무에게도 말하지 못한 저만의 비밀이에요";
+        ChatCompletionResponse response = createMockResponse(greetingContent);
+
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        String result = aiService.generateGreeting(systemPrompt, context);
+
+        // Then
+        List<String> logMessages = capturedLogMessages();
+        assertThat(logMessages).isNotEmpty();
+        assertThat(logMessages).noneMatch(msg -> msg.contains(greetingContent));
+        assertThat(logMessages).noneMatch(msg -> msg.contains(result));
+    }
+
+    @Test
+    @DisplayName("generateResponse - DEBUG 로그에도 사용자 메시지·AI 응답 원문이 노출되지 않는다")
+    void generateResponse_doesNotLogConversationContent() {
+        // Given
+        String systemPrompt = "시스템 프롬프트";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "아무한테도 말 못한 가족 이야기가 있어요";
+        String aiResponseContent = "그 이야기를 들려주셔서 감사해요";
+        ChatCompletionResponse response = createMockResponse(aiResponseContent);
+
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        String result = aiService.generateResponse(systemPrompt, history, userMessage);
+
+        // Then
+        assertThat(result).isEqualTo(aiResponseContent);
+
+        List<String> logMessages = capturedLogMessages();
+        assertThat(logMessages).isNotEmpty();
+        assertThat(logMessages).noneMatch(msg -> msg.contains(userMessage));
+        assertThat(logMessages).noneMatch(msg -> msg.contains(aiResponseContent));
+
+        // 원문 대신 길이 정보는 정상적으로 남아야 한다 (완전히 로그가 비어버린 게 아님을 확인)
+        assertThat(logMessages).anyMatch(msg -> msg.contains("length"));
     }
 
     // ===== extractContent 테스트 (private 메서드를 generateResponse를 통해 간접 테스트) =====
