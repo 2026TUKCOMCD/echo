@@ -36,8 +36,7 @@ import java.util.Map;
  * - DB에서 프롬프트 템플릿 조회 (캐싱 적용)
  * - UserContext에서 필요한 데이터 추출 (DB 재조회 없음)
  * - 템플릿 변수 치환 후 최종 프롬프트 반환
- *
- * 일기 프롬프트는 DiaryService에서 담당 (단일 책임 원칙)
+ * - 일기 프롬프트(buildDiaryPrompt)는 DiaryService가 호출
  */
 @Slf4j
 @Service
@@ -136,6 +135,96 @@ public class PromptService {
 
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
+    }
+
+    /**
+     * 일기 생성 프롬프트 생성
+     *
+     * 대화 종료 시 DiaryService가 호출
+     * 하루 1개 일기를 증분 갱신하기 위해 기존 일기 내용을 함께 전달
+     *
+     * 템플릿 변수 (v3):
+     * - {{userName}}: 사용자 이름
+     * - {{todayContext}}: 오늘의 건강 데이터/날씨 요약
+     * - {{existingDiary}}: 오늘 이미 생성된 일기 내용 (없으면 "(없음)")
+     * - {{conversationHistory}}: 이번 세션의 대화 내용
+     *
+     * @param context 대화 종료 시점의 UserContext
+     * @param existingDiaryContent 오늘 기존 일기 내용 (null 허용)
+     * @return 컴파일된 일기 프롬프트 문자열
+     * @throws IllegalStateException 활성화된 DIARY 템플릿이 없을 경우
+     */
+    public String buildDiaryPrompt(UserContext context, String existingDiaryContent) {
+        PromptTemplate template = getActiveTemplate(PromptType.DIARY);
+
+        UserPreferences preferences = context.getPreferences();
+
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("userName", preferences != null ? preferences.getName() : "사용자");
+        variables.put("todayContext", buildTodayContextText(context));
+        variables.put("existingDiary", existingDiaryContent != null && !existingDiaryContent.isBlank()
+                ? existingDiaryContent : "(없음)");
+        variables.put("conversationHistory", buildConversationHistoryText(context.getConversationHistory()));
+
+        return template.compile(variables);
+    }
+
+    /**
+     * 오늘의 건강 데이터/날씨를 일기 프롬프트용 텍스트로 변환
+     */
+    private String buildTodayContextText(UserContext context) {
+        EnrichedHealthData healthData = context.getEnrichedHealthData();
+        WeatherData weatherData = context.getTodayWeather();
+
+        StringBuilder sb = new StringBuilder();
+        if (healthData != null) {
+            if (healthData.getStepsFormatted() != null && !healthData.getStepsFormatted().isBlank()) {
+                sb.append("- 걸음 수: ").append(healthData.getStepsFormatted()).append("\n");
+            }
+            if (healthData.getSleepDurationFormatted() != null && !healthData.getSleepDurationFormatted().isBlank()) {
+                sb.append("- 수면: ").append(healthData.getSleepDurationFormatted()).append("\n");
+            }
+            if (healthData.getExerciseDistanceFormatted() != null && !healthData.getExerciseDistanceFormatted().isBlank()) {
+                sb.append("- 운동 거리: ").append(healthData.getExerciseDistanceFormatted()).append("\n");
+            }
+            if (healthData.getActivityList() != null && !healthData.getActivityList().isBlank()) {
+                sb.append("- 활동: ").append(healthData.getActivityList()).append("\n");
+            }
+        }
+        if (weatherData != null && weatherData.getDescription() != null) {
+            sb.append("- 오늘 날씨: ").append(weatherData.getDescription());
+            if (weatherData.getTemperature() != null) {
+                sb.append(", ").append(weatherData.getTemperature()).append("°C");
+            }
+            sb.append("\n");
+        }
+
+        String text = sb.toString().trim();
+        return text.isEmpty() ? "(건강 데이터 없음)" : text;
+    }
+
+    /**
+     * 대화 히스토리를 일기 프롬프트용 텍스트로 변환
+     *
+     * 첫 인사 턴은 userMessage가 null이므로 AI 발화만 기록
+     */
+    private String buildConversationHistoryText(List<com.example.echo.context.domain.ConversationTurn> history) {
+        if (history == null || history.isEmpty()) {
+            return "(대화 내용 없음)";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        history.forEach(turn -> {
+            if (turn.getUserMessage() != null) {
+                sb.append("어르신: ").append(turn.getUserMessage()).append("\n");
+            }
+            if (turn.getAiResponse() != null) {
+                sb.append("AI: ").append(turn.getAiResponse()).append("\n");
+            }
+        });
+
+        String text = sb.toString().trim();
+        return text.isEmpty() ? "(대화 내용 없음)" : text;
     }
 
     /**

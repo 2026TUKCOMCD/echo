@@ -4,8 +4,11 @@ import com.example.echo.ai.service.AIService;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
+import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
+import com.example.echo.diary.entity.Diary;
+import com.example.echo.diary.entity.DiaryStatus;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
@@ -267,6 +270,69 @@ class ConversationServiceTest2 {
             var inOrder = inOrder(contextService);
             inOrder.verify(contextService).getContext(userId);
             inOrder.verify(contextService).finalizeContext(userId);
+        }
+
+        @Test
+        @DisplayName("성공: 일기 생성 성공 시 응답에 diaryStatus=SUCCESS와 diaryId가 담긴다")
+        void success_responseContainsDiaryStatus() {
+            // given
+            Diary diary = Diary.builder()
+                    .userId(userId)
+                    .diaryDate(LocalDate.now())
+                    .content("오늘의 일기")
+                    .status(DiaryStatus.SUCCESS)
+                    .build();
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(diary);
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then
+            assertThat(response.getDiaryStatus()).isEqualTo("SUCCESS");
+            assertThat(response.getDiaryError()).isNull();
+            assertThat(response.getEndedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("성공: 일기 생성 실패 시 응답에 diaryStatus=FAILED와 실패 사유가 담기고 컨텍스트는 정리된다")
+        void diaryFailure_responseContainsFailureAndContextCleaned() {
+            // given
+            Diary failedDiary = Diary.builder()
+                    .userId(userId)
+                    .diaryDate(LocalDate.now())
+                    .status(DiaryStatus.FAILED)
+                    .failureReason("AI 일기 생성 실패: 401")
+                    .build();
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(failedDiary);
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then
+            assertThat(response.getDiaryStatus()).isEqualTo("FAILED");
+            assertThat(response.getDiaryError()).contains("AI 일기 생성 실패");
+            then(contextService).should().finalizeContext(userId);
+        }
+
+        @Test
+        @DisplayName("성공: 일기 생성이 스킵되면(사용자 발화 없음) diaryStatus=SKIPPED가 담긴다")
+        void diarySkipped_responseContainsSkipped() {
+            // given
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(null);
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then
+            assertThat(response.getDiaryStatus()).isEqualTo("SKIPPED");
+            assertThat(response.getDiaryId()).isNull();
+            assertThat(response.getDiaryError()).isNull();
         }
     }
 }
