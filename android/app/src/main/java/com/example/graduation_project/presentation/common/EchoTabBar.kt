@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -34,7 +34,8 @@ import com.example.graduation_project.ui.theme.OutfitFontFamily
 
 enum class EchoTab(val route: String, val label: String, val icon: ImageVector) {
     HOME("home", "홈", Icons.Outlined.Home),
-    HISTORY("history", "대화기록", Icons.Outlined.Forum),
+    // route는 "history"를 유지 (네비게이션 상태 저장 키 호환)
+    HISTORY("history", "일기", Icons.AutoMirrored.Outlined.MenuBook),
     SETTINGS("settings", "설정", Icons.Outlined.Settings)
 }
 
