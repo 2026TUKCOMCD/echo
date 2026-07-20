@@ -2,6 +2,7 @@ package com.example.graduation_project.presentation.conversation
 
 import android.app.Application
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
@@ -18,6 +19,7 @@ import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.repository.ConversationRepository
+import com.example.graduation_project.data.repository.DiaryRepository
 import com.example.graduation_project.domain.usecase.GetHealthDataUseCase
 import com.example.graduation_project.data.voice.AudioPlayerManager
 import com.example.graduation_project.data.voice.AudioRecordManager
@@ -567,6 +569,26 @@ class ConversationViewModel(
                     conversationId = null
                     // Sending → Ended
                     transitionTo(ConversationState.Ended)
+
+                    // 일기 생성 결과 확인 (디버깅 단계: 실패를 조용히 삼키지 않음)
+                    val diaryStatus = result.data.diaryStatus
+                    if (diaryStatus == "FAILED") {
+                        Log.w(TAG, "일기 생성 실패 - 사유: ${result.data.diaryError}")
+                        Toast.makeText(
+                            getApplication(),
+                            "일기 생성에 실패했어요: ${result.data.diaryError ?: "알 수 없는 오류"}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        Log.i(TAG, "일기 생성 결과: $diaryStatus (diaryId: ${result.data.diaryId})")
+                    }
+
+                    // 일기 로컬 캐시 갱신 (실패해도 무시 - 일기 탭 진입 시 재시도됨)
+                    launch {
+                        runCatching {
+                            DiaryRepository(AppDatabase.getInstance(getApplication()).diaryDao()).refresh()
+                        }.onFailure { Log.w(TAG, "일기 캐시 갱신 실패", it) }
+                    }
 
                     // 대화 종료 알림 표시 (10분 후 자동 사라짐)
                     ConversationAlarmReceiver.showFarewellNotification(getApplication())

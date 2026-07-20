@@ -21,8 +21,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.time.LocalDateTime;
-
 /**
  * 대화 처리 컨트롤러
  */
@@ -116,10 +114,7 @@ public class ConversationController {
     public ResponseEntity<ConversationEndResponse> endConversation(
             @Parameter(hidden = true) @CurrentUser Long userId
     ) {
-        conversationService.endConversation(userId);
-        ConversationEndResponse response = ConversationEndResponse.builder()
-                .endedAt(LocalDateTime.now())
-                .build();
+        ConversationEndResponse response = conversationService.endConversation(userId);
         return ResponseEntity.ok(response);
     }
 

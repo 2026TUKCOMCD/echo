@@ -3,11 +3,13 @@ package com.example.echo.conversation.service;
 import com.example.echo.ai.service.AIService;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
+import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
+import com.example.echo.diary.entity.Diary;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.location.dto.RawLocationData;
@@ -43,7 +45,8 @@ public class ConversationService {
         UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
 
         // 2. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
-        String systemPrompt = promptService.buildSystemPrompt(context);
+        // 최근 7일 일기를 덧붙여 AI가 이전 대화 내용을 기억하는 것처럼 이어가게 함
+        String systemPrompt = appendRecentDiaries(promptService.buildSystemPrompt(context), userId);
         context.setSystemPrompt(systemPrompt);
 
         // 3. 첫 인사 생성
@@ -88,6 +91,36 @@ public class ConversationService {
                 .build();
     }
 
+    /**
+     * 최근 7일의 일기를 시스템 프롬프트에 덧붙임
+     *
+     * 일기 조회에 실패해도 대화 시작을 막지 않음 (원본 프롬프트 그대로 반환)
+     */
+    private String appendRecentDiaries(String systemPrompt, Long userId) {
+        try {
+            List<Diary> recentDiaries = diaryService.getRecentSuccessfulDiaries(userId, 7);
+            if (recentDiaries.isEmpty()) {
+                return systemPrompt;
+            }
+
+            StringBuilder sb = new StringBuilder(systemPrompt);
+            sb.append("\n\n────────────────────────────────────────\n");
+            sb.append("[최근 7일의 일기 - 이전 대화에서 나온 이야기입니다. ");
+            sb.append("자연스럽게 이어가되, 같은 질문을 반복하지 마세요]\n");
+            recentDiaries.forEach(diary -> sb.append("- ")
+                    .append(diary.getDiaryDate().getMonthValue()).append("월 ")
+                    .append(diary.getDiaryDate().getDayOfMonth()).append("일: ")
+                    .append(diary.getContent().replace("\n", " "))
+                    .append("\n"));
+
+            log.info("최근 일기 {}건을 시스템 프롬프트에 주입 - userId: {}", recentDiaries.size(), userId);
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("최근 일기 조회 실패 - 일기 없이 대화 시작 - userId: {}", userId, e);
+            return systemPrompt;
+        }
+    }
+
     public TtsRetryResponse retryTts(Long userId) {
         UserContext context = contextService.getContext(userId);
 
@@ -104,24 +137,43 @@ public class ConversationService {
                 .build();
     }
 
-    public void endConversation(Long userId) {
+    public ConversationEndResponse endConversation(Long userId) {
         log.info("대화 종료 시작 - userId: {}", userId);
 
-        //1. 컨텍스트 조회
-        UserContext context = contextService.getContext(userId);
-        log.info("컨텍스트 조회 완료 - 대화 턴 수: {}", context.getConversationHistory().size());
+        String diaryStatus;
+        Long diaryId = null;
+        String diaryError = null;
 
-        // 2. 일기 생성 (동기)
-        log.info("일기 생성 시작 - userId: {}", userId);
         try {
-            diaryService.generateAndSaveDiary(context);
-            log.info("일기 생성 완료 - userId: {}", userId);
+            // 1. 컨텍스트 조회
+            UserContext context = contextService.getContext(userId);
+            log.info("컨텍스트 조회 완료 - 대화 턴 수: {}", context.getConversationHistory().size());
+
+            // 2. 일기 생성 (동기) - 실패해도 대화 종료는 계속되며, 결과를 응답에 명시
+            Diary diary = diaryService.generateAndSaveDiary(context);
+            if (diary == null) {
+                diaryStatus = "SKIPPED";
+            } else {
+                diaryStatus = diary.getStatus().name();
+                diaryId = diary.getId();
+                diaryError = diary.getFailureReason();
+            }
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}", userId, e);
+            diaryStatus = "FAILED";
+            diaryError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        } finally {
+            // 3. 컨텍스트 정리 (어떤 경우에도 보장)
+            contextService.finalizeContext(userId);
         }
 
-        // 3. 컨텍스트 정리
-        contextService.finalizeContext(userId);
-        log.info("=== 대화 종료 완료 - userId: {} ===", userId);
+        log.info("=== 대화 종료 완료 - userId: {}, diaryStatus: {} ===", userId, diaryStatus);
+
+        return ConversationEndResponse.builder()
+                .endedAt(LocalDateTime.now())
+                .diaryStatus(diaryStatus)
+                .diaryId(diaryId)
+                .diaryError(diaryError)
+                .build();
     }
 }

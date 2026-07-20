@@ -22,7 +22,10 @@ data class ConversationMessageResponse(
 // /api/conversations/end 응답 Model(DTO)
 @Serializable
 data class ConversationEndResponse(
-    val endedAt: String? = null
+    val endedAt: String? = null,
+    val diaryStatus: String? = null,   // SUCCESS | FAILED | SKIPPED (구서버는 null)
+    val diaryId: Long? = null,
+    val diaryError: String? = null
 )
 
 // /api/conversations/tts-retry 응답 Model(DTO)

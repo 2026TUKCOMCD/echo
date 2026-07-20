@@ -42,8 +42,9 @@ import com.example.graduation_project.presentation.auth.SignupScreen
 import com.example.graduation_project.presentation.common.EchoTab
 import com.example.graduation_project.presentation.common.EchoTabBar
 import com.example.graduation_project.presentation.conversation.ConversationScreen
+import com.example.graduation_project.presentation.diary.DiaryDetailScreen
+import com.example.graduation_project.presentation.diary.DiaryScreen
 import com.example.graduation_project.presentation.history.ConversationHistoryDetailScreen
-import com.example.graduation_project.presentation.history.ConversationHistoryScreen
 import com.example.graduation_project.presentation.home.HomeScreen
 import com.example.graduation_project.presentation.onboarding.OnboardingScreen
 import com.example.graduation_project.presentation.settings.SettingsScreen
@@ -159,11 +160,15 @@ private object Routes {
     const val CHECKING = "checking"
     const val CONVERSATION = "conversation"
     const val HISTORY_DETAIL = "history_detail/{conversationId}"
+    const val DIARY_DETAIL = "diary_detail/{date}"
 
     fun historyDetail(conversationId: String): String {
         val encoded = URLEncoder.encode(conversationId, "UTF-8")
         return "history_detail/$encoded"
     }
+
+    // date는 "yyyy-MM-dd" 형식이라 URL 인코딩 불필요
+    fun diaryDetail(date: String): String = "diary_detail/$date"
 }
 
 // 탭바가 표시되는 최상위 루트 목록
@@ -456,16 +461,31 @@ private fun AppNavHost(
                 )
             }
 
-            // 대화기록 탭
+            // 일기 탭 (일기 + 일기 없는 날의 대화 기록)
             composable(EchoTab.HISTORY.route) {
-                ConversationHistoryScreen(
+                DiaryScreen(
+                    onDiaryClick = { date ->
+                        navController.navigate(Routes.diaryDetail(date))
+                    },
                     onConversationClick = { conversationId ->
                         navController.navigate(Routes.historyDetail(conversationId))
                     }
                 )
             }
 
-            // 대화기록 상세
+            // 일기 상세 (일기 본문 + 그날의 대화 세션 목록)
+            composable(Routes.DIARY_DETAIL) { backStackEntry ->
+                val date = backStackEntry.arguments?.getString("date") ?: ""
+                DiaryDetailScreen(
+                    date = date,
+                    onSessionClick = { conversationId ->
+                        navController.navigate(Routes.historyDetail(conversationId))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            // 대화 상세 (말풍선)
             composable(Routes.HISTORY_DETAIL) { backStackEntry ->
                 val encoded = backStackEntry.arguments?.getString("conversationId") ?: ""
                 val conversationId = URLDecoder.decode(encoded, "UTF-8")

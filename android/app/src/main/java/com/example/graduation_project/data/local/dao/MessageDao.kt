@@ -58,6 +58,17 @@ interface MessageDao {
     fun getAllConversationIds(): Flow<List<String>>
 
     /**
+     * 세션별 시작/종료 시각 조회 (최신순)
+     * - 일기 탭에서 날짜별 세션 그룹핑에 사용
+     * - 날짜 문자열 변환은 Kotlin에서 Asia/Seoul 기준으로 수행 (SQLite date 함수 미사용)
+     */
+    @Query("""
+        SELECT conversationId, MIN(timestamp) AS firstTimestamp, MAX(timestamp) AS lastTimestamp
+        FROM messages GROUP BY conversationId ORDER BY firstTimestamp DESC
+    """)
+    fun getSessionRanges(): Flow<List<SessionRange>>
+
+    /**
      * 특정 대화의 모든 메시지 삭제
      */
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
@@ -82,3 +93,12 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLastMessage(conversationId: String): MessageEntity?
 }
+
+/**
+ * 세션(대화)별 시작/종료 시각 집계 결과
+ */
+data class SessionRange(
+    val conversationId: String,
+    val firstTimestamp: Long,
+    val lastTimestamp: Long
+)
