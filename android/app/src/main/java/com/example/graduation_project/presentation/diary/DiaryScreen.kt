@@ -131,7 +131,8 @@ private fun DiaryCard(
     onClick: () -> Unit
 ) {
     val colors = LocalEchoColors.current
-    val isFailed = diary.status == "FAILED"
+    val hasStaleContent = diary.status == "FAILED" && diary.content != null
+    val isTotalFailure = diary.status == "FAILED" && diary.content == null
 
     Surface(
         modifier = Modifier
@@ -158,7 +159,9 @@ private fun DiaryCard(
                     fontFamily = OutfitFontFamily,
                     color = colors.textPrimary
                 )
-                if (isFailed) {
+                if (hasStaleContent) {
+                    FailureBadge(text = "갱신 실패", backgroundColor = colors.accentBlue)
+                } else if (isTotalFailure) {
                     FailureBadge()
                 }
             }
@@ -191,10 +194,19 @@ private fun DiaryCard(
                     lineHeight = 26.sp
                 )
             }
-            if (isFailed && diary.failureReason != null) {
+            if (hasStaleContent) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = diary.failureReason,
+                    text = "오늘 대화 내용이 아직 반영되지 않았어요.",
+                    fontSize = 14.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = colors.accentBlue,
+                    maxLines = 1
+                )
+            } else if (isTotalFailure) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "일기를 만들지 못했어요. 잠시 후 다시 확인해 주세요.",
                     fontSize = 14.sp,
                     fontFamily = OutfitFontFamily,
                     color = colors.accentRed,
@@ -206,17 +218,20 @@ private fun DiaryCard(
 }
 
 @Composable
-internal fun FailureBadge() {
+internal fun FailureBadge(
+    text: String = "일기 생성 실패",
+    backgroundColor: Color? = null
+) {
     val colors = LocalEchoColors.current
     Text(
-        text = "일기 생성 실패",
+        text = text,
         fontSize = 12.sp,
         fontWeight = FontWeight.SemiBold,
         fontFamily = OutfitFontFamily,
         color = Color.White,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(colors.accentRed)
+            .background(backgroundColor ?: colors.accentRed)
             .padding(horizontal = 8.dp, vertical = 2.dp)
     )
 }

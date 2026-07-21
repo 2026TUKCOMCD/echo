@@ -1,5 +1,6 @@
 package com.example.graduation_project.data.repository
 
+import android.util.Log
 import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.api.DiaryApi
@@ -46,15 +47,25 @@ class DiaryRepository(
      */
     suspend fun getDiaryByDate(date: String): DiaryEntity? = diaryDao.getByDate(date)
 
-    private fun Diary.toEntity() = DiaryEntity(
-        date = date,
-        serverId = id,
-        title = title,
-        content = content,
-        status = status,
-        failureReason = failureReason,
-        weather = weather,
-        mood = mood,
-        updatedAt = updatedAt
-    )
+    private fun Diary.toEntity(): DiaryEntity {
+        if (status == "FAILED" && failureReason != null) {
+            // UI는 원문 대신 안내 문구만 보여주므로, 실제 사유는 여기서만 남김
+            Log.w(TAG, "일기 생성/갱신 실패: date=$date reason=$failureReason")
+        }
+        return DiaryEntity(
+            date = date,
+            serverId = id,
+            title = title,
+            content = content,
+            status = status,
+            failureReason = failureReason,
+            weather = weather,
+            mood = mood,
+            updatedAt = updatedAt
+        )
+    }
+
+    companion object {
+        private const val TAG = "DiaryRepository"
+    }
 }
