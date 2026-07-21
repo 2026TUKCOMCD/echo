@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -163,5 +165,81 @@ class DiaryServiceTest {
         assertThat(result).isNull();
         verifyNoInteractions(aiService);
         verify(diaryRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("신규 저장 시 경합이 발생하면 재조회 후 갱신하여 SUCCESS로 저장한다")
+    void generateAndSaveDiary_retriesAndSucceedsOnConcurrentInsert() {
+        // given
+        UserContext context = contextWithUserMessage();
+        Diary racedDiary = Diary.builder()
+                .userId(TEST_USER_ID)
+                .diaryDate(TODAY)
+                .title("경합 상대가 만든 일기")
+                .content("경합 상대가 저장한 내용")
+                .status(DiaryStatus.SUCCESS)
+                .build();
+        when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(racedDiary));
+        when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
+        when(aiService.generateDiary("일기 프롬프트")).thenReturn("재시도로 저장된 새 내용");
+        when(diaryRepository.save(any(Diary.class)))
+                .thenThrow(new DataIntegrityViolationException("unique constraint violated"))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        Diary result = diaryService.generateAndSaveDiary(context);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getStatus()).isEqualTo(DiaryStatus.SUCCESS);
+        assertThat(result.getContent()).isEqualTo("재시도로 저장된 새 내용");
+        verify(diaryRepository, times(2)).findByUserIdAndDiaryDate(TEST_USER_ID, TODAY);
+        verify(diaryRepository, times(2)).save(any(Diary.class));
+    }
+
+    @Test
+    @DisplayName("경합 재시도 조회마저 실패하면 원래 예외가 전파되어 FAILED로 기록된다")
+    void generateAndSaveDiary_marksFailedWhenRetryAlsoFindsNothing() {
+        // given
+        UserContext context = contextWithUserMessage();
+        when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.empty());
+        when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
+        when(aiService.generateDiary("일기 프롬프트")).thenReturn("생성된 내용");
+        when(diaryRepository.save(any(Diary.class)))
+                .thenThrow(new DataIntegrityViolationException("unique constraint violated"))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        Diary result = diaryService.generateAndSaveDiary(context);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getStatus()).isEqualTo(DiaryStatus.FAILED);
+        assertThat(result.getFailureReason()).contains("unique constraint violated");
+        verify(diaryRepository, times(2)).findByUserIdAndDiaryDate(TEST_USER_ID, TODAY);
+        verify(aiService, times(1)).generateDiary(anyString());
+    }
+
+    @Test
+    @DisplayName("AI 생성 실패 후 실패 기록 저장마저 실패하면 예외를 던지지 않고 null을 반환한다")
+    void generateAndSaveDiary_returnsNullWhenFailureRecordSaveAlsoFails() {
+        // given
+        UserContext context = contextWithUserMessage();
+        when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.empty());
+        when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
+        when(aiService.generateDiary("일기 프롬프트")).thenThrow(new AIException("AI 일기 생성 실패: 401"));
+        when(diaryRepository.save(any(Diary.class)))
+                .thenThrow(new DataAccessResourceFailureException("DB connection lost"));
+
+        // when
+        Diary result = diaryService.generateAndSaveDiary(context);
+
+        // then
+        assertThat(result).isNull();
+        verify(diaryRepository, times(1)).save(any(Diary.class));
     }
 }
