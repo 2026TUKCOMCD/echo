@@ -17,6 +17,7 @@ import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.data.health.StayPointDetectorImpl
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.local.entity.ConversationDiaryLinkEntity
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.repository.DiaryRepository
@@ -561,6 +562,7 @@ class ConversationViewModel(
             audioPlayerManager.stop()
             audioRecordManager.stop()
 
+            val endedConversationId = conversationId  // nulling되기 전에 캡처 (아래에서 링크 저장에 사용)
             val result = repository.endConversation()
 
             when (result) {
@@ -581,6 +583,18 @@ class ConversationViewModel(
                         ).show()
                     } else {
                         Log.i(TAG, "일기 생성 결과: $diaryStatus (diaryId: ${result.data.diaryId})")
+                    }
+
+                    // 서버가 확정한 diaryDate를 이 세션(conversationId)에 매핑해 저장
+                    // - 일기 탭에서 로컬 타임스탬프 추정 대신 이 값을 신뢰해 날짜 버킷을 서버와 맞춤
+                    val diaryDate = result.data.diaryDate
+                    if (diaryDate != null && endedConversationId != null) {
+                        launch {
+                            runCatching {
+                                AppDatabase.getInstance(getApplication()).conversationDiaryLinkDao()
+                                    .upsert(ConversationDiaryLinkEntity(endedConversationId, diaryDate))
+                            }.onFailure { Log.w(TAG, "대화-일기 날짜 매핑 저장 실패", it) }
+                        }
                     }
 
                     // 일기 로컬 캐시 갱신 (실패해도 무시 - 일기 탭 진입 시 재시도됨)

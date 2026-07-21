@@ -6,9 +6,11 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.graduation_project.data.local.dao.ConversationDiaryLinkDao
 import com.example.graduation_project.data.local.dao.DiaryDao
 import com.example.graduation_project.data.local.dao.LocationPointDao
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.local.entity.ConversationDiaryLinkEntity
 import com.example.graduation_project.data.local.entity.DiaryEntity
 import com.example.graduation_project.data.local.entity.LocationPointEntity
 import com.example.graduation_project.data.local.entity.MessageEntity
@@ -26,9 +28,9 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
  * - 마이그레이션 전략 필요 (현재는 fallbackToDestructiveMigration 사용)
  */
 @Database(
-    entities = [MessageEntity::class, LocationPointEntity::class, DiaryEntity::class],
-    version = 3,
-    exportSchema = false
+    entities = [MessageEntity::class, LocationPointEntity::class, DiaryEntity::class, ConversationDiaryLinkEntity::class],
+    version = 4,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
 
@@ -37,6 +39,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun locationPointDao(): LocationPointDao
 
     abstract fun diaryDao(): DiaryDao
+
+    abstract fun conversationDiaryLinkDao(): ConversationDiaryLinkDao
 
     companion object {
         private const val DATABASE_NAME = "echo_database"
@@ -87,6 +91,24 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
+         * Migration 3 → 4: conversation_diary_link 테이블 추가
+         * (로컬 대화 세션 conversationId → 서버가 확정한 diaryDate 매핑)
+         * 기존 messages/location_points/diaries 테이블은 그대로 유지
+         * 주의: 컬럼 타입/NOT NULL이 ConversationDiaryLinkEntity와 정확히 일치해야 함
+         *       (불일치 시 destructive fallback이 발동해 기존 메시지가 삭제됨)
+         */
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS conversation_diary_link (
+                        conversationId TEXT NOT NULL PRIMARY KEY,
+                        diaryDate TEXT NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
+        /**
          * 데이터베이스 인스턴스 가져오기
          * - 스레드 안전한 싱글톤
          */
@@ -119,7 +141,7 @@ abstract class AppDatabase : RoomDatabase() {
                 DATABASE_NAME
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 // Migration 실패 시에만 fallback (안전망)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

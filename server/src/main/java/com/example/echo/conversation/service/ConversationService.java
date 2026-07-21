@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 @Slf4j
@@ -143,6 +144,7 @@ public class ConversationService {
         String diaryStatus;
         Long diaryId = null;
         String diaryError = null;
+        LocalDate diaryDate = null;
 
         try {
             // 1. 컨텍스트 조회
@@ -157,6 +159,8 @@ public class ConversationService {
                 diaryStatus = diary.getStatus().name();
                 diaryId = diary.getId();
                 diaryError = diary.getFailureReason();
+                // 클라이언트가 이 세션을 일기 탭에서 로컬 타임스탬프 추정 대신 신뢰할 수 있도록 전달
+                diaryDate = diary.getDiaryDate();
             }
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}", userId, e);
@@ -174,6 +178,7 @@ public class ConversationService {
                 .diaryStatus(diaryStatus)
                 .diaryId(diaryId)
                 .diaryError(diaryError)
+                .diaryDate(diaryDate)
                 .build();
     }
 }
