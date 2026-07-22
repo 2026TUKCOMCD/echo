@@ -45,6 +45,7 @@ import com.example.graduation_project.ui.theme.OutfitFontFamily
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 // ViewModel
@@ -69,6 +70,7 @@ class DiaryDetailViewModel(
     private val database = AppDatabase.getInstance(application)
     private val messageDao = database.messageDao()
     private val diaryDao = database.diaryDao()
+    private val conversationDiaryLinkDao = database.conversationDiaryLinkDao()
 
     private val _uiState = MutableStateFlow(DiaryDetailUiState())
     val uiState: StateFlow<DiaryDetailUiState> = _uiState.asStateFlow()
@@ -79,16 +81,22 @@ class DiaryDetailViewModel(
 
     private fun load() {
         viewModelScope.launch {
-            messageDao.getSessionRanges().collect { ranges ->
-                val sessions = ranges
-                    .filter { sessionDateKey(it.firstTimestamp) == date }
-                    .mapNotNull { buildSessionSummary(messageDao, it) }
-                _uiState.value = DiaryDetailUiState(
-                    diary = diaryDao.getByDate(date),
-                    sessions = sessions,
-                    isLoading = false
-                )
-            }
+            combine(
+                messageDao.getSessionRanges(),
+                conversationDiaryLinkDao.observeAll()
+            ) { ranges, links -> ranges to links.associate { it.conversationId to it.diaryDate } }
+                .collect { (ranges, linkedDates) ->
+                    // DiaryViewModel의 버킷 기준과 동일하게: 서버 diaryDate가 있으면 우선 신뢰,
+                    // 없으면 lastTimestamp 휴리스틱으로 폴백
+                    val sessions = ranges
+                        .filter { resolveDateKey(it, linkedDates[it.conversationId]) == date }
+                        .mapNotNull { buildSessionSummary(messageDao, it, date) }
+                    _uiState.value = DiaryDetailUiState(
+                        diary = diaryDao.getByDate(date),
+                        sessions = sessions,
+                        isLoading = false
+                    )
+                }
         }
     }
 

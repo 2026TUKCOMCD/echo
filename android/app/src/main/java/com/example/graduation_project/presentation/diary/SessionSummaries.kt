@@ -22,6 +22,17 @@ internal val KST: TimeZone = TimeZone.getTimeZone("Asia/Seoul")
 internal fun sessionDateKey(timestamp: Long): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.KOREAN).apply { timeZone = KST }.format(Date(timestamp))
 
+/**
+ * 세션의 날짜 버킷 계산
+ *
+ * 서버가 /end 응답으로 확정해 준 diaryDate(ConversationDiaryLinkEntity)가 있으면
+ * 그 값을 우선 신뢰한다 (서버는 /end 호출 시점 기준 KST 날짜로 일기를 기록하므로 정확함).
+ * 매핑이 없는 세션(SKIPPED, 오프라인, 이 기능 이전의 과거 기록 등)은
+ * lastTimestamp(세션 종료 시각) 기반 휴리스틱으로 폴백한다.
+ */
+internal fun resolveDateKey(range: SessionRange, linkedDiaryDate: String?): String =
+    linkedDiaryDate ?: sessionDateKey(range.lastTimestamp)
+
 /** "yyyy-MM-dd" → "yyyy년 M월 d일 (E)" */
 internal fun formatKoreanDate(dateKey: String): String {
     val parser = SimpleDateFormat("yyyy-MM-dd", Locale.KOREAN).apply { timeZone = KST }
@@ -36,8 +47,15 @@ internal fun formatKoreanTime(timestamp: Long): String =
 /**
  * 세션의 메시지를 조회해 목록 카드용 요약 생성
  * (기존 대화기록 탭의 buildSummary 로직 이식)
+ *
+ * @param dateKey resolveDateKey()로 계산한 이 세션의 날짜 버킷 ("yyyy-MM-dd").
+ *   호출부에서 그룹핑에 쓴 것과 동일한 값을 넘겨야 카드에 표시되는 날짜와 버킷이 어긋나지 않는다.
  */
-internal suspend fun buildSessionSummary(messageDao: MessageDao, range: SessionRange): ConversationSummary? {
+internal suspend fun buildSessionSummary(
+    messageDao: MessageDao,
+    range: SessionRange,
+    dateKey: String
+): ConversationSummary? {
     val messages = messageDao.getMessagesByConversationIdOnce(range.conversationId)
     if (messages.isEmpty()) return null
 
@@ -50,7 +68,7 @@ internal suspend fun buildSessionSummary(messageDao: MessageDao, range: SessionR
 
     return ConversationSummary(
         conversationId = range.conversationId,
-        date = formatKoreanDate(sessionDateKey(first.timestamp)),
+        date = formatKoreanDate(dateKey),
         timeRange = "${formatKoreanTime(first.timestamp)} ~ ${formatKoreanTime(last.timestamp)}",
         durationMin = durationMin,
         previewText = preview

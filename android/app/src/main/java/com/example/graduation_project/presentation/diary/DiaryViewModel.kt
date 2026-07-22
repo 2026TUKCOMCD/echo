@@ -19,6 +19,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
+private data class DiaryTabSources(
+    val diaries: List<DiaryEntity>,
+    val ranges: List<SessionRange>,
+    val diaryDateByConversationId: Map<String, String>,
+    val syncError: String?
+)
+
 /**
  * 일기 탭 목록 항목
  *
@@ -48,6 +55,7 @@ class DiaryViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val messageDao = database.messageDao()
     private val diaryDao = database.diaryDao()
+    private val conversationDiaryLinkDao = database.conversationDiaryLinkDao()
     private val diaryRepository = DiaryRepository(diaryDao)
 
     private val syncError = MutableStateFlow<String?>(null)
@@ -77,14 +85,15 @@ class DiaryViewModel(application: Application) : AndroidViewModel(application) {
             combine(
                 diaryDao.observeAll(),
                 messageDao.getSessionRanges(),
+                conversationDiaryLinkDao.observeAll(),
                 syncError
-            ) { diaries, ranges, error ->
-                Triple(diaries, ranges, error)
-            }.collect { (diaries, ranges, error) ->
+            ) { diaries, ranges, links, error ->
+                DiaryTabSources(diaries, ranges, links.associate { it.conversationId to it.diaryDate }, error)
+            }.collect { sources ->
                 _uiState.value = DiaryListUiState(
-                    items = buildItems(diaries, ranges),
+                    items = buildItems(sources),
                     isLoading = false,
-                    syncError = error
+                    syncError = sources.syncError
                 )
             }
         }
@@ -94,12 +103,11 @@ class DiaryViewModel(application: Application) : AndroidViewModel(application) {
      * 병합 규칙: 날짜 내림차순으로,
      * 일기가 있는 날 = 일기 카드 1개 / 없는 날 = 그날의 세션 카드 나열
      */
-    private suspend fun buildItems(
-        diaries: List<DiaryEntity>,
-        ranges: List<SessionRange>
-    ): List<DiaryDayItem> {
-        val diariesByDate = diaries.associateBy { it.date }
-        val sessionsByDate = ranges.groupBy { sessionDateKey(it.firstTimestamp) }
+    private suspend fun buildItems(sources: DiaryTabSources): List<DiaryDayItem> {
+        val diariesByDate = sources.diaries.associateBy { it.date }
+        val sessionsByDate = sources.ranges.groupBy {
+            resolveDateKey(it, sources.diaryDateByConversationId[it.conversationId])
+        }
         val allDates = (diariesByDate.keys + sessionsByDate.keys).sortedDescending()
 
         val items = mutableListOf<DiaryDayItem>()
@@ -112,7 +120,7 @@ class DiaryViewModel(application: Application) : AndroidViewModel(application) {
                 )
             } else {
                 sessionsByDate[date]?.forEach { range ->
-                    buildSessionSummary(messageDao, range)?.let {
+                    buildSessionSummary(messageDao, range, date)?.let {
                         items += DiaryDayItem.SessionCard(it)
                     }
                 }

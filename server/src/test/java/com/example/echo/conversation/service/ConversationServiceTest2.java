@@ -277,9 +277,10 @@ class ConversationServiceTest2 {
         @DisplayName("성공: 일기 생성 성공 시 응답에 diaryStatus=SUCCESS와 diaryId가 담긴다")
         void success_responseContainsDiaryStatus() {
             // given
+            LocalDate diaryDate = LocalDate.now();
             Diary diary = Diary.builder()
                     .userId(userId)
-                    .diaryDate(LocalDate.now())
+                    .diaryDate(diaryDate)
                     .content("오늘의 일기")
                     .status(DiaryStatus.SUCCESS)
                     .build();
@@ -294,6 +295,8 @@ class ConversationServiceTest2 {
             assertThat(response.getDiaryStatus()).isEqualTo("SUCCESS");
             assertThat(response.getDiaryError()).isNull();
             assertThat(response.getEndedAt()).isNotNull();
+            // 클라이언트가 일기 탭 날짜 버킷을 서버 값으로 신뢰할 수 있도록 diaryDate가 그대로 담겨야 함
+            assertThat(response.getDiaryDate()).isEqualTo(diaryDate);
         }
 
         @Test
@@ -334,6 +337,7 @@ class ConversationServiceTest2 {
             assertThat(response.getDiaryStatus()).isEqualTo("SKIPPED");
             assertThat(response.getDiaryId()).isNull();
             assertThat(response.getDiaryError()).isNull();
+            assertThat(response.getDiaryDate()).isNull();
         }
     }
 }
