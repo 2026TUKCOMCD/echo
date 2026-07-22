@@ -15,6 +15,7 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.VisitedPlace;
+import com.example.echo.memory.entity.Memory;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
@@ -167,6 +168,56 @@ public class PromptService {
         variables.put("conversationHistory", buildConversationHistoryText(context.getConversationHistory()));
 
         return template.compile(variables);
+    }
+
+    /**
+     * 장기기억 추출 프롬프트 생성
+     *
+     * 대화 종료 시 MemoryService가 호출
+     * [기존 기억 전체 + 이번 세션 대화]를 함께 전달해 통합된 전체 목록을 재생성하게 함
+     *
+     * 템플릿 변수 (v1):
+     * - {{userName}}: 사용자 이름
+     * - {{existingMemories}}: 기존에 저장된 기억 목록 (없으면 "(없음)")
+     * - {{conversationHistory}}: 이번 세션의 대화 내용
+     *
+     * @param context 대화 종료 시점의 UserContext
+     * @param existingMemories 기존에 저장된 장기기억 목록 (null 허용)
+     * @return 컴파일된 기억 추출 프롬프트 문자열
+     * @throws IllegalStateException 활성화된 MEMORY 템플릿이 없을 경우
+     */
+    public String buildMemoryPrompt(UserContext context, List<Memory> existingMemories) {
+        PromptTemplate template = getActiveTemplate(PromptType.MEMORY);
+
+        UserPreferences preferences = context.getPreferences();
+
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("userName", preferences != null ? preferences.getName() : "사용자");
+        variables.put("existingMemories", buildExistingMemoriesText(existingMemories));
+        variables.put("conversationHistory", buildConversationHistoryText(context.getConversationHistory()));
+
+        return template.compile(variables);
+    }
+
+    /**
+     * 기존 장기기억 목록을 프롬프트용 텍스트로 변환
+     */
+    private String buildExistingMemoriesText(List<Memory> memories) {
+        if (memories == null || memories.isEmpty()) {
+            return "(없음)";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        memories.forEach(memory -> {
+            sb.append("- [").append(memory.getLifePeriod()).append("/").append(memory.getTopic()).append("] ")
+                    .append(memory.getContent());
+            if (memory.getTags() != null && !memory.getTags().isBlank()) {
+                sb.append(" (태그: ").append(memory.getTags()).append(")");
+            }
+            sb.append("\n");
+        });
+
+        return sb.toString().trim();
     }
 
     /**

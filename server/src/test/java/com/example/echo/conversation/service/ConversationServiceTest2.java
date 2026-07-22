@@ -12,6 +12,8 @@ import com.example.echo.diary.entity.DiaryStatus;
 import com.example.echo.diary.service.DiaryOutcome;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.service.HealthDataService;
+import com.example.echo.memory.entity.Memory;
+import com.example.echo.memory.service.MemoryService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
@@ -21,6 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -60,6 +63,9 @@ class ConversationServiceTest2 {
 
     @Mock
     private HealthDataService healthDataService;
+
+    @Mock
+    private MemoryService memoryService;
 
     private Long userId;
     private UserContext mockContext;
@@ -139,6 +145,58 @@ class ConversationServiceTest2 {
             inOrder.verify(promptService).buildSystemPrompt(mockContext);
             inOrder.verify(aiService).generateGreeting(systemPrompt, mockContext);
             inOrder.verify(voiceService).textToSpeech(greeting, mockVoiceSettings);
+        }
+
+        @Test
+        @DisplayName("성공: 저장된 장기기억이 시스템 프롬프트에 주입된다")
+        void success_injectsLifeMemoriesIntoSystemPrompt() {
+            // given
+            String systemPrompt = "시스템 프롬프트";
+            given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
+            given(promptService.buildSystemPrompt(mockContext)).willReturn(systemPrompt);
+            given(memoryService.getMemories(userId)).willReturn(java.util.List.of(
+                    Memory.builder()
+                            .userId(userId)
+                            .lifePeriod("청년기")
+                            .topic("직업")
+                            .content("30대에 부산에서 어부로 일했다")
+                            .tags("부산,어부")
+                            .build()
+            ));
+            given(aiService.generateGreeting(anyString(), eq(mockContext))).willReturn("안녕하세요!");
+            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
+
+            // when
+            conversationService.startConversation(userId, null, null);
+
+            // then: 원본 프롬프트 뒤에 기억 섹션이 덧붙어 AI에 전달되어야 함
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            then(aiService).should().generateGreeting(promptCaptor.capture(), eq(mockContext));
+
+            String finalPrompt = promptCaptor.getValue();
+            assertThat(finalPrompt).startsWith(systemPrompt);
+            assertThat(finalPrompt).contains("[어르신의 지난 이야기");
+            assertThat(finalPrompt).contains("30대에 부산에서 어부로 일했다");
+            assertThat(finalPrompt).contains("부산,어부");
+        }
+
+        @Test
+        @DisplayName("성공: 장기기억 조회가 실패해도 원본 프롬프트로 대화를 시작한다")
+        void memoryLookupFailure_startsConversationWithOriginalPrompt() {
+            // given
+            String systemPrompt = "시스템 프롬프트";
+            given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
+            given(promptService.buildSystemPrompt(mockContext)).willReturn(systemPrompt);
+            given(memoryService.getMemories(userId)).willThrow(new RuntimeException("DB 연결 끊김"));
+            given(aiService.generateGreeting(systemPrompt, mockContext)).willReturn("안녕하세요!");
+            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
+
+            // when
+            ConversationStartResponse result = conversationService.startConversation(userId, null, null);
+
+            // then
+            assertThat(result.getMessage()).isEqualTo("안녕하세요!");
+            then(aiService).should().generateGreeting(systemPrompt, mockContext);
         }
     }
 
@@ -338,6 +396,47 @@ class ConversationServiceTest2 {
             assertThat(response.getDiaryId()).isNull();
             assertThat(response.getDiaryError()).isNull();
             assertThat(response.getDiaryDate()).isNull();
+        }
+
+        @Test
+        @DisplayName("성공: 대화 원문이 사라지기 전에 장기기억을 추출한다")
+        void success_extractsMemoriesBeforeContextIsFinalized() {
+            // given
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            conversationService.endConversation(userId);
+
+            // then: finalizeContext가 대화 원문을 지우므로 추출이 반드시 그 전이어야 함
+            var inOrder = inOrder(memoryService, contextService);
+            inOrder.verify(memoryService).extractAndSaveMemories(mockContext);
+            inOrder.verify(contextService).finalizeContext(userId);
+        }
+
+        @Test
+        @DisplayName("성공: 장기기억 추출이 실패해도 일기 결과와 컨텍스트 정리에 영향이 없다")
+        void memoryExtractionFailure_doesNotAffectDiaryOrCleanup() {
+            // given
+            Diary diary = Diary.builder()
+                    .userId(userId)
+                    .diaryDate(LocalDate.now())
+                    .content("오늘의 일기")
+                    .status(DiaryStatus.SUCCESS)
+                    .build();
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Processed(diary));
+            willThrow(new RuntimeException("기억 추출 실패"))
+                    .given(memoryService).extractAndSaveMemories(mockContext);
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then: 일기는 SUCCESS 그대로여야 하고(FAILED로 오염 금지), 컨텍스트도 정리되어야 함
+            assertThat(response.getDiaryStatus()).isEqualTo("SUCCESS");
+            assertThat(response.getDiaryError()).isNull();
+            then(contextService).should().finalizeContext(userId);
         }
     }
 }

@@ -9,6 +9,7 @@ import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
+import com.example.echo.memory.service.MemoryService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
@@ -48,6 +49,9 @@ class ConversationServiceTest {
     @Mock
     private HealthDataService healthDataService;
 
+    @Mock
+    private MemoryService memoryService;
+
     //@InjectMocks-제거
     private ConversationService conversationService;
 
@@ -63,7 +67,8 @@ class ConversationServiceTest {
                 aiService,
                 contextService,
                 diaryService,
-                healthDataService
+                healthDataService,
+                memoryService
         );
         mockContext = createMockContext();
     }
