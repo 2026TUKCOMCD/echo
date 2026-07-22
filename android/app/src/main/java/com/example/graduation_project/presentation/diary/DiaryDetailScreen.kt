@@ -199,7 +199,8 @@ fun DiaryDetailScreen(
 @Composable
 private fun DiaryContentCard(diary: DiaryEntity?) {
     val colors = LocalEchoColors.current
-    val isFailed = diary?.status == "FAILED"
+    val hasStaleContent = diary?.status == "FAILED" && diary.content != null
+    val isTotalFailure = diary?.status == "FAILED" && diary.content == null
 
     Surface(
         modifier = Modifier
@@ -225,7 +226,9 @@ private fun DiaryContentCard(diary: DiaryEntity?) {
                     fontFamily = OutfitFontFamily,
                     color = colors.textPrimary
                 )
-                if (isFailed) {
+                if (hasStaleContent) {
+                    FailureBadge(text = "갱신 실패", backgroundColor = colors.accentBlue)
+                } else if (isTotalFailure) {
                     FailureBadge()
                 }
             }
@@ -254,11 +257,19 @@ private fun DiaryContentCard(diary: DiaryEntity?) {
                     color = colors.textTertiary
                 )
             }
-            // 디버깅 단계: 실패 사유를 상세 화면에 그대로 노출
-            if (isFailed && diary?.failureReason != null) {
+            if (hasStaleContent) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "실패 사유: ${diary.failureReason}",
+                    text = "오늘 대화 내용이 아직 반영되지 않았어요.",
+                    fontSize = 14.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = colors.accentBlue,
+                    lineHeight = 20.sp
+                )
+            } else if (isTotalFailure) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "일기를 만들지 못했어요. 잠시 후 다시 확인해 주세요.",
                     fontSize = 14.sp,
                     fontFamily = OutfitFontFamily,
                     color = colors.accentRed,

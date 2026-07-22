@@ -9,6 +9,7 @@ import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.diary.entity.Diary;
 import com.example.echo.diary.entity.DiaryStatus;
+import com.example.echo.diary.service.DiaryOutcome;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.prompt.service.PromptService;
@@ -284,7 +285,7 @@ class ConversationServiceTest2 {
                     .status(DiaryStatus.SUCCESS)
                     .build();
             given(contextService.getContext(userId)).willReturn(mockContext);
-            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(diary);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Processed(diary));
             willDoNothing().given(contextService).finalizeContext(userId);
 
             // when
@@ -309,7 +310,7 @@ class ConversationServiceTest2 {
                     .failureReason("AI 일기 생성 실패: 401")
                     .build();
             given(contextService.getContext(userId)).willReturn(mockContext);
-            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(failedDiary);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Processed(failedDiary));
             willDoNothing().given(contextService).finalizeContext(userId);
 
             // when
@@ -326,7 +327,7 @@ class ConversationServiceTest2 {
         void diarySkipped_responseContainsSkipped() {
             // given
             given(contextService.getContext(userId)).willReturn(mockContext);
-            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(null);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Skipped());
             willDoNothing().given(contextService).finalizeContext(userId);
 
             // when

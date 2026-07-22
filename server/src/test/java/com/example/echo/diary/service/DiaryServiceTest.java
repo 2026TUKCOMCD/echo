@@ -80,10 +80,10 @@ class DiaryServiceTest {
         when(diaryRepository.save(any(Diary.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        Diary result = diaryService.generateAndSaveDiary(context);
+        DiaryOutcome outcome = diaryService.generateAndSaveDiary(context);
 
         // then
-        assertThat(result).isNotNull();
+        Diary result = processedDiary(outcome);
         assertThat(result.getStatus()).isEqualTo(DiaryStatus.SUCCESS);
         assertThat(result.getContent()).isEqualTo("오늘은 산책을 다녀왔다.");
         assertThat(result.getDiaryDate()).isEqualTo(TODAY);
@@ -108,10 +108,11 @@ class DiaryServiceTest {
         when(diaryRepository.save(any(Diary.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        Diary result = diaryService.generateAndSaveDiary(context);
+        DiaryOutcome outcome = diaryService.generateAndSaveDiary(context);
 
         // then
         verify(promptService).buildDiaryPrompt(eq(context), eq("아침에 쓴 기존 일기"));
+        Diary result = processedDiary(outcome);
         assertThat(result.getStatus()).isEqualTo(DiaryStatus.SUCCESS);
         assertThat(result.getContent()).isEqualTo("아침 산책과 오후 이야기를 담은 통합 일기");
         assertThat(result.getFailureReason()).isNull();
@@ -134,13 +135,34 @@ class DiaryServiceTest {
         when(diaryRepository.save(any(Diary.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        Diary result = diaryService.generateAndSaveDiary(context);
+        DiaryOutcome outcome = diaryService.generateAndSaveDiary(context);
 
         // then
-        assertThat(result).isNotNull();
+        Diary result = processedDiary(outcome);
         assertThat(result.getStatus()).isEqualTo(DiaryStatus.FAILED);
         assertThat(result.getFailureReason()).contains("AI 일기 생성 실패");
         assertThat(result.getContent()).isEqualTo("아침에 성공한 일기"); // 성공본 보존
+    }
+
+    @Test
+    @DisplayName("AI 생성과 실패 기록 저장이 모두 실패해도 Skipped와 구분되는 Processed(FAILED)를 반환한다")
+    void generateAndSaveDiary_returnsProcessedFailedEvenWhenFailureRecordSaveFails() {
+        // given
+        UserContext context = contextWithUserMessage();
+        when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.empty());
+        when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
+        when(aiService.generateDiary("일기 프롬프트")).thenThrow(new AIException("AI 일기 생성 실패: 500"));
+        when(diaryRepository.save(any(Diary.class))).thenThrow(new RuntimeException("DB 연결 끊김"));
+
+        // when
+        DiaryOutcome outcome = diaryService.generateAndSaveDiary(context);
+
+        // then: Skipped가 아니라 Processed(FAILED)여야 "발화 없어 스킵"과 구분됨
+        assertThat(outcome).isInstanceOf(DiaryOutcome.Processed.class);
+        Diary result = processedDiary(outcome);
+        assertThat(result.getStatus()).isEqualTo(DiaryStatus.FAILED);
+        assertThat(result.getFailureReason()).contains("AI 일기 생성 실패");
+        assertThat(result.getId()).isNull(); // 저장 자체는 실패했으므로 id는 없음
     }
 
     @Test
@@ -157,11 +179,16 @@ class DiaryServiceTest {
                 .build());
 
         // when
-        Diary result = diaryService.generateAndSaveDiary(context);
+        DiaryOutcome outcome = diaryService.generateAndSaveDiary(context);
 
         // then
-        assertThat(result).isNull();
+        assertThat(outcome).isInstanceOf(DiaryOutcome.Skipped.class);
         verifyNoInteractions(aiService);
         verify(diaryRepository, never()).save(any());
+    }
+
+    private static Diary processedDiary(DiaryOutcome outcome) {
+        assertThat(outcome).isInstanceOf(DiaryOutcome.Processed.class);
+        return ((DiaryOutcome.Processed) outcome).diary();
     }
 }

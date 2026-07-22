@@ -29,7 +29,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -103,11 +106,6 @@ fun ConversationScreen(
         }
     }
 
-    // 화면 진입 시 자동으로 대화 시작
-    LaunchedEffect(Unit) {
-        viewModel.startConversation()
-    }
-
     // Ended 상태가 되면 웨이브 애니메이션 + 작별 메시지를 보여준 후 뒤로 이동
     LaunchedEffect(uiState.conversationState) {
         if (uiState.conversationState is ConversationState.Ended) {
@@ -116,7 +114,22 @@ fun ConversationScreen(
         }
     }
 
+    // 자동 시작은 화면당 1회만. 권한 다이얼로그로 content가 컴포지션에서 빠졌다가
+    // 다시 들어오거나(설정 왕복), 회전으로 컴포지션이 재생성돼도 재발화하지 않도록
+    // 플래그를 권한 게이트 "바깥"에 둔다.
+    var autoStartRequested by rememberSaveable { mutableStateOf(false) }
+
     UnifiedPermissionHandler {
+        // 권한 흐름이 끝나고 마이크 권한이 확인된 뒤에만 컴포즈되므로,
+        // 세션 생성 / 알림 취소 / 위치·건강 수집 / TTS 재생이 권한 다이얼로그
+        // 뒤에서 선행 실행되지 않는다.
+        LaunchedEffect(Unit) {
+            if (!autoStartRequested) {
+                autoStartRequested = true
+                viewModel.startConversation()
+            }
+        }
+
         ConversationScreenContent(
             uiState = uiState,
             snackbarHostState = snackbarHostState,
