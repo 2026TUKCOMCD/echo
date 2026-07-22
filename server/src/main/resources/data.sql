@@ -962,6 +962,8 @@ INSERT INTO prompt_templates (template_type, template_content, version, is_activ
      예: "그 근처에서 젊으실 때 기억이 있으신가요?"
   ③ 방문 장소가 없으면 날씨나 취미({{hobby}})를 실마리로 과거 회상 유도
 
+  - 위 어느 경우든 방문 시점 날씨를 곁들여도 좋다: "그때도 이렇게 따뜻했나요?"
+
 ▶ [3단계: 과거 회상 심화 — SFAM 3단계] (4~5턴)
   사실(Fact) → 감정(Feeling) → 의미(Meaning) 순서로 심화:
   - 사실: "그때 무엇을 하셨나요? / 누구와 함께 계셨나요?"
