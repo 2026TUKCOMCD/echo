@@ -10,6 +10,7 @@ import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.entity.Diary;
+import com.example.echo.diary.service.DiaryOutcome;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.location.dto.RawLocationData;
@@ -150,13 +151,14 @@ public class ConversationService {
             log.info("컨텍스트 조회 완료 - 대화 턴 수: {}", context.getConversationHistory().size());
 
             // 2. 일기 생성 (동기) - 실패해도 대화 종료는 계속되며, 결과를 응답에 명시
-            Diary diary = diaryService.generateAndSaveDiary(context);
-            if (diary == null) {
-                diaryStatus = "SKIPPED";
-            } else {
+            DiaryOutcome outcome = diaryService.generateAndSaveDiary(context);
+            if (outcome instanceof DiaryOutcome.Processed processed) {
+                Diary diary = processed.diary();
                 diaryStatus = diary.getStatus().name();
                 diaryId = diary.getId();
                 diaryError = diary.getFailureReason();
+            } else {
+                diaryStatus = "SKIPPED";
             }
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}", userId, e);

@@ -45,10 +45,11 @@ public class DiaryService {
      * 대화 종료 시 오늘의 일기 생성/갱신
      *
      * @param context 대화 종료 시점의 UserContext
-     * @return 저장된 Diary (SUCCESS 또는 FAILED), 사용자 발화가 없어 스킵한 경우 null
+     * @return Skipped(사용자 발화 없어 의도적으로 건너뜀) 또는
+     *         Processed(생성 시도함 - diary.status가 SUCCESS/FAILED, 실패 기록 저장까지 실패하면 diary.id는 null)
      */
     @Transactional
-    public Diary generateAndSaveDiary(UserContext context) {
+    public DiaryOutcome generateAndSaveDiary(UserContext context) {
         Long userId = context.getUserId();
         LocalDate today = LocalDate.now(KST);
 
@@ -58,7 +59,7 @@ public class DiaryService {
         // 인사만 듣고 종료한 세션은 일기를 만들 내용이 없음 - 기존 일기를 건드리지 않고 스킵
         if (!hasUserMessage(context.getConversationHistory())) {
             log.info("일기 생성 스킵 - 사용자 발화 없음 - userId: {}", userId);
-            return null;
+            return new DiaryOutcome.Skipped();
         }
 
         Diary existing = diaryRepository.findByUserIdAndDiaryDate(userId, today).orElse(null);
@@ -71,10 +72,10 @@ public class DiaryService {
 
             Diary saved = upsertSuccess(userId, today, existing, content, weather);
             log.info("일기 생성 완료 - userId: {}, diaryId: {}, 길이: {}", userId, saved.getId(), content.length());
-            return saved;
+            return new DiaryOutcome.Processed(saved);
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}, date: {}", userId, today, e);
-            return saveFailure(userId, today, existing, e);
+            return new DiaryOutcome.Processed(saveFailure(userId, today, existing, e));
         }
     }
 
@@ -131,17 +132,22 @@ public class DiaryService {
 
     private Diary saveFailure(Long userId, LocalDate date, Diary existing, Exception cause) {
         String reason = truncate(cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName());
+        Diary failed;
+        if (existing != null) {
+            // 같은 날 이미 성공한 일기가 있으면 content는 보존하고 상태만 FAILED로 표시
+            existing.markFailed(reason);
+            failed = existing;
+        } else {
+            failed = buildNewDiary(userId, date, null, null, DiaryStatus.FAILED, reason);
+        }
         try {
-            if (existing != null) {
-                // 같은 날 이미 성공한 일기가 있으면 content는 보존하고 상태만 FAILED로 표시
-                existing.markFailed(reason);
-                return diaryRepository.save(existing);
-            }
-            return diaryRepository.save(buildNewDiary(userId, date, null, null, DiaryStatus.FAILED, reason));
+            return diaryRepository.save(failed);
         } catch (Exception saveError) {
-            // 실패 기록 저장마저 실패해도 대화 종료 흐름은 막지 않음
+            // 실패 기록 저장마저 실패해도 대화 종료 흐름은 막지 않음.
+            // DiaryOutcome.Processed로 감싸 반환해야 하므로, 저장은 못 했더라도(id=null)
+            // status=FAILED인 객체는 그대로 반환한다
             log.error("일기 실패 기록 저장 실패 - userId: {}, date: {}", userId, date, saveError);
-            return null;
+            return failed;
         }
     }
 
