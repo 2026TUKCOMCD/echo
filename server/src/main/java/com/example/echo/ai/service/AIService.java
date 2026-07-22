@@ -204,6 +204,54 @@ public class AIService {
     }
 
     /**
+     * 장기기억 추출
+     *
+     * 대화 종료 시 [기존 기억 + 이번 대화]를 통합한 전체 기억 목록을 JSON 배열로 받는다.
+     * 응답은 원문 그대로 반환하며, 파싱은 호출자(MemoryService)가 담당한다.
+     *
+     * @param memoryPrompt PromptService.buildMemoryPrompt()로 조합된 기억 추출 프롬프트
+     * @return AI가 생성한 JSON 배열 원문
+     * @throws AIException API 호출 실패 또는 빈 응답 시
+     */
+    public String generateMemoryExtraction(String memoryPrompt) {
+        log.debug("Extracting memories - prompt length: {}", memoryPrompt != null ? memoryPrompt.length() : 0);
+
+        List<ChatCompletionRequest.Message> messages = new ArrayList<>();
+
+        messages.add(ChatCompletionRequest.Message.builder()
+                .role("system")
+                .content(memoryPrompt)
+                .build());
+
+        messages.add(ChatCompletionRequest.Message.builder()
+                .role("user")
+                .content("위 대화에서 어르신의 장기 기억을 JSON 배열로 추출해주세요.")
+                .build());
+
+        ChatCompletionRequest request = ChatCompletionRequest.builder()
+                .model(modelRotationService.currentModel())
+                .messages(messages)
+                .temperature(chatProperties.getTemperature())
+                .maxTokens(chatProperties.getMaxTokens())
+                .build();
+
+        try {
+            ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            String extracted = extractContent(response);
+
+            if (extracted.isBlank()) {
+                throw new AIException("기억 추출 결과가 비어있습니다");
+            }
+
+            log.debug("Extracted memories - length: {}", extracted.length());
+            return extracted.trim();
+        } catch (FeignException e) {
+            log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
+            throw new AIException("AI 기억 추출 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * API 응답에서 텍스트 추출
      * 응답 구조: response.choices[0].message.content
      */

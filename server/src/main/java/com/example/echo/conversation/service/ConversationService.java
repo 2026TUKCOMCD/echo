@@ -15,6 +15,8 @@ import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.location.dto.RawLocationData;
 import com.example.echo.health.service.HealthDataService;
+import com.example.echo.memory.entity.Memory;
+import com.example.echo.memory.service.MemoryService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +38,7 @@ public class ConversationService {
     private final ContextService contextService;
     private final DiaryService diaryService;
     private final HealthDataService healthDataService;
+    private final MemoryService memoryService;
 
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
@@ -47,8 +50,9 @@ public class ConversationService {
         UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
 
         // 2. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
-        // 최근 7일 일기를 덧붙여 AI가 이전 대화 내용을 기억하는 것처럼 이어가게 함
-        String systemPrompt = appendRecentDiaries(promptService.buildSystemPrompt(context), userId);
+        // 장기기억은 템플릿 변수로, 최근 7일 일기는 뒤에 덧붙여 AI가 이전 대화를 기억하는 것처럼 이어가게 함
+        String systemPrompt = appendRecentDiaries(
+                promptService.buildSystemPrompt(context, loadLifeMemories(userId)), userId);
         context.setSystemPrompt(systemPrompt);
 
         // 3. 첫 인사 생성
@@ -123,6 +127,27 @@ public class ConversationService {
         }
     }
 
+    /**
+     * 시스템 프롬프트에 주입할 장기기억 조회
+     *
+     * 일기(최근 7일)가 "오늘 무슨 일이 있었나"라면, 장기기억은 "이 분은 어떤 분인가"에 해당한다.
+     * 오늘의 방문 장소를 단서 삼아 옛 기억을 끌어내는 회상 대화의 재료로 쓰인다.
+     *
+     * 기억 조회에 실패해도 대화 시작을 막지 않음 (기억 없이 진행)
+     *
+     * 기억이 상한(20개)을 넘어 선별이 필요해지면 이 메서드 안에서만 교체하면 된다.
+     */
+    private List<Memory> loadLifeMemories(Long userId) {
+        try {
+            List<Memory> memories = memoryService.getMemories(userId);
+            log.info("장기기억 {}건을 시스템 프롬프트에 주입 - userId: {}", memories.size(), userId);
+            return memories;
+        } catch (Exception e) {
+            log.warn("장기기억 조회 실패 - 장기기억 없이 대화 시작 - userId: {}", userId, e);
+            return List.of();
+        }
+    }
+
     public TtsRetryResponse retryTts(Long userId) {
         UserContext context = contextService.getContext(userId);
 
@@ -164,12 +189,20 @@ public class ConversationService {
             } else {
                 diaryStatus = "SKIPPED";
             }
+
+            // 3. 장기기억 추출 (동기) - 일기와 독립적이며, 실패해도 대화 종료·일기 결과에 영향 없음
+            //    대화 원문은 아래 finalizeContext에서 사라지므로 반드시 그 전에 추출해야 함
+            try {
+                memoryService.extractAndSaveMemories(context);
+            } catch (Exception e) {
+                log.warn("장기기억 추출 실패 - userId: {}", userId, e);
+            }
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}", userId, e);
             diaryStatus = "FAILED";
             diaryError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
         } finally {
-            // 3. 컨텍스트 정리 (어떤 경우에도 보장)
+            // 4. 컨텍스트 정리 (어떤 경우에도 보장)
             contextService.finalizeContext(userId);
         }
 

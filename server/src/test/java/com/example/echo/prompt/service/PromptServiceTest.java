@@ -17,6 +17,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.example.echo.memory.entity.Memory;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -94,6 +96,53 @@ class PromptServiceTest {
 
         // Then
         assertThat(result).isEqualTo("홍길동님은 65세입니다.");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 장기기억이 {{lifeMemories}} 자리에 치환됨")
+    void buildSystemPrompt_lifeMemoriesSubstituted() {
+        // Given
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("[지난 이야기]\n{{lifeMemories}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        List<Memory> memories = List.of(
+                Memory.builder().userId(TEST_USER_ID).lifePeriod("청년기").topic("직업")
+                        .content("30대에 부산에서 어부로 일했다").tags("부산,어부").build(),
+                Memory.builder().userId(TEST_USER_ID).lifePeriod("중년기").topic("가족")
+                        .content("손주 이름은 민준이다").build());
+
+        // When
+        String result = promptService.buildSystemPrompt(context, memories);
+
+        // Then
+        assertThat(result).contains("- [청년기/직업] 30대에 부산에서 어부로 일했다 (태그: 부산,어부)");
+        // 태그가 없으면 태그 표기를 붙이지 않음
+        assertThat(result).contains("- [중년기/가족] 손주 이름은 민준이다");
+        assertThat(result).doesNotContain("태그: null");
+        assertThat(result).doesNotContain("{{lifeMemories}}");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 저장된 장기기억이 없으면 없다고 명시해 AI가 아는 척하지 않게 함")
+    void buildSystemPrompt_noLifeMemories() {
+        // Given
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{lifeMemories}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When (기존 단일 인자 호출은 기억 없음과 동일하게 동작해야 함)
+        String result = promptService.buildSystemPrompt(context);
+
+        // Then
+        assertThat(result).contains("아직 들려주신 옛 이야기가 없습니다");
+        assertThat(result).doesNotContain("{{lifeMemories}}");
     }
 
     @Test
