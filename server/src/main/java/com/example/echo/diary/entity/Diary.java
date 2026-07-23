@@ -53,8 +53,12 @@ public class Diary {
     @Column(name = "weather", length = 100)
     private String weather;
 
+    /**
+     * columnDefinition을 지정하지 않으면 Hibernate가 네이티브 ENUM 컬럼을 만들어
+     * DiaryStatus에 값이 추가될 때마다 운영 DB에 ALTER가 필요해지므로 VARCHAR로 고정한다.
+     */
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
+    @Column(name = "status", nullable = false, length = 20, columnDefinition = "varchar(20)")
     private DiaryStatus status;
 
     @Column(name = "failure_reason", length = 500)
