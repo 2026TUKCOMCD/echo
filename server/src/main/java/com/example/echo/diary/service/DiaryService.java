@@ -6,6 +6,7 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.diary.entity.Diary;
 import com.example.echo.diary.entity.DiaryStatus;
 import com.example.echo.diary.exception.DiaryNotFoundException;
+import com.example.echo.diary.exception.InvalidDateRangeException;
 import com.example.echo.diary.repository.DiaryRepository;
 import com.example.echo.prompt.service.PromptService;
 import lombok.RequiredArgsConstructor;
@@ -85,8 +86,21 @@ public class DiaryService {
     @Transactional(readOnly = true)
     public List<Diary> getDiaries(Long userId, int days) {
         LocalDate today = LocalDate.now(KST);
+        return getDiariesInRange(userId, today.minusDays(days - 1L), today);
+    }
+
+    /**
+     * 지정한 날짜 범위(양끝 포함)의 일기 조회 (날짜 내림차순)
+     *
+     * 캘린더 월 이동 등 임의 구간 조회에 사용 (일기 탭 캘린더 UI)
+     */
+    @Transactional(readOnly = true)
+    public List<Diary> getDiariesInRange(Long userId, LocalDate startDate, LocalDate endDate) {
+        if (endDate.isBefore(startDate)) {
+            throw new InvalidDateRangeException(startDate, endDate);
+        }
         return diaryRepository.findByUserIdAndDiaryDateBetweenOrderByDiaryDateDesc(
-                userId, today.minusDays(days - 1L), today);
+                userId, startDate, endDate);
     }
 
     /**

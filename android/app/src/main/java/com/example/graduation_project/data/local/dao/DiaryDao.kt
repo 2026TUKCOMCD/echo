@@ -34,4 +34,11 @@ interface DiaryDao {
      */
     @Query("SELECT * FROM diaries WHERE date = :date")
     suspend fun getByDate(date: String): DiaryEntity?
+
+    /**
+     * 날짜 범위(양끝 포함) 일기 조회 (최신 날짜순)
+     * - 일기 탭 캘린더에서 현재 보는 달만 관찰할 때 사용
+     */
+    @Query("SELECT * FROM diaries WHERE date BETWEEN :start AND :end ORDER BY date DESC")
+    fun observeByDateRange(start: String, end: String): Flow<List<DiaryEntity>>
 }

@@ -9,6 +9,8 @@ import com.example.graduation_project.data.local.dao.DiaryDao
 import com.example.graduation_project.data.local.entity.DiaryEntity
 import com.example.graduation_project.data.model.Diary
 import kotlinx.coroutines.flow.Flow
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 /**
  * 일기 저장소
@@ -38,9 +40,34 @@ class DiaryRepository(
     }
 
     /**
+     * 서버에서 지정한 달(1일~말일) 일기를 받아 로컬 캐시 갱신
+     * 일기 탭 캘린더에서 달 이동 시 호출 - 실패 시 캐시는 그대로 유지됨
+     */
+    suspend fun refreshMonth(yearMonth: YearMonth): ApiResult<Unit> {
+        val startDate = yearMonth.atDay(1).format(DATE_FORMATTER)
+        val endDate = yearMonth.atEndOfMonth().format(DATE_FORMATTER)
+        return when (val result = safeApiCall { diaryApi.getDiariesInRange(startDate, endDate) }) {
+            is ApiResult.Success -> {
+                diaryDao.upsertAll(result.data.map { it.toEntity() })
+                ApiResult.Success(Unit)
+            }
+            is ApiResult.Error -> result
+        }
+    }
+
+    /**
      * 로컬 캐시의 일기 목록 구독 (최신 날짜순)
      */
     fun observeDiaries(): Flow<List<DiaryEntity>> = diaryDao.observeAll()
+
+    /**
+     * 지정한 달(1일~말일)의 캐시된 일기 구독 - 일기 탭 캘린더에서 사용
+     */
+    fun observeMonth(yearMonth: YearMonth): Flow<List<DiaryEntity>> {
+        val startDate = yearMonth.atDay(1).format(DATE_FORMATTER)
+        val endDate = yearMonth.atEndOfMonth().format(DATE_FORMATTER)
+        return diaryDao.observeByDateRange(startDate, endDate)
+    }
 
     /**
      * 특정 날짜의 캐시된 일기 조회
@@ -67,5 +94,6 @@ class DiaryRepository(
 
     companion object {
         private const val TAG = "DiaryRepository"
+        private val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE
     }
 }
