@@ -6,6 +6,7 @@ import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.diary.entity.Diary;
 import com.example.echo.diary.entity.DiaryStatus;
+import com.example.echo.diary.exception.InvalidDateRangeException;
 import com.example.echo.diary.repository.DiaryRepository;
 import com.example.echo.prompt.service.PromptService;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -265,6 +267,51 @@ class DiaryServiceTest {
         assertThat(result.getId()).isNull();
         assertThat(result.getStatus()).isEqualTo(DiaryStatus.FAILED);
         verify(diaryRepository, times(1)).save(any(Diary.class));
+    }
+
+    @Test
+    @DisplayName("getDiaries(days)는 오늘을 기준으로 today-(days-1)~today 범위로 위임한다")
+    void getDiaries_delegatesToRangeQuery() {
+        // given
+        LocalDate expectedStart = TODAY.minusDays(29L);
+        when(diaryRepository.findByUserIdAndDiaryDateBetweenOrderByDiaryDateDesc(TEST_USER_ID, expectedStart, TODAY))
+                .thenReturn(List.of());
+
+        // when
+        diaryService.getDiaries(TEST_USER_ID, 30);
+
+        // then
+        verify(diaryRepository).findByUserIdAndDiaryDateBetweenOrderByDiaryDateDesc(TEST_USER_ID, expectedStart, TODAY);
+    }
+
+    @Test
+    @DisplayName("getDiariesInRange는 지정한 시작/종료일 그대로 리포지토리에 위임한다")
+    void getDiariesInRange_delegatesGivenRange() {
+        // given
+        LocalDate start = TODAY.minusMonths(1);
+        LocalDate end = TODAY.minusDays(1);
+        Diary diary = Diary.builder().userId(TEST_USER_ID).diaryDate(start).status(DiaryStatus.SUCCESS).build();
+        when(diaryRepository.findByUserIdAndDiaryDateBetweenOrderByDiaryDateDesc(TEST_USER_ID, start, end))
+                .thenReturn(List.of(diary));
+
+        // when
+        List<Diary> result = diaryService.getDiariesInRange(TEST_USER_ID, start, end);
+
+        // then
+        assertThat(result).containsExactly(diary);
+    }
+
+    @Test
+    @DisplayName("getDiariesInRange에 endDate가 startDate보다 이전이면 InvalidDateRangeException을 던진다")
+    void getDiariesInRange_throwsWhenEndBeforeStart() {
+        // given
+        LocalDate start = TODAY;
+        LocalDate end = TODAY.minusDays(1);
+
+        // when / then
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> diaryService.getDiariesInRange(TEST_USER_ID, start, end))
+                .isInstanceOf(InvalidDateRangeException.class);
+        verifyNoInteractions(diaryRepository);
     }
 
     private static Diary processedDiary(DiaryOutcome outcome) {

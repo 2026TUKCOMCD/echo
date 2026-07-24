@@ -13,6 +13,15 @@ interface DiaryApi {
     @GET("/api/diaries")
     suspend fun getDiaries(@Query("days") days: Int = 30): List<Diary>
 
+    /**
+     * 날짜 범위(양끝 포함) 일기 목록 조회 (날짜 내림차순) - 캘린더 월 조회용
+     */
+    @GET("/api/diaries")
+    suspend fun getDiariesInRange(
+        @Query("startDate") startDate: String,
+        @Query("endDate") endDate: String
+    ): List<Diary>
+
     @GET("/api/diaries/{id}")
     suspend fun getDiary(@Path("id") id: Long): Diary
 }
