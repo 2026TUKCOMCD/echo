@@ -89,6 +89,13 @@ jobs:
                 --query "StandardOutputContent" --output text
               exit 0
             elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "--- StandardOutput (deploy.sh 진행 로그 + 컨테이너 로그) ---"
+              aws ssm get-command-invocation \
+                --region $AWS_REGION \
+                --command-id $COMMAND_ID \
+                --instance-id $EC2_INSTANCE_ID \
+                --query "StandardOutputContent" --output text
+              echo "--- StandardError ---"
               aws ssm get-command-invocation \
                 --region $AWS_REGION \
                 --command-id $COMMAND_ID \
