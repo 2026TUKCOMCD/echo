@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Color
 data class EchoColorScheme(
     val bgPage: Color,
     val bgCard: Color,
+    val bgCardDiary: Color,
     val bgMuted: Color,
     val accentGreen: Color,
     val accentBlue: Color,
@@ -21,6 +22,7 @@ data class EchoColorScheme(
 val defaultEchoColors = EchoColorScheme(
     bgPage        = Color(0xFFF5F4F1),
     bgCard        = Color(0xFFFFFFFF),
+    bgCardDiary   = Color(0xFFE6F2EA),  // 일기 카드 전용 - accentGreen을 은은하게 탄 톤
     bgMuted       = Color(0xFFEDECEA),
     accentGreen   = Color(0xFF3D8A5A),
     accentBlue    = Color(0xFF4A90D9),
@@ -36,6 +38,7 @@ val defaultEchoColors = EchoColorScheme(
 val highContrastEchoColors = EchoColorScheme(
     bgPage        = Color(0xFFFFFBF5),  // 따뜻한 오프화이트 — 노안 눈부심 감소
     bgCard        = Color(0xFFFFFFFF),
+    bgCardDiary   = Color(0xFFCFE0D6),  // 일기 카드 전용 - 고대비에서도 뚜렷이 구분되는 초록 톤
     bgMuted       = Color(0xFFEEECE8),
     accentGreen   = Color(0xFF1A5C38),  // 채도 유지하며 어둡게 — 버튼 가독성
     accentBlue    = Color(0xFF0D4D9C),

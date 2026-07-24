@@ -207,7 +207,7 @@ private fun DiaryContentCard(diary: DiaryEntity?) {
             .fillMaxWidth()
             .shadow(2.dp, RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
-        color = colors.bgCard,
+        color = colors.bgCardDiary,
         tonalElevation = 0.dp
     ) {
         Column(
