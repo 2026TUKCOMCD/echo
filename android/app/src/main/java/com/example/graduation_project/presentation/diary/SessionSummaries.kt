@@ -54,9 +54,10 @@ internal fun formatKoreanTime(timestamp: Long): String =
 internal suspend fun buildSessionSummary(
     messageDao: MessageDao,
     range: SessionRange,
-    dateKey: String
+    dateKey: String,
+    userId: Long
 ): ConversationSummary? {
-    val messages = messageDao.getMessagesByConversationIdOnce(range.conversationId)
+    val messages = messageDao.getMessagesByConversationIdOnce(range.conversationId, userId)
     if (messages.isEmpty()) return null
 
     val first = messages.first()

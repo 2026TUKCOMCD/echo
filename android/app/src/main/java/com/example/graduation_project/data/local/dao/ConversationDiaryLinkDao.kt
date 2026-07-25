@@ -32,4 +32,11 @@ interface ConversationDiaryLinkDao {
      */
     @Query("SELECT diaryDate FROM conversation_diary_link WHERE conversationId = :conversationId")
     suspend fun getDiaryDate(conversationId: String): String?
+
+    /**
+     * 전체 삭제 - 로그아웃/로그인/회원가입 시 계정 전환 캐시 정리용
+     * (서버 /end 응답으로 재생성 가능한 매핑이라 삭제해도 안전)
+     */
+    @Query("DELETE FROM conversation_diary_link")
+    suspend fun deleteAll()
 }

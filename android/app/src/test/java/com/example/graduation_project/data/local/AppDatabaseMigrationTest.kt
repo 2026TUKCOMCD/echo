@@ -57,6 +57,81 @@ class AppDatabaseMigrationTest {
         return FrameworkSQLiteOpenHelperFactory().create(config).writableDatabase
     }
 
+    /** v3 스키마 + MIGRATION_3_4가 만드는 conversation_diary_link (app/schemas/.../4.json 기준) */
+    private fun openV4Database(): SupportSQLiteDatabase {
+        val config = SupportSQLiteOpenHelper.Configuration.builder(ApplicationProvider.getApplicationContext())
+            .name(null) // in-memory
+            .callback(object : SupportSQLiteOpenHelper.Callback(4) {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `messages` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, " +
+                            "`role` TEXT NOT NULL, `content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                    )
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `location_points` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "`latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `timestamp` INTEGER NOT NULL, `date` TEXT NOT NULL)"
+                    )
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `diaries` (`date` TEXT NOT NULL, `serverId` INTEGER NOT NULL, " +
+                            "`title` TEXT, `content` TEXT, `status` TEXT NOT NULL, `failureReason` TEXT, `weather` TEXT, " +
+                            "`mood` TEXT, `updatedAt` TEXT, PRIMARY KEY(`date`))"
+                    )
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `conversation_diary_link` (`conversationId` TEXT NOT NULL, " +
+                            "`diaryDate` TEXT NOT NULL, PRIMARY KEY(`conversationId`))"
+                    )
+                }
+
+                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            })
+            .build()
+        return FrameworkSQLiteOpenHelperFactory().create(config).writableDatabase
+    }
+
+    @Test
+    fun `MIGRATION_4_5는 messages를 보존하며 userId를 -1로 채우고 diaries conversation_diary_link location_points는 비운다`() {
+        // given: v4 상태의 DB를 만들고, 계정 구분 없이 쌓여있던 기존 데이터를 채운다 (유출 재현 상황)
+        val db = openV4Database()
+        db.execSQL(
+            "INSERT INTO messages (id, conversationId, role, content, timestamp) " +
+                "VALUES ('m1', 'conv-1', 'user', '안녕하세요', 1000)"
+        )
+        db.execSQL(
+            "INSERT INTO diaries (date, serverId, title, content, status, failureReason, weather, mood, updatedAt) " +
+                "VALUES ('2026-01-15', 1, '1월 15일의 일기', '오늘 하루', 'SUCCESS', NULL, '맑음', NULL, '2026-01-15T20:00:00')"
+        )
+        db.execSQL("INSERT INTO conversation_diary_link (conversationId, diaryDate) VALUES ('conv-1', '2026-01-15')")
+        db.execSQL(
+            "INSERT INTO location_points (latitude, longitude, timestamp, date) VALUES (37.5, 127.0, 1000, '2026-01-15')"
+        )
+
+        // when: 프로덕션 코드의 MIGRATION_4_5를 그대로 실행
+        AppDatabase.MIGRATION_4_5.migrate(db)
+
+        // then: messages는 삭제되지 않고 보존되며(서버에 원본이 없는 유일한 사본), userId는 -1(소유자 미상)로 채워짐
+        db.query("SELECT id, userId FROM messages WHERE id = 'm1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("m1", cursor.getString(cursor.getColumnIndexOrThrow("id")))
+            assertEquals(-1L, cursor.getLong(cursor.getColumnIndexOrThrow("userId")))
+        }
+
+        // then: diaries / conversation_diary_link / location_points는 계정 구분 없이 캐시된 데이터라 전부 비워짐
+        db.query("SELECT COUNT(*) FROM diaries").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        db.query("SELECT COUNT(*) FROM conversation_diary_link").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        db.query("SELECT COUNT(*) FROM location_points").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        db.close()
+    }
+
     @Test
     fun `MIGRATION_3_4는 기존 messages diaries 데이터를 보존하고 conversation_diary_link 테이블을 정확히 만든다`() {
         // given: v3 상태의 DB를 만들고 기존 데이터를 채운다

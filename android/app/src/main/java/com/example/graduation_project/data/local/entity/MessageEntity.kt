@@ -15,6 +15,7 @@ import androidx.room.PrimaryKey
  * @param role 발화자 역할 ("user" 또는 "assistant")
  * @param content 메시지 내용
  * @param timestamp 메시지 생성 시간 (밀리초)
+ * @param userId 메시지 소유자 (계정별 로컬 캐시 격리용, DB v5부터 추가 - 레거시 행은 -1)
  */
 @Entity(tableName = "messages")
 data class MessageEntity(
@@ -23,7 +24,8 @@ data class MessageEntity(
     val conversationId: String,
     val role: String,
     val content: String,
-    val timestamp: Long
+    val timestamp: Long,
+    val userId: Long
 ) {
     companion object {
         const val ROLE_USER = "user"

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.SessionRange
@@ -70,6 +71,7 @@ class DiaryViewModel(application: Application) : AndroidViewModel(application) {
     private val diaryDao = database.diaryDao()
     private val conversationDiaryLinkDao = database.conversationDiaryLinkDao()
     private val diaryRepository = DiaryRepository(diaryDao)
+    private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
 
     private val currentMonth = MutableStateFlow(YearMonth.now(KST_ZONE))
     private val syncError = MutableStateFlow<String?>(null)
@@ -112,7 +114,7 @@ class DiaryViewModel(application: Application) : AndroidViewModel(application) {
                 .flatMapLatest { month ->
                     combine(
                         diaryRepository.observeMonth(month),
-                        messageDao.getSessionRanges(),
+                        messageDao.getSessionRanges(currentUserId),
                         conversationDiaryLinkDao.observeAll(),
                         syncError
                     ) { diaries, ranges, links, error ->
@@ -157,7 +159,7 @@ class DiaryViewModel(application: Application) : AndroidViewModel(application) {
                 diary != null -> DayCellState.HasDiary(diary, sessionsForDate.size)
                 sessionsForDate.isNotEmpty() -> {
                     val summaries = sessionsForDate.mapNotNull { range ->
-                        buildSessionSummary(messageDao, range, dateKey)
+                        buildSessionSummary(messageDao, range, dateKey, currentUserId)
                     }
                     if (summaries.isEmpty()) DayCellState.Empty else DayCellState.HasSessions(summaries)
                 }
