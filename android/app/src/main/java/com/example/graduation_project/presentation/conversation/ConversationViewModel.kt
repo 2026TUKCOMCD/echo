@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
+import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
@@ -87,6 +88,9 @@ class ConversationViewModel(
 ) : AndroidViewModel(application) {
 
     private val getHealthDataUseCase = GetHealthDataUseCase(healthRepository)
+
+    // 로컬 메시지 캐시 격리용 - 계정 전환 시 다른 계정의 대화가 섞이지 않도록 함
+    private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
 
     // 내부에서만 수정 가능한 상태
     private val _uiState = MutableStateFlow(ConversationUiState())
@@ -814,7 +818,8 @@ class ConversationViewModel(
                     conversationId = convId,
                     role = if (message.isFromUser) MessageEntity.ROLE_USER else MessageEntity.ROLE_ASSISTANT,
                     content = message.text,
-                    timestamp = message.timestamp
+                    timestamp = message.timestamp,
+                    userId = currentUserId
                 )
             )
         }

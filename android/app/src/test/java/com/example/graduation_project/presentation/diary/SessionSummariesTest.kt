@@ -56,13 +56,13 @@ class SessionSummariesTest {
     fun `buildSessionSummary는 전달받은 dateKey를 그대로 표시 날짜로 사용한다`() = runTest {
         // given
         val messages = listOf(
-            MessageEntity("m1", "conv-1", MessageEntity.ROLE_USER, "안녕하세요", firstTimestamp),
-            MessageEntity("m2", "conv-1", MessageEntity.ROLE_ASSISTANT, "안녕하세요, 오늘 하루 어떠셨나요?", lastTimestamp)
+            MessageEntity("m1", "conv-1", MessageEntity.ROLE_USER, "안녕하세요", firstTimestamp, userId = 1L),
+            MessageEntity("m2", "conv-1", MessageEntity.ROLE_ASSISTANT, "안녕하세요, 오늘 하루 어떠셨나요?", lastTimestamp, userId = 1L)
         )
-        coEvery { mockMessageDao.getMessagesByConversationIdOnce("conv-1") } returns messages
+        coEvery { mockMessageDao.getMessagesByConversationIdOnce("conv-1", 1L) } returns messages
 
         // when: 호출부(DiaryViewModel)가 그룹핑에 쓴 것과 동일한 dateKey를 전달
-        val summary = buildSessionSummary(mockMessageDao, range, dateKey = "2026-01-17")
+        val summary = buildSessionSummary(mockMessageDao, range, dateKey = "2026-01-17", userId = 1L)
 
         // then: buildSessionSummary가 내부적으로 다시 계산하지 않고 전달받은 dateKey를 그대로 반영해야
         // 목록 그룹핑과 카드에 표시되는 날짜가 항상 일치함

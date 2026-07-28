@@ -37,6 +37,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.entity.DiaryEntity
 import com.example.graduation_project.presentation.model.ConversationSummary
@@ -71,6 +72,7 @@ class DiaryDetailViewModel(
     private val messageDao = database.messageDao()
     private val diaryDao = database.diaryDao()
     private val conversationDiaryLinkDao = database.conversationDiaryLinkDao()
+    private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
 
     private val _uiState = MutableStateFlow(DiaryDetailUiState())
     val uiState: StateFlow<DiaryDetailUiState> = _uiState.asStateFlow()
@@ -82,7 +84,7 @@ class DiaryDetailViewModel(
     private fun load() {
         viewModelScope.launch {
             combine(
-                messageDao.getSessionRanges(),
+                messageDao.getSessionRanges(currentUserId),
                 conversationDiaryLinkDao.observeAll()
             ) { ranges, links -> ranges to links.associate { it.conversationId to it.diaryDate } }
                 .collect { (ranges, linkedDates) ->
@@ -90,7 +92,7 @@ class DiaryDetailViewModel(
                     // 없으면 lastTimestamp 휴리스틱으로 폴백
                     val sessions = ranges
                         .filter { resolveDateKey(it, linkedDates[it.conversationId]) == date }
-                        .mapNotNull { buildSessionSummary(messageDao, it, date) }
+                        .mapNotNull { buildSessionSummary(messageDao, it, date, currentUserId) }
                     _uiState.value = DiaryDetailUiState(
                         diary = diaryDao.getByDate(date),
                         sessions = sessions,

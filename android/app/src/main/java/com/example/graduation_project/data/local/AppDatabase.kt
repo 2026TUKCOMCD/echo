@@ -29,7 +29,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
  */
 @Database(
     entities = [MessageEntity::class, LocationPointEntity::class, DiaryEntity::class, ConversationDiaryLinkEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -109,6 +109,25 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
+         * Migration 4 → 5: 계정별 로컬 캐시 격리 (다른 계정으로 로그인해도
+         * 이전 계정의 일기·대화가 보이는 문제 수정)
+         *
+         * - messages: userId 컬럼 추가. 기존 행은 소유자를 알 수 없으므로 -1로 표시하고,
+         *   앱 시작 시 MessageDao.backfillLegacyOwner()가 현재 로그인 사용자에게 귀속시킴
+         *   (서버에 원본이 없는 유일한 사본이라 삭제 대신 이 방식으로 보존)
+         * - diaries / conversation_diary_link / location_points: 서버가 원본이거나
+         *   재수집 가능한 캐시라 안전하게 전체 삭제 (이미 유출된 기존 설치 기기 정리 포함)
+         */
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN userId INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("DELETE FROM diaries")
+                db.execSQL("DELETE FROM conversation_diary_link")
+                db.execSQL("DELETE FROM location_points")
+            }
+        }
+
+        /**
          * 데이터베이스 인스턴스 가져오기
          * - 스레드 안전한 싱글톤
          */
@@ -141,7 +160,7 @@ abstract class AppDatabase : RoomDatabase() {
                 DATABASE_NAME
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 // Migration 실패 시에만 fallback (안전망)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()

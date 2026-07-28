@@ -28,7 +28,8 @@ data class LoginUiState(
 class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: AuthRepository = AuthRepository(
-        tokenStorage = TokenStorage(application)
+        tokenStorage = TokenStorage(application),
+        application = application
     )
 
     private val _uiState = MutableStateFlow(LoginUiState())

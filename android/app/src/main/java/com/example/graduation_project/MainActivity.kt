@@ -183,7 +183,7 @@ private fun AppNavHost(
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as Application
-    val authRepository = remember { AuthRepository(tokenStorage = TokenStorage(application)) }
+    val authRepository = remember { AuthRepository(tokenStorage = TokenStorage(application), application = application) }
     val userRepository = remember { UserRepository() }
     val coroutineScope = rememberCoroutineScope()
     val navController = rememberNavController()

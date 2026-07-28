@@ -33,6 +33,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.presentation.conversation.components.MessageItem
@@ -64,6 +65,7 @@ class ConversationHistoryDetailViewModel(
 ) : AndroidViewModel(application) {
 
     private val messageDao = AppDatabase.getInstance(application).messageDao()
+    private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
 
     private val _uiState = MutableStateFlow(HistoryDetailUiState())
     val uiState: StateFlow<HistoryDetailUiState> = _uiState.asStateFlow()
@@ -74,7 +76,7 @@ class ConversationHistoryDetailViewModel(
 
     private fun loadMessages() {
         viewModelScope.launch {
-            messageDao.getMessagesByConversationId(conversationId).collect { entities ->
+            messageDao.getMessagesByConversationId(conversationId, currentUserId).collect { entities ->
                 val uiModels = entities.map {
                     MessageUiModel(
                         id = it.id,

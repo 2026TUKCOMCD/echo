@@ -41,4 +41,11 @@ interface DiaryDao {
      */
     @Query("SELECT * FROM diaries WHERE date BETWEEN :start AND :end ORDER BY date DESC")
     fun observeByDateRange(start: String, end: String): Flow<List<DiaryEntity>>
+
+    /**
+     * 전체 삭제 - 로그아웃/로그인/회원가입 시 계정 전환 캐시 정리용
+     * (서버가 원본이라 삭제해도 다음 동기화 시 재수신됨)
+     */
+    @Query("DELETE FROM diaries")
+    suspend fun deleteAll()
 }

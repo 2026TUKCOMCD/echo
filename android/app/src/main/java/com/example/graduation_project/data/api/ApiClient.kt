@@ -46,8 +46,11 @@ object ApiClient {
         private set
     lateinit var weatherApi: WeatherApi
         private set
+    var tokenStorage: TokenStorage? = null
+        private set
 
     fun init(tokenStorage: TokenStorage) {
+        this.tokenStorage = tokenStorage
         val authenticatedClient = OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .addInterceptor(AuthInterceptor(tokenStorage))
