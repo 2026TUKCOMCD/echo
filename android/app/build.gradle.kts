@@ -26,12 +26,12 @@ android {
     productFlavors {
         create("local") {
             dimension = "server"
-            // 로컬 네트워크 서버 연결
-            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080\"")
+            // 로컬 네트워크 서버 연결 (USB 실기기: adb reverse tcp:8080 tcp:8080 필요)
+            buildConfigField("String", "BASE_URL", "\"http://localhost:8080\"")
         }
         create("prod") {
             dimension = "server"
-            buildConfigField("String", "BASE_URL", "\"https://echo-service.duckdns.org\"")
+            buildConfigField("String", "BASE_URL", "\"https://echo-prod2.duckdns.org\"")
         }
     }
 
