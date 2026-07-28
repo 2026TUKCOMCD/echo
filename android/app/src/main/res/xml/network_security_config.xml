@@ -5,11 +5,6 @@
         <domain includeSubdomains="false">10.0.2.2</domain>
     </domain-config>
 
-    <!-- USB 실기기에서 adb reverse tcp:8080 tcp:8080 으로 로컬 서버 테스트할 때 평문 HTTP 허용 -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
-
     <!-- 그 외 모든 도메인(prod 등)은 HTTPS만 허용 -->
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>
