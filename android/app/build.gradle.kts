@@ -31,7 +31,7 @@ android {
         }
         create("prod") {
             dimension = "server"
-            buildConfigField("String", "BASE_URL", "\"https://echo-service.duckdns.org\"")
+            buildConfigField("String", "BASE_URL", "\"https://echo-prod2.duckdns.org\"")
         }
     }
 
@@ -53,6 +53,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
