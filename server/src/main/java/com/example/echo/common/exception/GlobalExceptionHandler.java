@@ -1,6 +1,5 @@
 package com.example.echo.common.exception;
 
-import com.example.echo.voice.exception.SupertoneInsufficientCreditException;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -21,18 +20,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(e.getStatus())
                 .body(ErrorResponse.of(e.getStatus().value(), e.getStatus().name(), e.getMessage()));
-    }
-
-    @ExceptionHandler(SupertoneInsufficientCreditException.class)
-    public ResponseEntity<ErrorResponse> handleInsufficientCredit(SupertoneInsufficientCreditException e) {
-        log.error("Supertone 크레딧 부족: {}", e.getMessage());
-        return ResponseEntity
-                .status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ErrorResponse.of(
-                        HttpStatus.SERVICE_UNAVAILABLE.value(),
-                        "SERVICE_UNAVAILABLE",
-                        "TTS 서비스를 현재 이용할 수 없습니다. 관리자에게 문의해주세요."
-                ));
     }
 
     @ExceptionHandler(VoiceProcessingException.class)

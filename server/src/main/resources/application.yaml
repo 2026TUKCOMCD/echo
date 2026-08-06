@@ -64,9 +64,9 @@ azure:
     # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)
     default-voice: ko-KR-SunHiNeural  # 기본 음성 (친근하고 따뜻한 여성)
 
-# TTS 프로바이더 설정 (supertone | azure)
+# TTS 프로바이더 설정 (azure | elevenlabs)
 tts:
-  provider: supertone
+  provider: elevenlabs
 
 # JWT 설정
 jwt:
@@ -74,10 +74,9 @@ jwt:
   access-token-expiration: 3600000      # 1시간
   refresh-token-expiration: 2592000000  # 30일
 
-# Supertone Play TTS 설정
-supertone:
-  base-url: https://supertoneapi.com
-  voice-id: 195e1922033a6168f0c90f
-  default-style: serene
-  model: sona_speech_2
+# ElevenLabs TTS 설정
+elevenlabs:
+  base-url: https://api.elevenlabs.io/v1
+  voice-id: sf8Bpb1IU97NI9BHSMRf
+  model: eleven_multilingual_v2
   # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)

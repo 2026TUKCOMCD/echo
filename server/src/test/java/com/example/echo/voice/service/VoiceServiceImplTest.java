@@ -2,12 +2,9 @@ package com.example.echo.voice.service;
 
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.client.STTClient;
-import com.example.echo.voice.client.SupertoneTtsClient;
-import com.example.echo.voice.client.TTSClient;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
-import com.example.echo.voice.exception.RetryableVoiceException;
-import com.example.echo.voice.exception.SupertoneInsufficientCreditException;
 import com.example.echo.voice.exception.VoiceProcessingException;
+import com.example.echo.voice.provider.TtsProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -16,11 +13,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.retry.policy.SimpleRetryPolicy;
-import org.springframework.retry.support.RetryTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.Map;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,6 +23,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+/**
+ * VoiceServiceImpl은 STT 오케스트레이션과 TTS 프로바이더 선택/검증만 담당한다.
+ * 프로바이더별 합성 로직(SSML 빌드, 재시도 등) 테스트는 AzureTtsProviderTest / ElevenLabsTtsProviderTest 참고.
+ */
 @ExtendWith(MockitoExtension.class)
 class VoiceServiceImplTest {
 
@@ -35,31 +34,22 @@ class VoiceServiceImplTest {
     private STTClient sttClient;
 
     @Mock
-    private TTSClient ttsClient;
+    private TtsProvider azureProvider;
 
     @Mock
-    private SupertoneTtsClient supertoneClient;
+    private TtsProvider elevenLabsProvider;
 
     private VoiceServiceImpl voiceService;
 
     @BeforeEach
     void setUp() {
-        // 테스트용 RetryTemplate: noBackoff으로 빠르게 실행, 동일한 재시도 정책 적용
-        RetryTemplate testRetryTemplate = new RetryTemplate();
-        Map<Class<? extends Throwable>, Boolean> retryableExceptions = Map.of(
-                RetryableVoiceException.class, true,
-                SupertoneInsufficientCreditException.class, false,
-                VoiceProcessingException.class, false
-        );
-        testRetryTemplate.setRetryPolicy(new SimpleRetryPolicy(3, retryableExceptions, true));
+        lenient().when(azureProvider.getName()).thenReturn("azure");
+        lenient().when(elevenLabsProvider.getName()).thenReturn("elevenlabs");
 
-        voiceService = new VoiceServiceImpl(sttClient, ttsClient, supertoneClient, testRetryTemplate);
+        voiceService = new VoiceServiceImpl(sttClient, List.of(azureProvider, elevenLabsProvider));
         ReflectionTestUtils.setField(voiceService, "whisperModel", "whisper-1");
         ReflectionTestUtils.setField(voiceService, "defaultLanguage", "ko");
-        ReflectionTestUtils.setField(voiceService, "defaultVoice", "ko-KR-SunHiNeural");
-        ReflectionTestUtils.setField(voiceService, "ttsProvider", "azure");
-        ReflectionTestUtils.setField(voiceService, "supertoneVoiceId", "195e1922033a6168f0c90f");
-        ReflectionTestUtils.setField(voiceService, "supertoneModel", "sona_speech_2");
+        ReflectionTestUtils.setField(voiceService, "ttsProvider", "elevenlabs");
     }
 
     // ========== STT 테스트 ==========
@@ -229,38 +219,21 @@ class VoiceServiceImplTest {
         }
     }
 
-    // ========== TTS 테스트 ==========
+    // ========== TTS 검증/프로바이더 선택 테스트 ==========
 
     @Nested
-    @DisplayName("textToSpeech - TTS 변환")
+    @DisplayName("textToSpeech - 검증 및 프로바이더 선택")
     class TextToSpeechTest {
 
         @Test
-        @DisplayName("정상 플로우: 텍스트 + VoiceSettings → 음성 바이트 배열 반환")
-        void success() {
-            // Given
-            VoiceSettings settings = VoiceSettings.builder()
-                    .voiceSpeed(1.0)
-                    .voiceTone("warm")
-                    .build();
-            byte[] expectedAudio = "fake-mp3-data".getBytes();
-
-            when(ttsClient.synthesize(any())).thenReturn(expectedAudio);
-
-            // When
-            byte[] result = voiceService.textToSpeech("안녕하세요", settings);
-
-            // Then
-            assertThat(result).isEqualTo(expectedAudio);
-            verify(ttsClient, times(1)).synthesize(any());
-        }
-
-        @Test
-        @DisplayName("텍스트가 null이면 VoiceProcessingException 발생")
+        @DisplayName("텍스트가 null이면 VoiceProcessingException 발생 (프로바이더 호출 안 함)")
         void nullText_throwsException() {
             assertThatThrownBy(() -> voiceService.textToSpeech(null, null))
                     .isInstanceOf(VoiceProcessingException.class)
                     .hasMessage("변환할 텍스트가 비어있습니다.");
+
+            verify(azureProvider, never()).synthesize(any(), any());
+            verify(elevenLabsProvider, never()).synthesize(any(), any());
         }
 
         @Test
@@ -294,8 +267,7 @@ class VoiceServiceImplTest {
         void textExactly800chars_success() {
             String maxText = "가".repeat(800);
             byte[] expectedAudio = "audio".getBytes();
-
-            when(ttsClient.synthesize(any())).thenReturn(expectedAudio);
+            when(elevenLabsProvider.synthesize(eq(maxText), any())).thenReturn(expectedAudio);
 
             byte[] result = voiceService.textToSpeech(maxText, null);
 
@@ -303,300 +275,68 @@ class VoiceServiceImplTest {
         }
 
         @Test
-        @DisplayName("VoiceSettings가 null이면 기본값(ko-KR-SunHiNeural, rate=+0%) 사용")
-        void nullVoiceSettings_usesDefaults() {
+        @DisplayName("tts.provider=elevenlabs → ElevenLabs 프로바이더 호출")
+        void elevenlabsProvider_selected() {
+            VoiceSettings settings = VoiceSettings.builder().voiceTone("warm").build();
             byte[] expectedAudio = "audio".getBytes();
+            when(elevenLabsProvider.synthesize("안녕", settings)).thenReturn(expectedAudio);
 
-            when(ttsClient.synthesize(any())).thenReturn(expectedAudio);
-
-            byte[] result = voiceService.textToSpeech("테스트", null);
+            byte[] result = voiceService.textToSpeech("안녕", settings);
 
             assertThat(result).isEqualTo(expectedAudio);
-            verify(ttsClient).synthesize(contains("ko-KR-SunHiNeural"));
-            verify(ttsClient).synthesize(contains("rate='+0%'"));
+            verify(elevenLabsProvider, times(1)).synthesize("안녕", settings);
+            verify(azureProvider, never()).synthesize(any(), any());
         }
 
         @Test
-        @DisplayName("voiceTone=warm → voice=ko-KR-SunHiNeural")
-        void warmTone_resolvesToSunHi() {
-            VoiceSettings settings = VoiceSettings.builder().voiceTone("warm").build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
+        @DisplayName("tts.provider=azure → Azure 프로바이더 호출")
+        void azureProvider_selected() {
+            ReflectionTestUtils.setField(voiceService, "ttsProvider", "azure");
+            byte[] expectedAudio = "audio".getBytes();
+            when(azureProvider.synthesize(eq("안녕"), any())).thenReturn(expectedAudio);
 
-            voiceService.textToSpeech("테스트", settings);
+            byte[] result = voiceService.textToSpeech("안녕", null);
 
-            verify(ttsClient).synthesize(contains("ko-KR-SunHiNeural"));
+            assertThat(result).isEqualTo(expectedAudio);
+            verify(azureProvider, times(1)).synthesize(eq("안녕"), any());
+            verify(elevenLabsProvider, never()).synthesize(any(), any());
         }
 
         @Test
-        @DisplayName("voiceTone=calm → voice=ko-KR-InJoonNeural")
-        void calmTone_resolvesToInJoon() {
-            VoiceSettings settings = VoiceSettings.builder().voiceTone("calm").build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
+        @DisplayName("인식할 수 없는 tts.provider 값이면 azure로 폴백")
+        void unknownProvider_fallsBackToAzure() {
+            ReflectionTestUtils.setField(voiceService, "ttsProvider", "unknown-provider");
+            byte[] expectedAudio = "audio".getBytes();
+            when(azureProvider.synthesize(eq("안녕"), any())).thenReturn(expectedAudio);
 
-            voiceService.textToSpeech("테스트", settings);
+            byte[] result = voiceService.textToSpeech("안녕", null);
 
-            verify(ttsClient).synthesize(contains("ko-KR-InJoonNeural"));
+            assertThat(result).isEqualTo(expectedAudio);
+            verify(azureProvider, times(1)).synthesize(eq("안녕"), any());
+            verify(elevenLabsProvider, never()).synthesize(any(), any());
         }
 
         @Test
-        @DisplayName("voiceTone=bright → voice=ko-KR-JiMinNeural")
-        void brightTone_resolvesToJiMin() {
-            VoiceSettings settings = VoiceSettings.builder().voiceTone("bright").build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
+        @DisplayName("프로바이더가 VoiceProcessingException을 던지면 그대로 전파")
+        void providerVoiceProcessingException_propagates() {
+            when(elevenLabsProvider.synthesize(any(), any()))
+                    .thenThrow(new VoiceProcessingException("ElevenLabs TTS API 응답이 비어있습니다."));
 
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("ko-KR-JiMinNeural"));
-        }
-
-        @Test
-        @DisplayName("voiceTone=gentle → voice=ko-KR-YuJinNeural")
-        void gentleTone_resolvesToYuJin() {
-            VoiceSettings settings = VoiceSettings.builder().voiceTone("gentle").build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("ko-KR-YuJinNeural"));
-        }
-
-        @Test
-        @DisplayName("알 수 없는 voiceTone → 기본 voice(ko-KR-SunHiNeural) 사용")
-        void unknownTone_usesDefaultVoice() {
-            VoiceSettings settings = VoiceSettings.builder().voiceTone("unknown").build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("ko-KR-SunHiNeural"));
-        }
-
-        @Test
-        @DisplayName("voiceTone이 null이면 기본 voice 사용")
-        void nullTone_usesDefaultVoice() {
-            VoiceSettings settings = VoiceSettings.builder().voiceTone(null).build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("ko-KR-SunHiNeural"));
-        }
-
-        @Test
-        @DisplayName("voiceSpeed=0.5 → rate='-50%'")
-        void speed05_convertsToMinus50Percent() {
-            VoiceSettings settings = VoiceSettings.builder().voiceSpeed(0.5).build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("rate='-50%'"));
-        }
-
-        @Test
-        @DisplayName("voiceSpeed=1.0 → rate='+0%'")
-        void speed10_convertsToPlus0Percent() {
-            VoiceSettings settings = VoiceSettings.builder().voiceSpeed(1.0).build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("rate='+0%'"));
-        }
-
-        @Test
-        @DisplayName("voiceSpeed=1.5 → rate='+50%'")
-        void speed15_convertsToPlus50Percent() {
-            VoiceSettings settings = VoiceSettings.builder().voiceSpeed(1.5).build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("rate='+50%'"));
-        }
-
-        @Test
-        @DisplayName("voiceSpeed=2.0 → rate='+100%' (최댓값 제한)")
-        void speed20_clampedToPlus100Percent() {
-            VoiceSettings settings = VoiceSettings.builder().voiceSpeed(2.0).build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("rate='+100%'"));
-        }
-
-        @Test
-        @DisplayName("voiceSpeed가 null이면 rate='+0%' 사용")
-        void nullSpeed_convertsToPlus0Percent() {
-            VoiceSettings settings = VoiceSettings.builder().voiceSpeed(null).build();
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", settings);
-
-            verify(ttsClient).synthesize(contains("rate='+0%'"));
-        }
-
-        @Test
-        @DisplayName("Azure TTS API 응답이 null이면 VoiceProcessingException 발생")
-        void nullApiResponse_throwsException() {
-            when(ttsClient.synthesize(any())).thenReturn(null);
-
-            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
+            assertThatThrownBy(() -> voiceService.textToSpeech("안녕", null))
                     .isInstanceOf(VoiceProcessingException.class)
-                    .hasMessage("Azure TTS API 응답이 비어있습니다.");
+                    .hasMessage("ElevenLabs TTS API 응답이 비어있습니다.");
         }
 
         @Test
-        @DisplayName("Azure TTS API 응답이 빈 배열이면 VoiceProcessingException 발생")
-        void emptyApiResponse_throwsException() {
-            when(ttsClient.synthesize(any())).thenReturn(new byte[0]);
+        @DisplayName("프로바이더에서 예상치 못한 예외 발생 시 VoiceProcessingException으로 래핑")
+        void providerUnexpectedException_wrapped() {
+            when(elevenLabsProvider.synthesize(any(), any()))
+                    .thenThrow(new RuntimeException("연결 실패"));
 
-            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
-                    .isInstanceOf(VoiceProcessingException.class)
-                    .hasMessage("Azure TTS API 응답이 비어있습니다.");
-        }
-
-        @Test
-        @DisplayName("TTS 클라이언트에서 예외 발생 시 VoiceProcessingException으로 래핑")
-        void clientException_wrappedAsVoiceProcessingException() {
-            when(ttsClient.synthesize(any()))
-                    .thenThrow(new RuntimeException("Azure API 연결 실패"));
-
-            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
+            assertThatThrownBy(() -> voiceService.textToSpeech("안녕", null))
                     .isInstanceOf(VoiceProcessingException.class)
                     .hasMessage("텍스트를 음성으로 변환하는 중 오류가 발생했습니다.")
                     .hasCauseInstanceOf(RuntimeException.class);
-        }
-
-        @Test
-        @DisplayName("SSML에 텍스트가 포함되어 전달됨")
-
-        void ssml_containsText() {
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("안녕", null);
-
-            verify(ttsClient).synthesize(contains("안녕"));
-        }
-
-        @Test
-        @DisplayName("SSML에 speak 태그와 voice 태그가 포함됨")
-        void ssml_containsSpeakAndVoiceTag() {
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("테스트", null);
-
-            verify(ttsClient).synthesize(argThat(ssml ->
-                ssml.contains("<speak") && ssml.contains("<voice") && ssml.contains("<prosody")
-            ));
-        }
-
-        @Test
-        @DisplayName("텍스트에 XML 특수문자(&)가 있으면 &amp;로 이스케이프")
-        void xmlSpecialChar_ampersand_escaped() {
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("A&B", null);
-
-            verify(ttsClient).synthesize(contains("A&amp;B"));
-        }
-
-        @Test
-        @DisplayName("텍스트에 XML 특수문자(<)가 있으면 &lt;로 이스케이프")
-        void xmlSpecialChar_lessThan_escaped() {
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("A<B", null);
-
-            verify(ttsClient).synthesize(contains("A&lt;B"));
-        }
-
-        @Test
-        @DisplayName("텍스트에 XML 특수문자(>)가 있으면 &gt;로 이스케이프")
-        void xmlSpecialChar_greaterThan_escaped() {
-            when(ttsClient.synthesize(any())).thenReturn("audio".getBytes());
-
-            voiceService.textToSpeech("A>B", null);
-
-            verify(ttsClient).synthesize(contains("A&gt;B"));
-        }
-    }
-
-    // ========== Supertone TTS 에러 처리 및 재시도 테스트 ==========
-
-    @Nested
-    @DisplayName("Supertone TTS - 에러 처리 및 재시도")
-    class SupertoneErrorHandlingTest {
-
-        @BeforeEach
-        void setSupertoneProvider() {
-            ReflectionTestUtils.setField(voiceService, "ttsProvider", "supertone");
-        }
-
-        @Test
-        @DisplayName("Supertone 정상 응답 → 음성 바이트 배열 반환")
-        void success() {
-            byte[] expectedAudio = "wav-data".getBytes();
-            when(supertoneClient.synthesize(any(), any())).thenReturn(expectedAudio);
-
-            byte[] result = voiceService.textToSpeech("테스트", null);
-
-            assertThat(result).isEqualTo(expectedAudio);
-            verify(supertoneClient, times(1)).synthesize(any(), any());
-        }
-
-        @Test
-        @DisplayName("Supertone 5xx 오류 → 3회 재시도 후 VoiceProcessingException 발생")
-        void retryableError_exhausted_throwsVoiceProcessingException() {
-            when(supertoneClient.synthesize(any(), any()))
-                    .thenThrow(new RetryableVoiceException("서버 오류 (HTTP 500)"));
-
-            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
-                    .isInstanceOf(VoiceProcessingException.class)
-                    .hasMessageContaining("일시적으로 불안정");
-
-            verify(supertoneClient, times(3)).synthesize(any(), any());
-        }
-
-        @Test
-        @DisplayName("Supertone 1회 실패 후 성공 → 정상 반환 (재시도 동작 확인)")
-        void retrySuccess_afterOneFailure() {
-            byte[] expectedAudio = "wav-data".getBytes();
-            when(supertoneClient.synthesize(any(), any()))
-                    .thenThrow(new RetryableVoiceException("임시 오류"))
-                    .thenReturn(expectedAudio);
-
-            byte[] result = voiceService.textToSpeech("테스트", null);
-
-            assertThat(result).isEqualTo(expectedAudio);
-            verify(supertoneClient, times(2)).synthesize(any(), any());
-        }
-
-        @Test
-        @DisplayName("Supertone 402 → SupertoneInsufficientCreditException 즉시 발생 (재시도 없음)")
-        void creditExhausted_noRetry_throwsInsufficientCreditException() {
-            when(supertoneClient.synthesize(any(), any()))
-                    .thenThrow(new SupertoneInsufficientCreditException("크레딧 부족"));
-
-            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
-                    .isInstanceOf(SupertoneInsufficientCreditException.class)
-                    .hasMessageContaining("크레딧");
-
-            verify(supertoneClient, times(1)).synthesize(any(), any());
-            verify(supertoneClient, times(1)).getCreditBalance();
-        }
-
-        @Test
-        @DisplayName("402 발생 시 잔액 조회 실패해도 예외 전파 (graceful degradation)")
-        void creditExhausted_balanceQueryFails_exceptionStillPropagates() {
-            when(supertoneClient.synthesize(any(), any()))
-                    .thenThrow(new SupertoneInsufficientCreditException("크레딧 부족"));
-            when(supertoneClient.getCreditBalance())
-                    .thenThrow(new RuntimeException("잔액 조회 API 실패"));
-
-            assertThatThrownBy(() -> voiceService.textToSpeech("테스트", null))
-                    .isInstanceOf(SupertoneInsufficientCreditException.class);
         }
     }
 }
