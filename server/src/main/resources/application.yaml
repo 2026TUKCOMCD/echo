@@ -77,6 +77,6 @@ jwt:
 # ElevenLabs TTS 설정
 elevenlabs:
   base-url: https://api.elevenlabs.io/v1
-  voice-id: kcQkGnn0HAT2JRDQ4Ljp
-  model: eleven_multilingual_v2
+  voice-id: zmh5xhBvMzqR4ZlXgcgL
+  model: eleven_v3
   # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)
