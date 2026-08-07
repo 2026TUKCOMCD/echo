@@ -1,9 +1,9 @@
-name: CI/CD - Build and Deploy to EC2
+name: CI/CD - Build and Deploy to EC2 (DISABLED - legacy ECR/SSM, old account)
 
+# 자동 실행 비활성화: 예전 계정(서울, ECR/SSM/액세스키) 전용이라 새 계정에서는 동작 불가.
+# 새 배포는 deploy-ssh.yml(SSH 방식) 사용. 이 파일은 참고용으로 보존하며 수동으로만 실행 가능.
 on:
-  push:
-    branches: [develop]
-    paths: ['server/**']
+  workflow_dispatch:
 
 env:
   AWS_REGION: ap-northeast-2
@@ -89,6 +89,13 @@ jobs:
                 --query "StandardOutputContent" --output text
               exit 0
             elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "--- StandardOutput (deploy.sh 진행 로그 + 컨테이너 로그) ---"
+              aws ssm get-command-invocation \
+                --region $AWS_REGION \
+                --command-id $COMMAND_ID \
+                --instance-id $EC2_INSTANCE_ID \
+                --query "StandardOutputContent" --output text
+              echo "--- StandardError ---"
               aws ssm get-command-invocation \
                 --region $AWS_REGION \
                 --command-id $COMMAND_ID \

@@ -12,7 +12,7 @@ import com.example.graduation_project.presentation.model.MessageUiModel
  * val uiModel = entity.toUiModel()
  *
  * // UiModel -> Entity
- * val entity = uiModel.toEntity(conversationId = "session-123")
+ * val entity = uiModel.toEntity(conversationId = "session-123", userId = 1L)
  * ```
  */
 
@@ -31,14 +31,16 @@ fun MessageEntity.toUiModel(): MessageUiModel {
 /**
  * MessageUiModel을 MessageEntity로 변환
  * @param conversationId 대화 세션 ID (Entity에 필요)
+ * @param userId 메시지 소유자 (계정별 로컬 캐시 격리용)
  */
-fun MessageUiModel.toEntity(conversationId: String): MessageEntity {
+fun MessageUiModel.toEntity(conversationId: String, userId: Long): MessageEntity {
     return MessageEntity(
         id = this.id,
         conversationId = conversationId,
         role = if (this.isFromUser) MessageEntity.ROLE_USER else MessageEntity.ROLE_ASSISTANT,
         content = this.text,
-        timestamp = this.timestamp
+        timestamp = this.timestamp,
+        userId = userId
     )
 }
 
@@ -52,6 +54,6 @@ fun List<MessageEntity>.toUiModels(): List<MessageUiModel> {
 /**
  * MessageUiModel 리스트를 MessageEntity 리스트로 변환
  */
-fun List<MessageUiModel>.toEntities(conversationId: String): List<MessageEntity> {
-    return this.map { it.toEntity(conversationId) }
+fun List<MessageUiModel>.toEntities(conversationId: String, userId: Long): List<MessageEntity> {
+    return this.map { it.toEntity(conversationId, userId) }
 }

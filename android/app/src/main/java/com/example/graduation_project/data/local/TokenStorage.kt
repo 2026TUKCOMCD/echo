@@ -62,6 +62,22 @@ class TokenStorage(private val context: Context) {
         }
     }
 
+    /**
+     * 현재 accessToken의 JWT payload(sub claim)에서 userId를 동기적으로 추출.
+     * 서명 검증은 하지 않음 - 로컬 캐시 격리용 식별자 용도이며, 실제 인가는 서버가 담당.
+     */
+    fun getCurrentUserId(): Long? {
+        val token = getAccessToken() ?: return null
+        return try {
+            val payload = token.split(".").getOrNull(1) ?: return null
+            val padded = payload.padEnd((payload.length + 3) / 4 * 4, '=')
+            val decoded = android.util.Base64.decode(padded, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+            org.json.JSONObject(String(decoded, Charsets.UTF_8)).optString("sub").toLongOrNull()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun deletePrefsFile() {
         try {
             val file = java.io.File(

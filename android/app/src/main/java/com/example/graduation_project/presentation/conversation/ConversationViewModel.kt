@@ -2,9 +2,11 @@ package com.example.graduation_project.presentation.conversation
 
 import android.app.Application
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
+import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
@@ -16,8 +18,10 @@ import com.example.graduation_project.domain.health.IHealthRepository
 import com.example.graduation_project.data.health.StayPointDetectorImpl
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.local.entity.ConversationDiaryLinkEntity
 import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.repository.ConversationRepository
+import com.example.graduation_project.data.repository.DiaryRepository
 import com.example.graduation_project.domain.usecase.GetHealthDataUseCase
 import com.example.graduation_project.data.voice.AudioPlayerManager
 import com.example.graduation_project.data.voice.AudioRecordManager
@@ -84,6 +88,9 @@ class ConversationViewModel(
 ) : AndroidViewModel(application) {
 
     private val getHealthDataUseCase = GetHealthDataUseCase(healthRepository)
+
+    // 로컬 메시지 캐시 격리용 - 계정 전환 시 다른 계정의 대화가 섞이지 않도록 함
+    private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
 
     // 내부에서만 수정 가능한 상태
     private val _uiState = MutableStateFlow(ConversationUiState())
@@ -559,6 +566,7 @@ class ConversationViewModel(
             audioPlayerManager.stop()
             audioRecordManager.stop()
 
+            val endedConversationId = conversationId  // nulling되기 전에 캡처 (아래에서 링크 저장에 사용)
             val result = repository.endConversation()
 
             when (result) {
@@ -567,6 +575,38 @@ class ConversationViewModel(
                     conversationId = null
                     // Sending → Ended
                     transitionTo(ConversationState.Ended)
+
+                    // 일기 생성 결과 확인 (디버깅 단계: 실패를 조용히 삼키지 않음)
+                    val diaryStatus = result.data.diaryStatus
+                    if (diaryStatus == "FAILED") {
+                        Log.w(TAG, "일기 생성 실패 - 사유: ${result.data.diaryError}")
+                        Toast.makeText(
+                            getApplication(),
+                            "일기 생성에 실패했어요: ${result.data.diaryError ?: "알 수 없는 오류"}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        Log.i(TAG, "일기 생성 결과: $diaryStatus (diaryId: ${result.data.diaryId})")
+                    }
+
+                    // 서버가 확정한 diaryDate를 이 세션(conversationId)에 매핑해 저장
+                    // - 일기 탭에서 로컬 타임스탬프 추정 대신 이 값을 신뢰해 날짜 버킷을 서버와 맞춤
+                    val diaryDate = result.data.diaryDate
+                    if (diaryDate != null && endedConversationId != null) {
+                        launch {
+                            runCatching {
+                                AppDatabase.getInstance(getApplication()).conversationDiaryLinkDao()
+                                    .upsert(ConversationDiaryLinkEntity(endedConversationId, diaryDate))
+                            }.onFailure { Log.w(TAG, "대화-일기 날짜 매핑 저장 실패", it) }
+                        }
+                    }
+
+                    // 일기 로컬 캐시 갱신 (실패해도 무시 - 일기 탭 진입 시 재시도됨)
+                    launch {
+                        runCatching {
+                            DiaryRepository(AppDatabase.getInstance(getApplication()).diaryDao()).refresh()
+                        }.onFailure { Log.w(TAG, "일기 캐시 갱신 실패", it) }
+                    }
 
                     // 대화 종료 알림 표시 (10분 후 자동 사라짐)
                     ConversationAlarmReceiver.showFarewellNotification(getApplication())
@@ -778,7 +818,8 @@ class ConversationViewModel(
                     conversationId = convId,
                     role = if (message.isFromUser) MessageEntity.ROLE_USER else MessageEntity.ROLE_ASSISTANT,
                     content = message.text,
-                    timestamp = message.timestamp
+                    timestamp = message.timestamp,
+                    userId = currentUserId
                 )
             )
         }

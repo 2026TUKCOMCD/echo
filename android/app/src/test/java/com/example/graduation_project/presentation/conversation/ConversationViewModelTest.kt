@@ -88,7 +88,9 @@ class ConversationViewModelTest {
         // android.util.Log은 JVM 단위 테스트에서 사용 불가 → static mock으로 대체
         mockkStatic(Log::class)
         every { Log.d(any(), any<String>()) } returns 0
+        every { Log.i(any(), any<String>()) } returns 0
         every { Log.w(any(), any<String>()) } returns 0
+        every { Log.w(any(), any<String>(), any()) } returns 0
         every { Log.e(any(), any<String>()) } returns 0
         every { Log.e(any(), any<String>(), any()) } returns 0
 

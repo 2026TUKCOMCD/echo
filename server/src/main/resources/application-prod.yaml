@@ -1,7 +1,7 @@
 spring:
   datasource:
-    url: jdbc:mysql://echo-db.cd6842c0wli8.ap-northeast-2.rds.amazonaws.com:3306/echo_db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
-    username: echouser
+    url: jdbc:mysql://echo-db.cjckiucsc2mo.ap-southeast-1.rds.amazonaws.com:3306/echo_db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    username: admin
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
@@ -16,6 +16,9 @@ spring:
   sql:
     init:
       mode: always
+
+jwt:
+  secret: ${JWT_SECRET}
 
 openai:
   api:
@@ -47,3 +50,8 @@ supertone:
 
 server:
   forward-headers-strategy: native
+
+weather:
+  api:
+    url: https://api.openweathermap.org
+    key: ${OPENWEATHER_API_KEY}

@@ -4,10 +4,16 @@ import com.example.echo.ai.service.AIService;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
+import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
+import com.example.echo.diary.entity.Diary;
+import com.example.echo.diary.entity.DiaryStatus;
+import com.example.echo.diary.service.DiaryOutcome;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.service.HealthDataService;
+import com.example.echo.memory.entity.Memory;
+import com.example.echo.memory.service.MemoryService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
@@ -17,6 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -26,6 +33,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
         import static org.mockito.ArgumentMatchers.any;
@@ -56,6 +64,9 @@ class ConversationServiceTest2 {
 
     @Mock
     private HealthDataService healthDataService;
+
+    @Mock
+    private MemoryService memoryService;
 
     private Long userId;
     private UserContext mockContext;
@@ -100,7 +111,7 @@ class ConversationServiceTest2 {
             byte[] audioData = "mock audio data".getBytes();
 
             given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
-            given(promptService.buildSystemPrompt(mockContext)).willReturn(systemPrompt);
+            given(promptService.buildSystemPrompt(eq(mockContext), any())).willReturn(systemPrompt);
             given(aiService.generateGreeting(systemPrompt, mockContext)).willReturn(greeting);
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
@@ -122,7 +133,7 @@ class ConversationServiceTest2 {
             byte[] audioData = "audio".getBytes();
 
             given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
-            given(promptService.buildSystemPrompt(mockContext)).willReturn(systemPrompt);
+            given(promptService.buildSystemPrompt(eq(mockContext), any())).willReturn(systemPrompt);
             given(aiService.generateGreeting(systemPrompt, mockContext)).willReturn(greeting);
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
@@ -132,9 +143,55 @@ class ConversationServiceTest2 {
             // then (순서대로 호출 검증)
             var inOrder = inOrder(contextService, promptService, aiService, voiceService);
             inOrder.verify(contextService).initializeContext(eq(userId), any(), any());
-            inOrder.verify(promptService).buildSystemPrompt(mockContext);
+            inOrder.verify(promptService).buildSystemPrompt(eq(mockContext), any());
             inOrder.verify(aiService).generateGreeting(systemPrompt, mockContext);
             inOrder.verify(voiceService).textToSpeech(greeting, mockVoiceSettings);
+        }
+
+        @Test
+        @DisplayName("성공: 저장된 장기기억이 시스템 프롬프트 생성에 전달된다")
+        void success_passesLifeMemoriesToSystemPrompt() {
+            // given
+            Memory memory = Memory.builder()
+                    .userId(userId)
+                    .lifePeriod("청년기")
+                    .topic("직업")
+                    .content("30대에 부산에서 어부로 일했다")
+                    .tags("부산,어부")
+                    .build();
+            given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
+            given(promptService.buildSystemPrompt(eq(mockContext), any())).willReturn("시스템 프롬프트");
+            given(memoryService.getMemories(userId)).willReturn(List.of(memory));
+            given(aiService.generateGreeting(anyString(), eq(mockContext))).willReturn("안녕하세요!");
+            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
+
+            // when
+            conversationService.startConversation(userId, null, null);
+
+            // then: 조회된 기억이 {{lifeMemories}} 치환용으로 그대로 전달되어야 함
+            ArgumentCaptor<List<Memory>> memoriesCaptor = ArgumentCaptor.forClass(List.class);
+            then(promptService).should().buildSystemPrompt(eq(mockContext), memoriesCaptor.capture());
+            assertThat(memoriesCaptor.getValue()).containsExactly(memory);
+        }
+
+        @Test
+        @DisplayName("성공: 장기기억 조회가 실패해도 기억 없이 대화를 시작한다")
+        void memoryLookupFailure_startsConversationWithoutMemories() {
+            // given
+            given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
+            given(promptService.buildSystemPrompt(eq(mockContext), any())).willReturn("시스템 프롬프트");
+            given(memoryService.getMemories(userId)).willThrow(new RuntimeException("DB 연결 끊김"));
+            given(aiService.generateGreeting(anyString(), eq(mockContext))).willReturn("안녕하세요!");
+            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
+
+            // when
+            ConversationStartResponse result = conversationService.startConversation(userId, null, null);
+
+            // then: 대화는 정상 시작되고, 프롬프트는 빈 기억 목록으로 생성되어야 함
+            assertThat(result.getMessage()).isEqualTo("안녕하세요!");
+            ArgumentCaptor<List<Memory>> memoriesCaptor = ArgumentCaptor.forClass(List.class);
+            then(promptService).should().buildSystemPrompt(eq(mockContext), memoriesCaptor.capture());
+            assertThat(memoriesCaptor.getValue()).isEmpty();
         }
     }
 
@@ -267,6 +324,114 @@ class ConversationServiceTest2 {
             var inOrder = inOrder(contextService);
             inOrder.verify(contextService).getContext(userId);
             inOrder.verify(contextService).finalizeContext(userId);
+        }
+
+        @Test
+        @DisplayName("성공: 일기 생성 성공 시 응답에 diaryStatus=SUCCESS와 diaryId가 담긴다")
+        void success_responseContainsDiaryStatus() {
+            // given
+            LocalDate diaryDate = LocalDate.now();
+            Diary diary = Diary.builder()
+                    .userId(userId)
+                    .diaryDate(diaryDate)
+                    .content("오늘의 일기")
+                    .status(DiaryStatus.SUCCESS)
+                    .build();
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Processed(diary));
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then
+            assertThat(response.getDiaryStatus()).isEqualTo("SUCCESS");
+            assertThat(response.getDiaryError()).isNull();
+            assertThat(response.getEndedAt()).isNotNull();
+            // 클라이언트가 일기 탭 날짜 버킷을 서버 값으로 신뢰할 수 있도록 diaryDate가 그대로 담겨야 함
+            assertThat(response.getDiaryDate()).isEqualTo(diaryDate);
+        }
+
+        @Test
+        @DisplayName("성공: 일기 생성 실패 시 응답에 diaryStatus=FAILED와 실패 사유가 담기고 컨텍스트는 정리된다")
+        void diaryFailure_responseContainsFailureAndContextCleaned() {
+            // given
+            Diary failedDiary = Diary.builder()
+                    .userId(userId)
+                    .diaryDate(LocalDate.now())
+                    .status(DiaryStatus.FAILED)
+                    .failureReason("AI 일기 생성 실패: 401")
+                    .build();
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Processed(failedDiary));
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then
+            assertThat(response.getDiaryStatus()).isEqualTo("FAILED");
+            assertThat(response.getDiaryError()).contains("AI 일기 생성 실패");
+            then(contextService).should().finalizeContext(userId);
+        }
+
+        @Test
+        @DisplayName("성공: 일기 생성이 스킵되면(사용자 발화 없음) diaryStatus=SKIPPED가 담긴다")
+        void diarySkipped_responseContainsSkipped() {
+            // given
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Skipped());
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then
+            assertThat(response.getDiaryStatus()).isEqualTo("SKIPPED");
+            assertThat(response.getDiaryId()).isNull();
+            assertThat(response.getDiaryError()).isNull();
+            assertThat(response.getDiaryDate()).isNull();
+        }
+
+        @Test
+        @DisplayName("성공: 대화 원문이 사라지기 전에 장기기억을 추출한다")
+        void success_extractsMemoriesBeforeContextIsFinalized() {
+            // given
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            conversationService.endConversation(userId);
+
+            // then: finalizeContext가 대화 원문을 지우므로 추출이 반드시 그 전이어야 함
+            var inOrder = inOrder(memoryService, contextService);
+            inOrder.verify(memoryService).extractAndSaveMemories(mockContext);
+            inOrder.verify(contextService).finalizeContext(userId);
+        }
+
+        @Test
+        @DisplayName("성공: 장기기억 추출이 실패해도 일기 결과와 컨텍스트 정리에 영향이 없다")
+        void memoryExtractionFailure_doesNotAffectDiaryOrCleanup() {
+            // given
+            Diary diary = Diary.builder()
+                    .userId(userId)
+                    .diaryDate(LocalDate.now())
+                    .content("오늘의 일기")
+                    .status(DiaryStatus.SUCCESS)
+                    .build();
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Processed(diary));
+            willThrow(new RuntimeException("기억 추출 실패"))
+                    .given(memoryService).extractAndSaveMemories(mockContext);
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then: 일기는 SUCCESS 그대로여야 하고(FAILED로 오염 금지), 컨텍스트도 정리되어야 함
+            assertThat(response.getDiaryStatus()).isEqualTo("SUCCESS");
+            assertThat(response.getDiaryError()).isNull();
+            then(contextService).should().finalizeContext(userId);
         }
     }
 }

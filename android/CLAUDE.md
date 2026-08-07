@@ -69,7 +69,8 @@ app/
 | 기능 | 설명 |
 |------|------|
 | 음성 대화 | 백엔드 `/api/conversations/*` 연동, 마이크/스피커 권한 필요 |
-| 일기 조회 | 대화 요약 일기 목록/상세 |
+| 일기 탭 | 하단 탭(라우트 "history" 유지, 라벨 "일기"). 서버 일기(Room `diaries` 캐시) + 일기 없는 날의 로컬 대화 세션을 날짜(Asia/Seoul "yyyy-MM-dd") 기준으로 병합 표시. `presentation/diary/` 참조 |
+| 일기 상세 | `diary_detail/{date}` 라우트. 일기 본문 + 그날의 대화 세션 목록 → 세션 탭 시 `history_detail/{conversationId}` 말풍선 화면 재사용 |
 | 사용자 설정 | 선호도, 정보 설정 |
 | 알림 설정 | 대화 시간 알림 (AlarmManager) |
 | 로그인 | JWT + 소셜 로그인 (Google/Kakao) - 예정 |
@@ -99,12 +100,16 @@ data class HealthData(
 )
 ```
 
-### Diary API (서버 구현 예정)
+### Diary API
 
 ```
-GET /api/diaries        # 일기 목록 조회
-GET /api/diaries/{id}   # 일기 상세 조회
+GET /api/diaries?days=30  # 최근 N일 일기 목록 (FAILED 실패 기록 포함, 날짜 내림차순)
+GET /api/diaries/{id}     # 일기 단건 조회
 ```
+
+- 일기는 대화 종료(`POST /api/conversations/end`) 시 서버가 자동 생성 (하루 1개, 증분 갱신)
+- `/end` 응답의 `diaryStatus`(SUCCESS/FAILED/SKIPPED)·`diaryError`로 생성 결과 확인 (실패 시 Toast+로그로 명시)
+- 클라이언트는 응답을 Room `diaries` 테이블(DB v3, 날짜 PK)에 캐시 → 오프라인 열람 지원 (`DiaryRepository`)
 
 ### User API (서버 구현 예정)
 

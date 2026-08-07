@@ -6,8 +6,12 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.graduation_project.data.local.dao.ConversationDiaryLinkDao
+import com.example.graduation_project.data.local.dao.DiaryDao
 import com.example.graduation_project.data.local.dao.LocationPointDao
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.local.entity.ConversationDiaryLinkEntity
+import com.example.graduation_project.data.local.entity.DiaryEntity
 import com.example.graduation_project.data.local.entity.LocationPointEntity
 import com.example.graduation_project.data.local.entity.MessageEntity
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
@@ -24,15 +28,19 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
  * - 마이그레이션 전략 필요 (현재는 fallbackToDestructiveMigration 사용)
  */
 @Database(
-    entities = [MessageEntity::class, LocationPointEntity::class],
-    version = 2,
-    exportSchema = false
+    entities = [MessageEntity::class, LocationPointEntity::class, DiaryEntity::class, ConversationDiaryLinkEntity::class],
+    version = 5,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun messageDao(): MessageDao
 
     abstract fun locationPointDao(): LocationPointDao
+
+    abstract fun diaryDao(): DiaryDao
+
+    abstract fun conversationDiaryLinkDao(): ConversationDiaryLinkDao
 
     companion object {
         private const val DATABASE_NAME = "echo_database"
@@ -55,6 +63,67 @@ abstract class AppDatabase : RoomDatabase() {
                         date TEXT NOT NULL
                     )
                 """.trimIndent())
+            }
+        }
+
+        /**
+         * Migration 2 → 3: diaries 테이블 추가 (일기 서버 캐시)
+         * 기존 messages/location_points 테이블은 그대로 유지
+         * 주의: 컬럼 타입/NOT NULL이 DiaryEntity와 정확히 일치해야 함
+         *       (불일치 시 destructive fallback이 발동해 기존 메시지가 삭제됨)
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS diaries (
+                        date TEXT NOT NULL PRIMARY KEY,
+                        serverId INTEGER NOT NULL,
+                        title TEXT,
+                        content TEXT,
+                        status TEXT NOT NULL,
+                        failureReason TEXT,
+                        weather TEXT,
+                        mood TEXT,
+                        updatedAt TEXT
+                    )
+                """.trimIndent())
+            }
+        }
+
+        /**
+         * Migration 3 → 4: conversation_diary_link 테이블 추가
+         * (로컬 대화 세션 conversationId → 서버가 확정한 diaryDate 매핑)
+         * 기존 messages/location_points/diaries 테이블은 그대로 유지
+         * 주의: 컬럼 타입/NOT NULL이 ConversationDiaryLinkEntity와 정확히 일치해야 함
+         *       (불일치 시 destructive fallback이 발동해 기존 메시지가 삭제됨)
+         */
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS conversation_diary_link (
+                        conversationId TEXT NOT NULL PRIMARY KEY,
+                        diaryDate TEXT NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
+        /**
+         * Migration 4 → 5: 계정별 로컬 캐시 격리 (다른 계정으로 로그인해도
+         * 이전 계정의 일기·대화가 보이는 문제 수정)
+         *
+         * - messages: userId 컬럼 추가. 기존 행은 소유자를 알 수 없으므로 -1로 표시하고,
+         *   앱 시작 시 MessageDao.backfillLegacyOwner()가 현재 로그인 사용자에게 귀속시킴
+         *   (서버에 원본이 없는 유일한 사본이라 삭제 대신 이 방식으로 보존)
+         * - diaries / conversation_diary_link / location_points: 서버가 원본이거나
+         *   재수집 가능한 캐시라 안전하게 전체 삭제 (이미 유출된 기존 설치 기기 정리 포함)
+         */
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN userId INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("DELETE FROM diaries")
+                db.execSQL("DELETE FROM conversation_diary_link")
+                db.execSQL("DELETE FROM location_points")
             }
         }
 
@@ -91,7 +160,7 @@ abstract class AppDatabase : RoomDatabase() {
                 DATABASE_NAME
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 // Migration 실패 시에만 fallback (안전망)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
