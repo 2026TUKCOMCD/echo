@@ -56,10 +56,25 @@ ConversationController
 ├─ /api/conversations/message
 │  └─ VoiceService(STT) → AIService → VoiceService(TTS) → ContextService
 ├─ /api/conversations/end
-│  └─ DiaryService(동기) → ContextService
+│  └─ DiaryService(동기, 하루 1개 일기 생성/증분 갱신) → ContextService
+│     └─ 응답에 diaryStatus(SUCCESS/FAILED/SKIPPED)·diaryId·diaryError 포함
 └─ /api/conversations/tts-retry
    └─ VoiceService(TTS) - TTS 실패 시 재시도
+
+DiaryController
+├─ GET /api/diaries?days=N   → 최근 N일 일기 목록 (FAILED 기록 포함, 날짜 내림차순)
+└─ GET /api/diaries/{id}     → 일기 단건 조회 (본인 소유만, 없으면 404)
 ```
+
+### 일기 생성 방식 (증분 갱신)
+
+- 대화 원문은 서버에 영구 저장되지 않으므로(클라이언트 로컬 Room에만 존재),
+  대화 종료 시 **[기존 저장된 오늘 일기 + 이번 세션 대화]**를 DIARY 프롬프트(v3, `{{existingDiary}}` 변수)에 넣어 하루 전체 일기로 재생성
+- 하루 1개 (`diaries` 테이블 `(user_id, diary_date)` unique), 날짜 경계는 Asia/Seoul 고정
+- 생성 실패 시에도 FAILED 레코드를 남김 (기존 성공본 content는 보존, failureReason만 기록)
+- 사용자 발화가 없는 세션(인사만 듣고 종료)은 스킵 (기존 일기 미변경)
+- 대화 시작 시 최근 7일의 SUCCESS 일기를 시스템 프롬프트에 주입해 이전 대화를 기억하는 것처럼 이어감
+  (`ConversationService.appendRecentDiaries`)
 
 ### 주요 모듈
 
@@ -85,7 +100,7 @@ ConversationController
 | AI 응답 | `ai/service/AIService.java`, `ai/client/OpenAIClient.java` |
 | 건강 데이터 | `health/dto/HealthData.java`, `health/entity/HealthLog.java` |
 | 사용자 정보 | `user/dto/UserPreferences.java`, `user/service/UserService.java` |
-| 일기 | `diary/service/DiaryService.java` |
+| 일기 | `diary/service/DiaryService.java`, `diary/entity/Diary.java`, `diary/repository/DiaryRepository.java`, `diary/controller/DiaryController.java` |
 | 프롬프트 | `prompt/service/PromptService.java`, `prompt/entity/PromptTemplate.java`, `prompt/repository/PromptTemplateRepository.java` |
 
 ## 설정
@@ -110,4 +125,4 @@ ConversationController
 - **심박수**: 수집하지 않음 (걸음수, 수면, 운동 거리, 운동 활동명만 사용)
 - **프롬프트 템플릿**: Entity/Repository 구현 완료, `data.sql`에 초기 데이터 포함 (SYSTEM/CONVERSATION/DIARY 3종류)
 - **UserService**: 현재 더미 데이터 반환 (User Entity/Repository 미구현, DB 연동 예정)
-- **DiaryService**: 현재 TODO 상태 (Diary Entity/Repository 미구현, 일기 생성 로직 구현 예정)
+- **일기 날짜 기준**: 클라이언트가 일기↔로컬 대화 기록을 날짜(yyyy-MM-dd)로 매칭하므로, 일기 날짜는 항상 Asia/Seoul 기준으로 계산해야 함 (JVM 기본 타임존 사용 금지)

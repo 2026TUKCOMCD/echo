@@ -31,7 +31,7 @@ android {
         }
         create("prod") {
             dimension = "server"
-            buildConfigField("String", "BASE_URL", "\"https://echo-service.duckdns.org\"")
+            buildConfigField("String", "BASE_URL", "\"https://echo-prod2.duckdns.org\"")
         }
     }
 
@@ -53,6 +53,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -131,10 +132,19 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    // Room 마이그레이션 테스트에서 ApplicationProvider(Context) 제공
+    testImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// 버전별 Room 스키마 JSON을 내보낸다 (기존에는 exportSchema=false라 과거 버전 스키마가 없었음)
+// - 마이그레이션 작성 시 실제 컬럼/타입을 대조하는 참고 자료로 사용
+// - 새 마이그레이션 테스트 작성 시 정확한 CREATE TABLE 문의 출처로 사용 (AppDatabaseMigrationTest 참고)
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }

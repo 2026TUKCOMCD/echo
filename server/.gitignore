@@ -49,3 +49,5 @@ application-dev.yaml
 .env
 nul
 .run/
+*.pem
+*.ppk

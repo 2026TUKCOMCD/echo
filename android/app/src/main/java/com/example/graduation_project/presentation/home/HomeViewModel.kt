@@ -56,6 +56,17 @@ class HomeViewModel(
         }
     }
 
+    /**
+     * 홈 화면 재진입 시 사용자 정보(대화 시간 등)를 서버와 다시 동기화.
+     * 설정 화면에서 값을 바꾸고 돌아와도 홈 ViewModel 인스턴스는 그대로 유지되므로
+     * (NavBackStackEntry 스코프), init 시점의 값만으론 최신 상태를 반영하지 못함.
+     */
+    fun refresh() {
+        viewModelScope.launch {
+            loadUserPreferences()
+        }
+    }
+
     private suspend fun loadUserPreferences() {
         when (val result = userRepository.getPreferences()) {
             is ApiResult.Success -> {

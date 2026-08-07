@@ -1,0 +1,56 @@
+name: CD - Deploy to EC2 via SSH
+
+on:
+  push:
+    branches: [develop]
+    paths: ['server/**']
+  workflow_dispatch:   # 수동 실행도 가능하게
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+          cache: gradle
+
+      - name: Build with Gradle
+        working-directory: server
+        run: |
+          chmod +x ./gradlew
+          ./gradlew clean build -x test
+
+      - name: Copy JAR to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "server/build/libs/echo-0.0.1-SNAPSHOT.jar"
+          target: "/home/ec2-user/"
+          strip_components: 3   # server/build/libs 경로 제거 → 홈에 파일만 배치
+
+      - name: Restart service on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sudo systemctl restart echo
+            sleep 40
+            if sudo ss -ltnp | grep -q ':8080'; then
+              echo "Deploy success: 8080 is listening"
+            else
+              echo "Deploy failed: 8080 not listening"
+              sudo journalctl -u echo -n 20 --no-pager
+              exit 1
+            fi

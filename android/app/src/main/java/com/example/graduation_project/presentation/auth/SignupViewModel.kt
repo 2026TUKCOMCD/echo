@@ -32,7 +32,8 @@ data class SignupUiState(
 class SignupViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: AuthRepository = AuthRepository(
-        tokenStorage = TokenStorage(application)
+        tokenStorage = TokenStorage(application),
+        application = application
     )
 
     private val _uiState = MutableStateFlow(SignupUiState())
