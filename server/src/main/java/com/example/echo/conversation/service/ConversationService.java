@@ -21,6 +21,7 @@ import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -39,6 +40,7 @@ public class ConversationService {
     private final DiaryService diaryService;
     private final HealthDataService healthDataService;
     private final MemoryService memoryService;
+    private final TaskExecutor taskExecutor;
 
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
@@ -148,6 +150,21 @@ public class ConversationService {
         }
     }
 
+    /**
+     * 비동기 기억 추출에 넘길 컨텍스트 스냅샷
+     *
+     * finalizeContext()가 원본을 contextStore에서 제거하고, 같은 userId로 새 대화가 시작되면
+     * 새 UserContext가 만들어진다. UserContext는 가변(@Data)이므로 추출에 실제로 쓰이는 값만
+     * 불변으로 복사해 백그라운드 작업을 세션 수명과 분리한다.
+     */
+    private UserContext snapshotForMemoryExtraction(UserContext context) {
+        return UserContext.builder()
+                .userId(context.getUserId())
+                .preferences(context.getPreferences())
+                .conversationHistory(List.copyOf(context.getConversationHistory()))
+                .build();
+    }
+
     public TtsRetryResponse retryTts(Long userId) {
         UserContext context = contextService.getContext(userId);
 
@@ -190,13 +207,16 @@ public class ConversationService {
                 diaryStatus = "SKIPPED";
             }
 
-            // 3. 장기기억 추출 (동기) - 일기와 독립적이며, 실패해도 대화 종료·일기 결과에 영향 없음
-            //    대화 원문은 아래 finalizeContext에서 사라지므로 반드시 그 전에 추출해야 함
-            try {
-                memoryService.extractAndSaveMemories(context);
-            } catch (Exception e) {
-                log.warn("장기기억 추출 실패 - userId: {}", userId, e);
-            }
+            // 3. 장기기억 추출 (비동기) - 응답에 실리지 않으므로 사용자를 기다리게 하지 않음
+            //    대화 원문은 아래 finalizeContext에서 사라지므로, 넘기기 전에 스냅샷을 뜸
+            UserContext snapshot = snapshotForMemoryExtraction(context);
+            taskExecutor.execute(() -> {
+                try {
+                    memoryService.extractAndSaveMemories(snapshot);
+                } catch (Exception e) {
+                    log.warn("장기기억 추출 실패 - userId: {}", userId, e);
+                }
+            });
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}", userId, e);
             diaryStatus = "FAILED";
