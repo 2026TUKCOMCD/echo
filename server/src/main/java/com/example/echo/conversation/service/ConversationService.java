@@ -21,6 +21,7 @@ import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -40,6 +41,9 @@ public class ConversationService {
     private final DiaryService diaryService;
     private final HealthDataService healthDataService;
     private final MemoryService memoryService;
+    // @EnableScheduling이 만드는 taskScheduler도 TaskExecutor라 타입만으로는 모호하다.
+    // application.yaml의 spring.task.execution 설정을 받는 쪽을 명시적으로 지정한다.
+    @Qualifier("applicationTaskExecutor")
     private final TaskExecutor taskExecutor;
 
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
