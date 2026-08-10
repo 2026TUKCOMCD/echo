@@ -96,6 +96,9 @@ public class AIService {
      * - user/assistant: 대화 히스토리
      * - user: 현재 사용자 메시지
      *
+     * 대화 단계(1단계 안부 → 2단계 오늘 활동 → 3단계 장기기억 → 마무리)는 시스템 프롬프트에만
+     * 정의되어 있고, 지금이 몇 단계인지는 모델이 여기 담긴 히스토리를 보고 스스로 판단한다.
+     *
      * @param systemPrompt 시스템 프롬프트 (캐싱된 것 사용)
      * @param history 대화 히스토리 (ConversationTurn 리스트)
      * @param userMessage 현재 사용자 메시지
