@@ -156,10 +156,21 @@ public class PromptService {
         LocationData locationData = context.getLocationData();
         List<VisitedPlace> namedPlaces = extractNamedPlaces(locationData);
 
+        // 방문 장소를 외출/집으로 분류(isHome)해 대화 재료를 나눈다.
+        // - 외출: 집 좌표에서 먼 곳 → "다녀오셨네요" 회상 대상
+        // - 집 낮 체류: 집인데 낮 시간대 → "집에서 어떻게 지내셨어요" (야간=취침은 제외)
+        List<VisitedPlace> outings = namedPlaces.stream()
+                .filter(place -> !place.isHome())
+                .toList();
+        List<VisitedPlace> daytimeHomeStays = namedPlaces.stream()
+                .filter(VisitedPlace::isHome)
+                .filter(this::isDaytimeStay)
+                .toList();
+
         variables.put("currentCity", locationData != null && locationData.getCurrentCity() != null
                 ? locationData.getCurrentCity() : "");
-        variables.put("visitedPlacesText", buildVisitedPlacesText(namedPlaces));
-        variables.put("todayActivityGuide", buildTodayActivityGuide(!namedPlaces.isEmpty()));
+        variables.put("visitedPlacesText", buildVisitedPlacesText(outings, daytimeHomeStays));
+        variables.put("todayActivityGuide", buildTodayActivityGuide(outings, daytimeHomeStays));
 
         if (namedPlaces.isEmpty()) {
             log.info("[프롬프트] 위치 데이터 없음 - locationData 존재: {}", locationData != null);
@@ -183,16 +194,27 @@ public class PromptService {
     }
 
     /**
-     * 오늘 활동 질문 방식을 서버가 확정한 지시문으로 반환
+     * 오늘 활동 질문 방식을 서버가 확정한 지시문으로 반환 (2단계용)
      *
-     * hasNamedPlace가 true면 [오늘 다녀오신 곳]을 언급하며 활동을 묻게 하고,
-     * false면 장소를 절대 언급하지 말고 활동만 묻게 한다. (v10, 2단계용)
+     * 방문 장소를 집/외출로 분류한 결과에 따라 질문 방식을 달리한다:
+     * - 외출이 있으면(최우선): 외출한 곳을 언급하며 "다녀오셨네요" 질문. 집은 다녀온 곳으로 언급 금지
+     * - 외출은 없고 낮에 집 체류만 있으면: "다녀오셨네요" 대신 낮에 집에서 어떻게 지냈는지 질문
+     * - 둘 다 없으면: 장소를 언급하지 말고 오늘 하루를 일반적으로 질문
      */
-    private String buildTodayActivityGuide(boolean hasNamedPlace) {
-        if (hasNamedPlace) {
-            return "오늘 다녀오신 곳이 확인되었습니다. [오늘 다녀오신 곳] 중 체류 시간이 가장 긴 장소를 "
+    private String buildTodayActivityGuide(List<VisitedPlace> outings, List<VisitedPlace> daytimeHomeStays) {
+        boolean hasOuting = outings != null && !outings.isEmpty();
+        boolean hasDaytimeHome = daytimeHomeStays != null && !daytimeHomeStays.isEmpty();
+
+        if (hasOuting) {
+            return "오늘 외출하신 곳이 확인되었습니다. [오늘 다녀오신 곳]의 [외출한 곳] 중 체류 시간이 가장 긴 장소를 "
                     + "언급하며, 그곳에서 무엇을 하셨는지 여쭤보세요. 주소는 동/도로명 정도로 짧게 줄여 말하세요. "
+                    + "거주지(집)는 다녀온 곳으로 언급하지 마세요. "
                     + "예: \"오늘 신길로 쪽에 다녀오셨네요. 거기서 어떤 일 보셨어요?\"";
+        }
+        if (hasDaytimeHome) {
+            return "오늘은 외출 없이 주로 댁에서 지내신 것으로 보입니다. \"다녀오셨네요\"라고 하지 말고, "
+                    + "낮 동안 집에서 어떻게 지내셨는지 여쭤보세요. "
+                    + "예: \"오늘은 댁에서 편히 지내셨네요. 낮에는 어떻게 시간 보내셨어요?\"";
         }
         return "오늘 다녀오신 곳 정보가 없습니다. 장소를 절대 언급하지 말고, 오늘 하루 무엇을 하셨는지 여쭤보세요. "
                 + "예: \"오늘은 어떻게 지내셨어요? 특별히 하신 일이 있으세요?\"";
@@ -420,52 +442,114 @@ public class PromptService {
     }
 
     /**
-     * 방문 장소 목록을 텍스트로 변환
-     *
-     * 체류 시간이 긴 장소부터 정렬하여 대화 주제 우선순위 결정
-     * 각 장소의 방문 시점 날씨 정보도 함께 표시
-     *
-     * @param places 방문 장소 목록
-     * @return 포맷팅된 방문 장소 텍스트 (체류 시간 내림차순 정렬)
+     * 집 낮 체류로 인정하는 시간대 (이 창과 조금이라도 겹치면 낮 체류로 본다)
+     * - 이 밖(깊은 밤/이른 새벽)에만 있던 집 체류는 취침/휴식으로 보고 활동 질문에서 제외
      */
-    private String buildVisitedPlacesText(List<VisitedPlace> places) {
-        if (places == null || places.isEmpty()) {
+    private static final java.time.LocalTime DAY_START = java.time.LocalTime.of(8, 0);
+    private static final java.time.LocalTime DAY_END = java.time.LocalTime.of(22, 0);
+
+    /**
+     * 방문 장소를 외출/집 두 섹션으로 나눠 텍스트로 변환
+     *
+     * - [외출한 곳]: 집이 아닌 곳. 체류 시간 내림차순. 장소명·시간·방문 시점 날씨 표시
+     * - [집에서 보낸 시간]: 낮에 집에 머문 시간대. 장소명 대신 시간/체류만 표시(집 주소 노출 최소화)
+     *
+     * @param outings          외출 장소 (isHome=false)
+     * @param daytimeHomeStays 낮 시간대 집 체류 (isHome=true & 낮)
+     * @return 포맷팅된 방문 장소 텍스트 (둘 다 없으면 안내 문구)
+     */
+    private String buildVisitedPlacesText(List<VisitedPlace> outings, List<VisitedPlace> daytimeHomeStays) {
+        boolean hasOuting = outings != null && !outings.isEmpty();
+        boolean hasHome = daytimeHomeStays != null && !daytimeHomeStays.isEmpty();
+        if (!hasOuting && !hasHome) {
             return NO_VISITED_PLACES_TEXT;
         }
 
         StringBuilder sb = new StringBuilder();
-        places.stream()
-                .sorted((a, b) -> Integer.compare(
-                        b.getStayDurationMinutes() != null ? b.getStayDurationMinutes() : 0,
-                        a.getStayDurationMinutes() != null ? a.getStayDurationMinutes() : 0))
-                .forEach(place -> {
-                    sb.append(String.format("- %s", place.getPlaceName()));
 
-                    // 방문 시간 및 체류 시간 추가
-                    if (place.getVisitStartTime() != null && place.getVisitEndTime() != null) {
-                        sb.append(String.format(" (%s~%s",
-                                formatTime(place.getVisitStartTime()),
-                                formatTime(place.getVisitEndTime())));
-                        if (place.getStayDurationMinutes() != null) {
-                            sb.append(String.format(", %d분 체류", place.getStayDurationMinutes()));
-                        }
-                        sb.append(")");
-                    }
+        if (hasOuting) {
+            sb.append("[외출한 곳]\n");
+            outings.stream()
+                    .sorted((a, b) -> Integer.compare(
+                            b.getStayDurationMinutes() != null ? b.getStayDurationMinutes() : 0,
+                            a.getStayDurationMinutes() != null ? a.getStayDurationMinutes() : 0))
+                    .forEach(place -> appendOutingLine(sb, place));
+        }
 
-                    // 방문 시점 날씨 정보 추가
-                    VisitWeather weather = place.getWeather();
-                    if (weather != null && weather.getDescription() != null) {
-                        sb.append(String.format(" (날씨: %s", weather.getDescription()));
-                        if (weather.getTemperature() != null) {
-                            sb.append(String.format(", %d°C", weather.getTemperature()));
-                        }
-                        sb.append(")");
-                    }
-
-                    sb.append("\n");
-                });
+        if (hasHome) {
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append("[집에서 보낸 시간] (낮 시간대)\n");
+            daytimeHomeStays.stream()
+                    .sorted((a, b) -> Integer.compare(
+                            b.getStayDurationMinutes() != null ? b.getStayDurationMinutes() : 0,
+                            a.getStayDurationMinutes() != null ? a.getStayDurationMinutes() : 0))
+                    .forEach(place -> appendHomeStayLine(sb, place));
+        }
 
         return sb.toString().trim();
+    }
+
+    /**
+     * 외출 장소 한 줄 포맷: "- 장소명 (시간~시간, N분 체류) (날씨: ...)"
+     */
+    private void appendOutingLine(StringBuilder sb, VisitedPlace place) {
+        sb.append(String.format("- %s", place.getPlaceName()));
+
+        if (place.getVisitStartTime() != null && place.getVisitEndTime() != null) {
+            sb.append(String.format(" (%s~%s",
+                    formatTime(place.getVisitStartTime()),
+                    formatTime(place.getVisitEndTime())));
+            if (place.getStayDurationMinutes() != null) {
+                sb.append(String.format(", %d분 체류", place.getStayDurationMinutes()));
+            }
+            sb.append(")");
+        }
+
+        VisitWeather weather = place.getWeather();
+        if (weather != null && weather.getDescription() != null) {
+            sb.append(String.format(" (날씨: %s", weather.getDescription()));
+            if (weather.getTemperature() != null) {
+                sb.append(String.format(", %d°C", weather.getTemperature()));
+            }
+            sb.append(")");
+        }
+
+        sb.append("\n");
+    }
+
+    /**
+     * 집 체류 한 줄 포맷: "- 시간~시간 (N분)" (집이라 장소명은 표시하지 않음)
+     */
+    private void appendHomeStayLine(StringBuilder sb, VisitedPlace place) {
+        if (place.getVisitStartTime() != null && place.getVisitEndTime() != null) {
+            sb.append(String.format("- %s~%s",
+                    formatTime(place.getVisitStartTime()),
+                    formatTime(place.getVisitEndTime())));
+            if (place.getStayDurationMinutes() != null) {
+                sb.append(String.format(" (%d분)", place.getStayDurationMinutes()));
+            }
+        } else if (place.getStayDurationMinutes() != null) {
+            sb.append(String.format("- 약 %d분 체류", place.getStayDurationMinutes()));
+        } else {
+            sb.append("- 집에서 머묾");
+        }
+        sb.append("\n");
+    }
+
+    /**
+     * 집 체류가 낮 시간대(DAY_START~DAY_END)와 조금이라도 겹치는지 판정.
+     * 시간 정보가 없으면 낮으로 간주(활동 질문 대상 유지).
+     * 자정을 넘기는 체류(예: 23시~다음날 7시)는 겹침이 성립하지 않아 자연히 제외된다.
+     */
+    private boolean isDaytimeStay(VisitedPlace place) {
+        java.time.LocalTime start = place.getVisitStartTime();
+        java.time.LocalTime end = place.getVisitEndTime();
+        if (start == null || end == null) {
+            return true;
+        }
+        return start.isBefore(DAY_END) && end.isAfter(DAY_START);
     }
 
     /**

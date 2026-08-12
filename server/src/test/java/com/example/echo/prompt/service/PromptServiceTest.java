@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.example.echo.memory.entity.Memory;
 
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -429,6 +430,100 @@ class PromptServiceTest {
         // Then
         assertThat(result).contains("장소를 언급하며");
         assertThat(result).doesNotContain("장소를 절대 언급하지 말고");
+    }
+
+    // ===== 집/외출 분류(isHome) 반영 테스트 =====
+
+    @Test
+    @DisplayName("buildSystemPrompt - 외출 + 집 혼합: [외출한 곳]/[집에서 보낸 시간] 분리, 집 주소 미노출, 외출 우선 가이드")
+    void buildSystemPrompt_outingAndHome_split() {
+        // Given: 외출(이마트) + 낮 집 체류(자택)
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("이마트").isHome(false)
+                        .visitStartTime(LocalTime.of(14, 0)).visitEndTime(LocalTime.of(15, 0))
+                        .stayDurationMinutes(60).build(),
+                VisitedPlace.builder().placeName("자택").isHome(true)
+                        .visitStartTime(LocalTime.of(9, 0)).visitEndTime(LocalTime.of(13, 0))
+                        .stayDurationMinutes(240).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+        UserContext ctx = UserContext.builder()
+                .userId(TEST_USER_ID).preferences(context.getPreferences()).locationData(locationData).build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{visitedPlacesText}} / {{todayActivityGuide}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(ctx);
+
+        // Then: 두 섹션으로 분리되고, 집 장소명(자택)은 노출되지 않으며, 외출 우선 가이드가 들어간다
+        assertThat(result).contains("[외출한 곳]");
+        assertThat(result).contains("이마트");
+        assertThat(result).contains("[집에서 보낸 시간]");
+        assertThat(result).doesNotContain("자택");           // 집 주소는 노출하지 않음
+        assertThat(result).contains("장소를 언급하며");        // 외출 우선 가이드
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 외출 없이 낮 집 체류만: 집에서 어떻게 지냈는지 묻는 가이드")
+    void buildSystemPrompt_daytimeHomeOnly() {
+        // Given: 낮 집 체류만 (외출 없음)
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("자택").isHome(true)
+                        .visitStartTime(LocalTime.of(10, 0)).visitEndTime(LocalTime.of(13, 0))
+                        .stayDurationMinutes(180).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+        UserContext ctx = UserContext.builder()
+                .userId(TEST_USER_ID).preferences(context.getPreferences()).locationData(locationData).build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{visitedPlacesText}} / {{todayActivityGuide}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(ctx);
+
+        // Then: 외출 섹션은 없고, 집에서 어떻게 지냈는지 묻는 가이드가 들어간다
+        assertThat(result).contains("[집에서 보낸 시간]");
+        assertThat(result).doesNotContain("[외출한 곳]");
+        assertThat(result).contains("집에서 어떻게 지내셨는지");
+        assertThat(result).doesNotContain("장소를 언급하며");
+        assertThat(result).doesNotContain("장소를 절대 언급하지 말고");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 집 체류가 야간뿐이면 활동 대상에서 제외되어 일반 질문 가이드로 폴백")
+    void buildSystemPrompt_nighttimeHomeExcluded() {
+        // Given: 야간 집 체류만 (23:00~23:59) → 낮 체류 아님 → 제외
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("자택").isHome(true)
+                        .visitStartTime(LocalTime.of(23, 0)).visitEndTime(LocalTime.of(23, 59))
+                        .stayDurationMinutes(59).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+        UserContext ctx = UserContext.builder()
+                .userId(TEST_USER_ID).preferences(context.getPreferences()).locationData(locationData).build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{todayActivityGuide}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(ctx);
+
+        // Then: 낮 집 체류도 외출도 없으므로 장소 언급 없는 일반 질문 가이드
+        assertThat(result).contains("장소를 절대 언급하지 말고");
     }
 
     // ===== {{recallGuide}} 치환 테스트 =====
