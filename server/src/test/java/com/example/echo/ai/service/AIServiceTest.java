@@ -177,6 +177,29 @@ class AIServiceTest {
     }
 
     @Test
+    @DisplayName("generateResponse - 시스템 프롬프트는 messages 배열에 단 하나만 들어간다")
+    void generateResponse_onlyOneSystemMessage() {
+        // Given
+        String systemPrompt = "당신은 친근한 대화 상대입니다.";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "오늘 날씨가 좋네요";
+
+        ChatCompletionResponse response = createMockResponse("좋은 질문이네요!");
+
+        ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
+        when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
+
+        // When
+        aiService.generateResponse(systemPrompt, history, userMessage);
+
+        // Then: system(1) + current user(1) = 2. 단계 안내용 추가 system 메시지는 붙지 않는다
+        assertThat(captor.getValue().getMessages()).hasSize(2);
+        assertThat(captor.getValue().getMessages())
+                .filteredOn(message -> "system".equals(message.getRole()))
+                .hasSize(1);
+    }
+
+    @Test
     @DisplayName("generateResponse - API 실패: FeignException → AIException 변환")
     void generateResponse_apiFailure() {
         // Given

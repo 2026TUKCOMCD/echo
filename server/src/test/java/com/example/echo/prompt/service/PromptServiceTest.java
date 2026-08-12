@@ -313,4 +313,122 @@ class PromptServiceTest {
         assertThat(result).doesNotContain("체류");
     }
 
+    @Test
+    @DisplayName("buildSystemPrompt - 역지오코딩 실패로 placeName이 null인 장소는 목록에서 제외됨 (회귀 방지)")
+    void buildSystemPrompt_excludesPlacesWithNullPlaceName() {
+        // Given: 역지오코딩 실패 장소(placeName null) + 성공 장소가 섞여 있음
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName(null).stayDurationMinutes(50).build(),
+                VisitedPlace.builder().placeName("").stayDurationMinutes(40).build(),
+                VisitedPlace.builder().placeName("이마트").stayDurationMinutes(30).build()
+        );
+
+        LocationData locationData = LocationData.builder()
+                .currentCity("서울")
+                .visitedPlaces(places)
+                .build();
+
+        UserContext contextWithLocation = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .locationData(locationData)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{visitedPlacesText}} / {{todayActivityGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(contextWithLocation);
+
+        // Then: null 장소가 "- null"로 새지 않고, 유효한 장소만 남아 "장소 있음" 지시문으로 이어짐
+        assertThat(result).doesNotContain("null");
+        assertThat(result).contains("이마트");
+        assertThat(result).contains("장소를 언급하며");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 위치 데이터가 아예 없으면 장소 언급 없이 활동만 묻는 지시문이 들어감")
+    void buildSystemPrompt_todayActivityGuide_noLocationData() {
+        // Given: locationData 자체가 null
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{todayActivityGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(context);
+
+        // Then
+        assertThat(result).contains("장소를 절대 언급하지 말고");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 방문 장소는 있지만 전부 역지오코딩 실패면 장소 언급 없이 활동만 묻는 지시문이 들어감")
+    void buildSystemPrompt_todayActivityGuide_allPlacesUnnamed() {
+        // Given: visitedPlaces는 존재하지만 전부 placeName이 없음
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName(null).stayDurationMinutes(20).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+
+        UserContext contextWithLocation = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .locationData(locationData)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{todayActivityGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(contextWithLocation);
+
+        // Then
+        assertThat(result).contains("장소를 절대 언급하지 말고");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 유효한 방문 장소가 있으면 장소를 언급하며 활동을 묻는 지시문이 들어감")
+    void buildSystemPrompt_todayActivityGuide_hasNamedPlace() {
+        // Given
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("신길로 123").stayDurationMinutes(90).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+
+        UserContext contextWithLocation = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .locationData(locationData)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{todayActivityGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(contextWithLocation);
+
+        // Then
+        assertThat(result).contains("장소를 언급하며");
+        assertThat(result).doesNotContain("장소를 절대 언급하지 말고");
+    }
+
 }

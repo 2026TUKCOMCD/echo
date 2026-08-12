@@ -44,6 +44,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PromptService {
 
+    private static final String NO_VISITED_PLACES_TEXT = "오늘 방문한 장소 정보가 없습니다.";
+
     private final PromptTemplateRepository promptTemplateRepository;
 
     /**
@@ -54,14 +56,15 @@ public class PromptService {
      *
      * [최적화] Context에서 EnrichedHealthData 직접 사용 - DB 재조회 없음
      *
-     * 템플릿 변수 (v7):
+     * 템플릿 변수 (v10):
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
      * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}, {{preferredSleepHours}}
      * - 현재 날씨: {{weather}}, {{temperature}}
-     * - 위치: {{currentCity}}, {{visitedPlacesText}}
+     * - 위치: {{currentCity}}, {{visitedPlacesText}}, {{todayActivityGuide}}
      * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{activityList}}
      * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}
      * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
+     * - 장기기억: {{lifeMemories}}
      *
      * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
@@ -76,6 +79,11 @@ public class PromptService {
      *
      * v9부터 {{lifeMemories}} 변수로 이전 대화에서 추출된 자전적 기억을 주입한다.
      * 오늘의 방문 장소(단서)와 옛 기억을 엮는 회상 대화의 재료가 된다.
+     *
+     * v10부터 {{todayActivityGuide}} 변수로 오늘 활동 질문 방식을 서버가 확정해 내려준다.
+     * 유효한 장소명(역지오코딩 성공)이 하나라도 있으면 장소를 언급하는 질문 지시문을,
+     * 없으면 장소 언급 없이 오늘 활동을 묻는 지시문을 준다. AI가 위치 유무를 스스로
+     * 판단하게 두면 지시가 지켜지지 않아(2단계·3단계 혼용) 서버가 완성된 문장으로 확정한다.
      *
      * @param context      ContextService에서 전달받은 UserContext
      * @param lifeMemories 저장된 장기기억 목록 (비어 있어도 됨)
@@ -131,20 +139,21 @@ public class PromptService {
         variables.put("wakeTimeEvaluation", healthData != null ? healthData.getWakeTimeEvaluation() : "");
 
         // 4-7. 위치 정보 (방문 시점 날씨 포함)
+        // 역지오코딩 실패로 placeName이 없는 장소는 "오늘 활동" 판단에서 제외한다
+        // (그대로 두면 프롬프트에 "- null"이 들어가고, AI가 실패한 장소를 언급하려 든다)
         LocationData locationData = context.getLocationData();
-        if (locationData != null) {
-            variables.put("currentCity", locationData.getCurrentCity() != null
-                    ? locationData.getCurrentCity() : "");
-            String visitedPlacesText = buildVisitedPlacesText(locationData.getVisitedPlaces());
-            variables.put("visitedPlacesText", visitedPlacesText);
+        List<VisitedPlace> namedPlaces = extractNamedPlaces(locationData);
 
-            // 프롬프트에 들어가는 위치 정보 로그
-            log.debug("[프롬프트] currentCity: {}", variables.get("currentCity"));
-            log.debug("[프롬프트] visitedPlacesText:\n{}", visitedPlacesText);
+        variables.put("currentCity", locationData != null && locationData.getCurrentCity() != null
+                ? locationData.getCurrentCity() : "");
+        variables.put("visitedPlacesText", buildVisitedPlacesText(namedPlaces));
+        variables.put("todayActivityGuide", buildTodayActivityGuide(!namedPlaces.isEmpty()));
+
+        if (namedPlaces.isEmpty()) {
+            log.info("[프롬프트] 위치 데이터 없음 - locationData 존재: {}", locationData != null);
         } else {
-            variables.put("currentCity", "");
-            variables.put("visitedPlacesText", "오늘 방문한 장소 정보가 없습니다.");
-            log.info("[프롬프트] 위치 데이터 없음");
+            log.debug("[프롬프트] currentCity: {}", variables.get("currentCity"));
+            log.debug("[프롬프트] visitedPlacesText:\n{}", variables.get("visitedPlacesText"));
         }
 
         // 4-8. 장기기억 (v9~) - 이전 대화들에서 추출·저장된 자전적 기억
@@ -152,6 +161,36 @@ public class PromptService {
 
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
+    }
+
+    /**
+     * 오늘 활동 질문 방식을 서버가 확정한 지시문으로 반환
+     *
+     * hasNamedPlace가 true면 [오늘 다녀오신 곳]을 언급하며 활동을 묻게 하고,
+     * false면 장소를 절대 언급하지 말고 활동만 묻게 한다. (v10, 2단계용)
+     */
+    private String buildTodayActivityGuide(boolean hasNamedPlace) {
+        if (hasNamedPlace) {
+            return "오늘 다녀오신 곳이 확인되었습니다. [오늘 다녀오신 곳] 중 체류 시간이 가장 긴 장소를 "
+                    + "언급하며, 그곳에서 무엇을 하셨는지 여쭤보세요. 주소는 동/도로명 정도로 짧게 줄여 말하세요. "
+                    + "예: \"오늘 신길로 쪽에 다녀오셨네요. 거기서 어떤 일 보셨어요?\"";
+        }
+        return "오늘 다녀오신 곳 정보가 없습니다. 장소를 절대 언급하지 말고, 오늘 하루 무엇을 하셨는지 여쭤보세요. "
+                + "예: \"오늘은 어떻게 지내셨어요? 특별히 하신 일이 있으세요?\"";
+    }
+
+    /**
+     * 역지오코딩에 성공해 장소명이 있는 방문 장소만 추림
+     *
+     * placeName이 없으면(역지오코딩 실패) "오늘 활동" 판단·표시 대상에서 제외한다.
+     */
+    private List<VisitedPlace> extractNamedPlaces(LocationData locationData) {
+        if (locationData == null || locationData.getVisitedPlaces() == null) {
+            return List.of();
+        }
+        return locationData.getVisitedPlaces().stream()
+                .filter(place -> place.getPlaceName() != null && !place.getPlaceName().isBlank())
+                .toList();
     }
 
     /**
@@ -328,7 +367,7 @@ public class PromptService {
      */
     private String buildVisitedPlacesText(List<VisitedPlace> places) {
         if (places == null || places.isEmpty()) {
-            return "오늘 방문한 장소가 없습니다.";
+            return NO_VISITED_PLACES_TEXT;
         }
 
         StringBuilder sb = new StringBuilder();
