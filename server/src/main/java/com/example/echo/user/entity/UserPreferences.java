@@ -26,6 +26,14 @@ public class UserPreferences {
     @Column(name = "location", length = 100)
     private String location;
 
+    /** 거주지(집) 위도 - "현재 위치를 집으로 등록"으로 저장. 방문 장소를 집/외출로 분류하는 기준 */
+    @Column(name = "home_latitude")
+    private Double homeLatitude;
+
+    /** 거주지(집) 경도 */
+    @Column(name = "home_longitude")
+    private Double homeLongitude;
+
     @Column(name = "family_info", length = 500)
     private String familyInfo;
 
@@ -73,6 +81,7 @@ public class UserPreferences {
 
     @Builder
     public UserPreferences(Long userId, LocalDate birthday, String location,
+                           Double homeLatitude, Double homeLongitude,
                            String familyInfo, String guardianEmail, String occupation,
                            String hobbies, String preferredTopics, Double voiceSpeed,
                            String voiceTone, LocalTime conversationTime,
@@ -80,6 +89,8 @@ public class UserPreferences {
         this.userId = userId;
         this.birthday = birthday;
         this.location = location;
+        this.homeLatitude = homeLatitude;
+        this.homeLongitude = homeLongitude;
         this.familyInfo = familyInfo;
         this.guardianEmail = guardianEmail;
         this.occupation = occupation;
@@ -116,6 +127,12 @@ public class UserPreferences {
 
     public void updateLocation(String location) {
         this.location = location;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateHomeLocation(Double homeLatitude, Double homeLongitude) {
+        this.homeLatitude = homeLatitude;
+        this.homeLongitude = homeLongitude;
         this.updatedAt = LocalDateTime.now();
     }
 

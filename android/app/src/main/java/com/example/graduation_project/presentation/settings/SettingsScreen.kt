@@ -347,6 +347,13 @@ fun SettingsScreen(
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("거주 지역", uiState.location, enabled = enabled) { editingField = "location" }
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    HomeLocationRow(
+                        isRegistered = uiState.homeLatitude != null && uiState.homeLongitude != null,
+                        isRegistering = uiState.isRegisteringHome,
+                        enabled = enabled,
+                        onClick = { viewModel.registerCurrentLocationAsHome() }
+                    )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("직업", uiState.occupation, enabled = enabled) { editingField = "occupation" }
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("취미", uiState.hobbies, enabled = enabled) { editingField = "hobbies" }
@@ -673,6 +680,53 @@ private fun PreferenceRow(
             Spacer(Modifier.width(6.dp))
         }
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
+    }
+}
+
+/**
+ * 거주지(집) 등록 행 - "현재 위치를 집으로 등록"
+ *
+ * 저장된 집 좌표는 서버가 방문 장소를 집/외출로 분류하는 기준이 된다.
+ * 눌러서 현재 GPS 좌표를 집으로 저장(또는 갱신)한다.
+ */
+@Composable
+private fun HomeLocationRow(
+    isRegistered: Boolean,
+    isRegistering: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val colors = LocalEchoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled && !isRegistering, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("거주지(집)", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = when {
+                    isRegistering -> "현재 위치 확인 중..."
+                    isRegistered -> "등록됨 · 눌러서 현재 위치로 갱신"
+                    else -> "미등록 · 눌러서 현재 위치를 집으로 등록"
+                },
+                fontSize = 16.sp,
+                fontFamily = OutfitFontFamily,
+                color = if (isRegistered) colors.textPrimary else colors.textTertiary
+            )
+        }
+        if (isRegistering) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = colors.accentBlue
+            )
+        } else {
+            Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = colors.accentBlue)
+        }
     }
 }
 

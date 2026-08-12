@@ -25,6 +25,9 @@ interface UserApi {
     @PUT("/api/users/me/preferences/location")
     suspend fun updateLocation(@Body request: LocationUpdateRequest): UserPreferences
 
+    @PUT("/api/users/me/preferences/home-location")
+    suspend fun updateHomeLocation(@Body request: HomeLocationUpdateRequest): UserPreferences
+
     @PUT("/api/users/me/preferences/family-info")
     suspend fun updateFamilyInfo(@Body request: FamilyInfoUpdateRequest): UserPreferences
 

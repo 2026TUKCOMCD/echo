@@ -45,6 +45,10 @@ data class SettingsUiState(
     val familyInfo: String? = null,
     val guardianEmail: String? = null,
     val location: String? = null,
+    // 거주지(집) 좌표 - "현재 위치를 집으로 등록"으로 저장
+    val homeLatitude: Double? = null,
+    val homeLongitude: Double? = null,
+    val isRegisteringHome: Boolean = false,
     val occupation: String? = null,
     val hobbies: String? = null,
     val preferredTopics: String? = null,
@@ -405,6 +409,45 @@ class SettingsViewModel(
 
     fun updateBirthday(birthday: String?) = updateField { userRepository.updateBirthday(birthday) }
     fun updateLocation(location: String?) = updateField { userRepository.updateLocation(location) }
+
+    /**
+     * "현재 위치를 집으로 등록" - 현재 GPS 좌표를 거주지로 저장.
+     *
+     * 저장된 집 좌표는 서버가 방문 장소를 집/외출로 분류하는 기준이 된다.
+     * 위치 권한이 없으면 안내 메시지만 표시한다.
+     */
+    fun registerCurrentLocationAsHome() {
+        val context = getApplication<Application>()
+        if (!PermissionChecker.hasForegroundLocationPermission(context)) {
+            _uiState.update { it.copy(errorMessage = "위치 권한이 필요합니다. 권한을 허용한 뒤 다시 시도해주세요.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRegisteringHome = true) }
+            val location = com.example.graduation_project.data.location.LocationManager(context)
+                .getCurrentLocation()
+            if (location == null) {
+                _uiState.update {
+                    it.copy(
+                        isRegisteringHome = false,
+                        errorMessage = "현재 위치를 가져오지 못했습니다. 잠시 후 다시 시도해주세요."
+                    )
+                }
+                return@launch
+            }
+            when (val result = userRepository.updateHomeLocation(location.latitude, location.longitude)) {
+                is ApiResult.Success -> _uiState.update {
+                    applyPrefs(it, result.data).copy(
+                        isRegisteringHome = false,
+                        savedMessage = "현재 위치를 집으로 등록했습니다"
+                    )
+                }
+                is ApiResult.Error -> _uiState.update {
+                    it.copy(isRegisteringHome = false, errorMessage = "집 등록에 실패했습니다. 다시 시도해주세요.")
+                }
+            }
+        }
+    }
     fun updateFamilyInfo(familyInfo: String?) = updateField { userRepository.updateFamilyInfo(familyInfo) }
     fun updateGuardianEmail(guardianEmail: String?) = updateField { userRepository.updateGuardianEmail(guardianEmail) }
     fun updateOccupation(occupation: String?) = updateField { userRepository.updateOccupation(occupation) }
@@ -576,6 +619,8 @@ class SettingsViewModel(
         familyInfo = prefs.familyInfo,
         guardianEmail = prefs.guardianEmail,
         location = prefs.location,
+        homeLatitude = prefs.homeLatitude,
+        homeLongitude = prefs.homeLongitude,
         occupation = prefs.occupation,
         hobbies = prefs.hobbies,
         preferredTopics = prefs.preferredTopics,
