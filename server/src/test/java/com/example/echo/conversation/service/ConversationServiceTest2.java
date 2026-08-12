@@ -14,6 +14,7 @@ import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.memory.entity.Memory;
 import com.example.echo.memory.service.MemoryService;
+import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
@@ -70,6 +71,9 @@ class ConversationServiceTest2 {
     private MemoryService memoryService;
 
     @Mock
+    private RecallTopicRotationService recallTopicRotationService;
+
+    @Mock
     private TaskExecutor taskExecutor;
 
     private Long userId;
@@ -115,7 +119,7 @@ class ConversationServiceTest2 {
             byte[] audioData = "mock audio data".getBytes();
 
             given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
-            given(promptService.buildSystemPrompt(eq(mockContext), any())).willReturn(systemPrompt);
+            given(promptService.buildSystemPrompt(eq(mockContext), any(), any())).willReturn(systemPrompt);
             given(aiService.generateGreeting(systemPrompt, mockContext)).willReturn(greeting);
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
@@ -137,7 +141,7 @@ class ConversationServiceTest2 {
             byte[] audioData = "audio".getBytes();
 
             given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
-            given(promptService.buildSystemPrompt(eq(mockContext), any())).willReturn(systemPrompt);
+            given(promptService.buildSystemPrompt(eq(mockContext), any(), any())).willReturn(systemPrompt);
             given(aiService.generateGreeting(systemPrompt, mockContext)).willReturn(greeting);
             given(voiceService.textToSpeech(greeting, mockVoiceSettings)).willReturn(audioData);
 
@@ -147,13 +151,13 @@ class ConversationServiceTest2 {
             // then (순서대로 호출 검증)
             var inOrder = inOrder(contextService, promptService, aiService, voiceService);
             inOrder.verify(contextService).initializeContext(eq(userId), any(), any());
-            inOrder.verify(promptService).buildSystemPrompt(eq(mockContext), any());
+            inOrder.verify(promptService).buildSystemPrompt(eq(mockContext), any(), any());
             inOrder.verify(aiService).generateGreeting(systemPrompt, mockContext);
             inOrder.verify(voiceService).textToSpeech(greeting, mockVoiceSettings);
         }
 
         @Test
-        @DisplayName("성공: 저장된 장기기억이 시스템 프롬프트 생성에 전달된다")
+        @DisplayName("성공: 저장된 장기기억과 오늘의 회상 주제가 시스템 프롬프트 생성에 전달된다")
         void success_passesLifeMemoriesToSystemPrompt() {
             // given
             Memory memory = Memory.builder()
@@ -163,19 +167,25 @@ class ConversationServiceTest2 {
                     .content("30대에 부산에서 어부로 일했다")
                     .tags("부산,어부")
                     .build();
+            String recallGuide = "[오늘의 회상 주제] 고향\n[발굴 모드] ...";
             given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
-            given(promptService.buildSystemPrompt(eq(mockContext), any())).willReturn("시스템 프롬프트");
+            given(promptService.buildSystemPrompt(eq(mockContext), any(), any())).willReturn("시스템 프롬프트");
             given(memoryService.getMemories(userId)).willReturn(List.of(memory));
+            given(recallTopicRotationService.currentTopic()).willReturn("고향");
+            given(promptService.buildRecallGuide(eq("고향"), any())).willReturn(recallGuide);
             given(aiService.generateGreeting(anyString(), eq(mockContext))).willReturn("안녕하세요!");
             given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
 
             // when
             conversationService.startConversation(userId, null, null);
 
-            // then: 조회된 기억이 {{lifeMemories}} 치환용으로 그대로 전달되어야 함
+            // then: 조회된 기억과 오늘의 회상 주제가 각각 {{lifeMemories}}/{{recallGuide}} 치환용으로 전달되어야 함
             ArgumentCaptor<List<Memory>> memoriesCaptor = ArgumentCaptor.forClass(List.class);
-            then(promptService).should().buildSystemPrompt(eq(mockContext), memoriesCaptor.capture());
+            ArgumentCaptor<String> recallGuideCaptor = ArgumentCaptor.forClass(String.class);
+            then(promptService).should().buildSystemPrompt(
+                    eq(mockContext), memoriesCaptor.capture(), recallGuideCaptor.capture());
             assertThat(memoriesCaptor.getValue()).containsExactly(memory);
+            assertThat(recallGuideCaptor.getValue()).isEqualTo(recallGuide);
         }
 
         @Test
@@ -183,7 +193,7 @@ class ConversationServiceTest2 {
         void memoryLookupFailure_startsConversationWithoutMemories() {
             // given
             given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
-            given(promptService.buildSystemPrompt(eq(mockContext), any())).willReturn("시스템 프롬프트");
+            given(promptService.buildSystemPrompt(eq(mockContext), any(), any())).willReturn("시스템 프롬프트");
             given(memoryService.getMemories(userId)).willThrow(new RuntimeException("DB 연결 끊김"));
             given(aiService.generateGreeting(anyString(), eq(mockContext))).willReturn("안녕하세요!");
             given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
@@ -194,7 +204,7 @@ class ConversationServiceTest2 {
             // then: 대화는 정상 시작되고, 프롬프트는 빈 기억 목록으로 생성되어야 함
             assertThat(result.getMessage()).isEqualTo("안녕하세요!");
             ArgumentCaptor<List<Memory>> memoriesCaptor = ArgumentCaptor.forClass(List.class);
-            then(promptService).should().buildSystemPrompt(eq(mockContext), memoriesCaptor.capture());
+            then(promptService).should().buildSystemPrompt(eq(mockContext), memoriesCaptor.capture(), any());
             assertThat(memoriesCaptor.getValue()).isEmpty();
         }
     }
