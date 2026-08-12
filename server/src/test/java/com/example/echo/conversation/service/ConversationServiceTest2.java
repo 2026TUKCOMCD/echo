@@ -28,6 +28,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -71,6 +72,9 @@ class ConversationServiceTest2 {
 
     @Mock
     private RecallTopicRotationService recallTopicRotationService;
+
+    @Mock
+    private TaskExecutor taskExecutor;
 
     private Long userId;
     private UserContext mockContext;
@@ -404,19 +408,39 @@ class ConversationServiceTest2 {
         }
 
         @Test
-        @DisplayName("성공: 대화 원문이 사라지기 전에 장기기억을 추출한다")
-        void success_extractsMemoriesBeforeContextIsFinalized() {
+        @DisplayName("성공: 장기기억 추출은 컨텍스트 정리 전에 백그라운드로 제출되고, 원본과 분리된 스냅샷이 전달된다")
+        void success_submitsMemoryExtractionBeforeContextIsFinalizedWithSnapshot() {
             // given
+            mockContext.getConversationHistory().add(
+                    ConversationTurn.builder()
+                            .userMessage("테스트")
+                            .aiResponse("응답")
+                            .timestamp(LocalDateTime.now())
+                            .build()
+            );
             given(contextService.getContext(userId)).willReturn(mockContext);
             willDoNothing().given(contextService).finalizeContext(userId);
 
             // when
             conversationService.endConversation(userId);
 
-            // then: finalizeContext가 대화 원문을 지우므로 추출이 반드시 그 전이어야 함
-            var inOrder = inOrder(memoryService, contextService);
-            inOrder.verify(memoryService).extractAndSaveMemories(mockContext);
+            // then: taskExecutor 제출이 finalizeContext보다 먼저여야 함 (제출 시점에 원본 대화 원문이 아직 살아있어야 함)
+            var inOrder = inOrder(taskExecutor, contextService);
+            inOrder.verify(taskExecutor).execute(any(Runnable.class));
             inOrder.verify(contextService).finalizeContext(userId);
+
+            // 그리고: 백그라운드 작업이 실제로 실행되면, 넘겨받는 컨텍스트는 원본과 다른 인스턴스이되
+            // 대화 원문은 그대로 담고 있어야 함 (finalizeContext가 원본을 지워도 영향받지 않도록)
+            ArgumentCaptor<Runnable> taskCaptor = ArgumentCaptor.forClass(Runnable.class);
+            then(taskExecutor).should().execute(taskCaptor.capture());
+            taskCaptor.getValue().run();
+
+            ArgumentCaptor<UserContext> snapshotCaptor = ArgumentCaptor.forClass(UserContext.class);
+            then(memoryService).should().extractAndSaveMemories(snapshotCaptor.capture());
+            UserContext snapshot = snapshotCaptor.getValue();
+            assertThat(snapshot).isNotSameAs(mockContext);
+            assertThat(snapshot.getUserId()).isEqualTo(mockContext.getUserId());
+            assertThat(snapshot.getConversationHistory()).isEqualTo(mockContext.getConversationHistory());
         }
 
         @Test
@@ -432,7 +456,11 @@ class ConversationServiceTest2 {
             given(contextService.getContext(userId)).willReturn(mockContext);
             given(diaryService.generateAndSaveDiary(mockContext)).willReturn(new DiaryOutcome.Processed(diary));
             willThrow(new RuntimeException("기억 추출 실패"))
-                    .given(memoryService).extractAndSaveMemories(mockContext);
+                    .given(memoryService).extractAndSaveMemories(any());
+            willAnswer(invocation -> {
+                invocation.getArgument(0, Runnable.class).run();
+                return null;
+            }).given(taskExecutor).execute(any(Runnable.class));
             willDoNothing().given(contextService).finalizeContext(userId);
 
             // when

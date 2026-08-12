@@ -25,6 +25,13 @@ spring:
     init:
       mode: always  # 매 시작마다 data.sql 실행 (개발용)
 
+  # 비동기 작업(장기기억 추출 등) 스레드풀 - 배포/재시작 시 진행 중인 작업을 최대한 마치고 종료
+  task:
+    execution:
+      shutdown:
+        await-termination: true
+        await-termination-period: 30s
+
 openai:
   api:
     url: https://api.openai.com/v1
