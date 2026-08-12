@@ -60,7 +60,7 @@ class ConversationServiceTest {
 
     @BeforeEach
     void setUp() {
-        // 직접 생성자로 주입
+        // 직접 생성자로 주입 (taskExecutor는 제출 즉시 실행하는 동기 구현으로 대체)
         conversationService = new ConversationService(
                 voiceService,
                 promptService,
@@ -68,7 +68,8 @@ class ConversationServiceTest {
                 contextService,
                 diaryService,
                 healthDataService,
-                memoryService
+                memoryService,
+                Runnable::run
         );
         mockContext = createMockContext();
     }
