@@ -17,6 +17,7 @@ import com.example.echo.location.dto.RawLocationData;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.memory.entity.Memory;
 import com.example.echo.memory.service.MemoryService;
+import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class ConversationService {
     private final DiaryService diaryService;
     private final HealthDataService healthDataService;
     private final MemoryService memoryService;
+    private final RecallTopicRotationService recallTopicRotationService;
 
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
@@ -49,19 +51,27 @@ public class ConversationService {
         // 1. 컨텍스트 초기화 (healthData, locationData 전달)
         UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
 
-        // 2. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
-        // 장기기억은 템플릿 변수로, 최근 7일 일기는 뒤에 덧붙여 AI가 이전 대화를 기억하는 것처럼 이어가게 함
+        // 2. 오늘의 장기기억 회상 주제(3단계용) 확정
+        // 시스템 프롬프트는 대화 시작 시 1회 생성되어 세션 내내 재사용되므로, 여기서 확정한 주제가
+        // 자정을 넘겨도 세션 중에는 그대로 유지된다. 시스템 프롬프트에 구워 넣어야 하니 2보다 먼저 계산한다.
+        List<Memory> lifeMemories = loadLifeMemories(userId);
+        String recallTopic = recallTopicRotationService.currentTopic();
+        String recallGuide = promptService.buildRecallGuide(recallTopic, lifeMemories);
+
+        // 3. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
+        // 장기기억·오늘의 회상 주제는 템플릿 변수로, 최근 7일 일기는 뒤에 덧붙여
+        // AI가 이전 대화를 기억하는 것처럼 이어가게 함
         String systemPrompt = appendRecentDiaries(
-                promptService.buildSystemPrompt(context, loadLifeMemories(userId)), userId);
+                promptService.buildSystemPrompt(context, lifeMemories, recallGuide), userId);
         context.setSystemPrompt(systemPrompt);
 
-        // 3. 첫 인사 생성
+        // 4. 첫 인사 생성
         String firstMessage = aiService.generateGreeting(systemPrompt, context);
 
-        // 4. TTS 변환
+        // 5. TTS 변환
         byte[] audioData = voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings());
 
-        // 5. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
+        // 6. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
         contextService.addConversationTurn(userId, null, firstMessage);
 
         return ConversationStartResponse.builder()

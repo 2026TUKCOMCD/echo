@@ -16,6 +16,7 @@ import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.VisitedPlace;
 import com.example.echo.memory.entity.Memory;
+import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
@@ -56,7 +57,7 @@ public class PromptService {
      *
      * [최적화] Context에서 EnrichedHealthData 직접 사용 - DB 재조회 없음
      *
-     * 템플릿 변수 (v10):
+     * 템플릿 변수 (v11):
      * - 사용자 정보: {{userName}}, {{userAge}}, {{userBirthday}}
      * - 선호도: {{hobby}}, {{job}}, {{family}}, {{preferredTopics}}, {{preferredSleepHours}}
      * - 현재 날씨: {{weather}}, {{temperature}}
@@ -64,31 +65,42 @@ public class PromptService {
      * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{activityList}}
      * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}
      * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
-     * - 장기기억: {{lifeMemories}}
+     * - 장기기억: {{lifeMemories}}, {{recallGuide}}
      *
      * @param context ContextService에서 전달받은 UserContext
      * @return 컴파일된 시스템 프롬프트 문자열
      * @throws IllegalStateException 활성화된 SYSTEM 템플릿이 없을 경우
      */
     public String buildSystemPrompt(UserContext context) {
-        return buildSystemPrompt(context, List.of());
+        return buildSystemPrompt(context, List.of(), null);
     }
 
     /**
-     * 시스템 프롬프트 생성 (장기기억 포함)
+     * 시스템 프롬프트 생성 (장기기억 포함, 오늘의 회상 주제 없음)
+     */
+    public String buildSystemPrompt(UserContext context, List<Memory> lifeMemories) {
+        return buildSystemPrompt(context, lifeMemories, null);
+    }
+
+    /**
+     * 시스템 프롬프트 생성 (장기기억 + 오늘의 회상 주제 포함)
      *
      * v9부터 {{lifeMemories}} 변수로 이전 대화에서 추출된 자전적 기억을 주입한다.
      * 오늘의 방문 장소(단서)와 옛 기억을 엮는 회상 대화의 재료가 된다.
      *
      * v10부터 {{todayActivityGuide}} 변수로 오늘 활동 질문 방식을 서버가 확정해 내려준다.
      * 유효한 장소명(역지오코딩 성공)이 하나라도 있으면 장소를 언급하는 질문 지시문을,
-     * 없으면 장소 언급 없이 오늘 활동을 묻는 지시문을 준다. AI가 위치 유무를 스스로
-     * 판단하게 두면 지시가 지켜지지 않아(2단계·3단계 혼용) 서버가 완성된 문장으로 확정한다.
+     * 없으면 장소 언급 없이 오늘 활동을 묻는 지시문을 준다. 위치 유무는 서버만 알 수 있는
+     * 사실이므로 AI가 추측하지 않도록 완성된 문장으로 확정해 내려준다.
+     *
+     * v11부터 {{recallGuide}} 변수로 오늘의 회상 주제(날짜 기반 로테이션)를 주입한다.
+     * 하루 한 주제라 세션 내내 고정이므로 시스템 프롬프트에 함께 구워 넣는다.
      *
      * @param context      ContextService에서 전달받은 UserContext
      * @param lifeMemories 저장된 장기기억 목록 (비어 있어도 됨)
+     * @param recallGuide  buildRecallGuide()로 만든 오늘의 회상 주제 안내 (null 허용)
      */
-    public String buildSystemPrompt(UserContext context, List<Memory> lifeMemories) {
+    public String buildSystemPrompt(UserContext context, List<Memory> lifeMemories, String recallGuide) {
         // 1. 템플릿 조회 (캐싱 적용)
         PromptTemplate template = getActiveTemplate(PromptType.SYSTEM);
 
@@ -159,6 +171,13 @@ public class PromptService {
         // 4-8. 장기기억 (v9~) - 이전 대화들에서 추출·저장된 자전적 기억
         variables.put("lifeMemories", buildLifeMemoriesText(lifeMemories));
 
+        // 4-9. 오늘의 회상 주제 (v11~) - 날짜 기반 로테이션으로 매일 다른 주제를 지정
+        // 키를 반드시 넣어야 한다: compile()은 맵에 없는 키의 {{placeholder}}를 원문 그대로
+        // 남기므로, 빠뜨리면 "{{recallGuide}}" 문자열이 그대로 모델에 전달된다
+        variables.put("recallGuide", recallGuide != null && !recallGuide.isBlank()
+                ? recallGuide
+                : "오늘 지정된 회상 주제가 없습니다. [어르신의 지난 이야기]를 실마리로 삼으세요.");
+
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
     }
@@ -177,6 +196,47 @@ public class PromptService {
         }
         return "오늘 다녀오신 곳 정보가 없습니다. 장소를 절대 언급하지 말고, 오늘 하루 무엇을 하셨는지 여쭤보세요. "
                 + "예: \"오늘은 어떻게 지내셨어요? 특별히 하신 일이 있으세요?\"";
+    }
+
+    /**
+     * 오늘의 장기기억 회상 주제 안내 생성 (3단계용)
+     *
+     * RecallTopicRotationService가 날짜 기반으로 확정한 topic과 저장된 장기기억을 대조해,
+     * 같은 topic의 기억이 이미 있으면 "심화 모드"(더 깊이 파고들기)를,
+     * 없으면 "발굴 모드"(새로 이끌어내기)를 지시한다.
+     *
+     * 참고 단서를 하드코딩하지 않는 이유: 특정 삶의 궤적(시골 출신·취학·임금노동·자녀 유무 등)을
+     * 전제하면 그 궤적에서 벗어난 어르신에게는 편향된 질문이 된다. 그래서 AI가 그 사람의
+     * 데이터(선호도·지난 이야기)로 직접 구체화하도록 원칙만 안내한다.
+     *
+     * 결과는 buildSystemPrompt의 {{recallGuide}} 변수로 시스템 프롬프트에 구워진다.
+     * 하루 한 주제라 세션 내내 고정이므로 턴별로 다시 만들 필요가 없다.
+     *
+     * @param topic     RecallTopicRotationService.currentTopic()이 반환한 오늘의 회상 주제
+     * @param memories  대화 시작 시 조회한 장기기억 목록 (null/빈 목록 허용)
+     * @return 시스템 프롬프트에 주입할 회상 주제 안내 문자열 (topic이 없으면 null)
+     */
+    public String buildRecallGuide(String topic, List<Memory> memories) {
+        if (topic == null || topic.isBlank()) {
+            return null;
+        }
+
+        Memory matched = memories == null ? null : memories.stream()
+                .filter(memory -> topic.equals(memory.getTopic()))
+                .findFirst()
+                .orElse(null);
+
+        if (matched != null) {
+            return "[오늘의 회상 주제] " + topic + "\n"
+                    + "[심화 모드] 아래는 어르신께서 이 주제로 전에 들려주신 기억입니다. "
+                    + "이미 아는 내용으로 자연스럽게 받아, 아직 여쭙지 못한 부분(그때의 감정, 함께한 사람, 그 시절의 의미)을 더 여쭤보세요.\n"
+                    + "- [" + matched.getLifePeriod() + "] " + matched.getContent();
+        }
+
+        return "[오늘의 회상 주제] " + topic + "\n"
+                + "[발굴 모드] 이 주제로는 아직 들려주신 이야기가 없습니다. "
+                + "특정 삶의 배경(시골 출신, 취학 여부, 직장 생활, 자녀 유무 등)을 전제하지 말고, "
+                + "누구에게나 자연스러운 범용적인 질문으로 이 주제에 대한 기억을 새로 여쭤보세요.";
     }
 
     /**
@@ -254,10 +314,12 @@ public class PromptService {
      * 대화 종료 시 MemoryService가 호출
      * [기존 기억 전체 + 이번 세션 대화]를 함께 전달해 통합된 전체 목록을 재생성하게 함
      *
-     * 템플릿 변수 (v1):
+     * 템플릿 변수 (v2):
      * - {{userName}}: 사용자 이름
      * - {{existingMemories}}: 기존에 저장된 기억 목록 (없으면 "(없음)")
      * - {{conversationHistory}}: 이번 세션의 대화 내용
+     * - {{topicVocabulary}}: topic 필드에 허용되는 어휘 목록 (RecallTopicRotationService.TOPICS와 동일해야
+     *   3단계 회상 주제 로테이션의 발굴/심화 모드 매칭이 어긋나지 않음)
      *
      * @param context 대화 종료 시점의 UserContext
      * @param existingMemories 기존에 저장된 장기기억 목록 (null 허용)
@@ -273,6 +335,7 @@ public class PromptService {
         variables.put("userName", preferences != null ? preferences.getName() : "사용자");
         variables.put("existingMemories", buildExistingMemoriesText(existingMemories));
         variables.put("conversationHistory", buildConversationHistoryText(context.getConversationHistory()));
+        variables.put("topicVocabulary", String.join(", ", RecallTopicRotationService.TOPICS));
 
         return template.compile(variables);
     }

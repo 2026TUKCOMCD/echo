@@ -10,6 +10,7 @@ import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.memory.service.MemoryService;
+import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
@@ -52,6 +53,9 @@ class ConversationServiceTest {
     @Mock
     private MemoryService memoryService;
 
+    @Mock
+    private RecallTopicRotationService recallTopicRotationService;
+
     //@InjectMocks-제거
     private ConversationService conversationService;
 
@@ -68,7 +72,8 @@ class ConversationServiceTest {
                 contextService,
                 diaryService,
                 healthDataService,
-                memoryService
+                memoryService,
+                recallTopicRotationService
         );
         mockContext = createMockContext();
     }
@@ -82,7 +87,7 @@ class ConversationServiceTest {
         byte[] audioData = "mock-audio-data".getBytes();
 
         when(contextService.initializeContext(eq(TEST_USER_ID), any(), any())).thenReturn(mockContext);
-        when(promptService.buildSystemPrompt(eq(mockContext), any())).thenReturn(systemPrompt);
+        when(promptService.buildSystemPrompt(eq(mockContext), any(), any())).thenReturn(systemPrompt);
         when(aiService.generateGreeting(systemPrompt, mockContext)).thenReturn(greeting);
         when(voiceService.textToSpeech(eq(greeting), any(VoiceSettings.class))).thenReturn(audioData);
 
@@ -104,7 +109,7 @@ class ConversationServiceTest {
         byte[] audioData = "audio".getBytes();
 
         when(contextService.initializeContext(eq(TEST_USER_ID), any(), any())).thenReturn(mockContext);
-        when(promptService.buildSystemPrompt(eq(mockContext), any())).thenReturn(systemPrompt);
+        when(promptService.buildSystemPrompt(eq(mockContext), any(), any())).thenReturn(systemPrompt);
         when(aiService.generateGreeting(systemPrompt, mockContext)).thenReturn(greeting);
         when(voiceService.textToSpeech(eq(greeting), any(VoiceSettings.class))).thenReturn(audioData);
 
@@ -114,7 +119,7 @@ class ConversationServiceTest {
         // Then - 순서 검증
         InOrder inOrder = inOrder(contextService, promptService, aiService, voiceService);
         inOrder.verify(contextService).initializeContext(eq(TEST_USER_ID), any(), any());
-        inOrder.verify(promptService).buildSystemPrompt(eq(mockContext), any());
+        inOrder.verify(promptService).buildSystemPrompt(eq(mockContext), any(), any());
         inOrder.verify(aiService).generateGreeting(eq(systemPrompt), eq(mockContext));
         inOrder.verify(voiceService).textToSpeech(eq(greeting), any(VoiceSettings.class));
     }
@@ -124,7 +129,7 @@ class ConversationServiceTest {
     void startConversation_verifyEachDependencyCalledOnce() {
         // Given
         when(contextService.initializeContext(eq(TEST_USER_ID), any(), any())).thenReturn(mockContext);
-        when(promptService.buildSystemPrompt(any(), any())).thenReturn("prompt");
+        when(promptService.buildSystemPrompt(any(), any(), any())).thenReturn("prompt");
         when(aiService.generateGreeting(any(), any())).thenReturn("greeting");
         when(voiceService.textToSpeech(any(), any())).thenReturn("audio".getBytes());
 
@@ -133,7 +138,7 @@ class ConversationServiceTest {
 
         // Then
         verify(contextService, times(1)).initializeContext(eq(TEST_USER_ID), any(), any());
-        verify(promptService, times(1)).buildSystemPrompt(eq(mockContext), any());
+        verify(promptService, times(1)).buildSystemPrompt(eq(mockContext), any(), any());
         verify(aiService, times(1)).generateGreeting(any(), any());
         verify(voiceService, times(1)).textToSpeech(any(), any());
     }
