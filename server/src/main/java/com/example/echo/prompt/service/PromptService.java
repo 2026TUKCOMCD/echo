@@ -206,7 +206,7 @@ public class PromptService {
         boolean hasDaytimeHome = daytimeHomeStays != null && !daytimeHomeStays.isEmpty();
 
         if (hasOuting) {
-            return "오늘 외출하신 곳이 확인되었습니다. [오늘 다녀오신 곳]의 [외출한 곳] 중 체류 시간이 가장 긴 장소를 "
+            return "오늘 외출하신 곳이 확인되었습니다. [오늘의 위치·활동]의 [외출한 곳] 중 체류 시간이 가장 긴 장소를 "
                     + "언급하며, 그곳에서 무엇을 하셨는지 여쭤보세요. 주소는 동/도로명 정도로 짧게 줄여 말하세요. "
                     + "거주지(집)는 다녀온 곳으로 언급하지 마세요. "
                     + "예: \"오늘 신길로 쪽에 다녀오셨네요. 거기서 어떤 일 보셨어요?\"";
