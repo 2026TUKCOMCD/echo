@@ -41,6 +41,14 @@ public class UserController {
         return ResponseEntity.ok(userService.updateLocation(userId, request.getLocation()));
     }
 
+    @PutMapping("/preferences/home-location")
+    public ResponseEntity<UserPreferences> updateHomeLocation(
+            @CurrentUser Long userId,
+            @Valid @RequestBody HomeLocationUpdateRequest request) {
+        return ResponseEntity.ok(
+                userService.updateHomeLocation(userId, request.getLatitude(), request.getLongitude()));
+    }
+
     @PutMapping("/preferences/family-info")
     public ResponseEntity<UserPreferences> updateFamilyInfo(
             @CurrentUser Long userId,

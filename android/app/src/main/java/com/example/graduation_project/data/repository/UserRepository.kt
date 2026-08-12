@@ -24,6 +24,9 @@ class UserRepository(
     suspend fun updateLocation(location: String?): ApiResult<UserPreferences> =
         safeApiCall { userApi.updateLocation(LocationUpdateRequest(location)) }
 
+    suspend fun updateHomeLocation(latitude: Double, longitude: Double): ApiResult<UserPreferences> =
+        safeApiCall { userApi.updateHomeLocation(HomeLocationUpdateRequest(latitude, longitude)) }
+
     suspend fun updateFamilyInfo(familyInfo: String?): ApiResult<UserPreferences> =
         safeApiCall { userApi.updateFamilyInfo(FamilyInfoUpdateRequest(familyInfo)) }
 

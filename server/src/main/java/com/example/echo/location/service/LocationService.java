@@ -30,19 +30,41 @@ public class LocationService {
     private final WeatherClient weatherClient;
 
     /**
-     * 원시 위치 데이터를 보강된 위치 데이터로 변환
+     * 거주지(집) 판정 반경 (미터)
+     * - 방문 장소의 좌표가 등록된 집 좌표로부터 이 거리 이내이면 "집"으로 분류한다.
+     * - 앱의 체류 판정 반경(50m) + GPS 오차/센트로이드 편차를 고려해 넉넉히 잡는다.
+     */
+    private static final double HOME_MATCH_RADIUS_METERS = 150.0;
+
+    /**
+     * 원시 위치 데이터를 보강된 위치 데이터로 변환 (집 좌표 없이 - 모두 외출로 취급)
      *
      * @param raw 앱에서 받은 원시 위치 데이터
      * @return 장소명, 주소, 날씨가 추가된 위치 데이터
      */
     public LocationData enrichLocationData(RawLocationData raw) {
+        return enrichLocationData(raw, null, null);
+    }
+
+    /**
+     * 원시 위치 데이터를 보강된 위치 데이터로 변환
+     *
+     * 등록된 집 좌표가 주어지면 각 방문 장소를 집/외출로 분류(isHome)한다.
+     *
+     * @param raw           앱에서 받은 원시 위치 데이터
+     * @param homeLatitude  거주지 위도 (null이면 분류 생략 → 모두 외출)
+     * @param homeLongitude 거주지 경도 (null이면 분류 생략 → 모두 외출)
+     * @return 장소명, 주소, 날씨, 집/외출 분류가 추가된 위치 데이터
+     */
+    public LocationData enrichLocationData(RawLocationData raw, Double homeLatitude, Double homeLongitude) {
         if (raw == null) {
             return null;
         }
 
-        log.debug("위치 데이터 보강 시작 - 현재좌표: ({}, {}), 방문장소 수: {}",
+        log.debug("위치 데이터 보강 시작 - 현재좌표: ({}, {}), 방문장소 수: {}, 집좌표: ({}, {})",
                 raw.getCurrentLatitude(), raw.getCurrentLongitude(),
-                raw.getVisitedPlaces() != null ? raw.getVisitedPlaces().size() : 0);
+                raw.getVisitedPlaces() != null ? raw.getVisitedPlaces().size() : 0,
+                homeLatitude, homeLongitude);
 
         String currentCity = null;
         if (raw.getCurrentLatitude() != null && raw.getCurrentLongitude() != null) {
@@ -55,7 +77,7 @@ public class LocationService {
         List<VisitedPlace> enrichedPlaces = new ArrayList<>();
         if (raw.getVisitedPlaces() != null) {
             for (RawVisitedPlace rawPlace : raw.getVisitedPlaces()) {
-                enrichedPlaces.add(enrichVisitedPlace(rawPlace));
+                enrichedPlaces.add(enrichVisitedPlace(rawPlace, homeLatitude, homeLongitude));
             }
         }
 
@@ -81,13 +103,17 @@ public class LocationService {
      *
      * - 역지오코딩으로 장소명/주소 추가
      * - Timemachine API로 방문 시점 날씨 추가 (30분 이상 체류 시에만)
+     * - 등록된 집 좌표가 있으면 집/외출 분류(isHome)
      */
-    private VisitedPlace enrichVisitedPlace(RawVisitedPlace raw) {
+    private VisitedPlace enrichVisitedPlace(RawVisitedPlace raw, Double homeLatitude, Double homeLongitude) {
         // 1. 역지오코딩
         GeocodingResult result = geocodingService.reverseGeocode(
                 raw.getLatitude(),
                 raw.getLongitude()
         );
+
+        // 1-1. 집/외출 분류: 집 좌표가 등록돼 있고, 방문 좌표가 반경 이내이면 집
+        boolean isHome = isAtHome(raw.getLatitude(), raw.getLongitude(), homeLatitude, homeLongitude);
 
         // 2. 방문 시점 날씨 조회 (30분 이상 체류 시에만 API 호출)
         VisitWeather visitWeather = null;
@@ -106,10 +132,11 @@ public class LocationService {
                     stayDuration, MIN_STAY_DURATION_FOR_WEATHER);
         }
 
-        log.debug("방문 장소 보강 완료 - placeName: {}, address: {}, 체류: {}분, 날씨: {}",
+        log.debug("방문 장소 보강 완료 - placeName: {}, address: {}, 체류: {}분, 날씨: {}, 집: {}",
                 result.getPlaceName(), result.getAddress(),
                 raw.getStayDurationMinutes(),
-                visitWeather != null ? visitWeather.getDescription() : "null");
+                visitWeather != null ? visitWeather.getDescription() : "null",
+                isHome);
 
         return VisitedPlace.builder()
                 .placeName(result.getPlaceName())
@@ -120,7 +147,36 @@ public class LocationService {
                 .visitStartTime(raw.getVisitStartTime())
                 .visitEndTime(raw.getVisitEndTime())
                 .stayDurationMinutes(raw.getStayDurationMinutes())
+                .isHome(isHome)
                 .build();
+    }
+
+    /**
+     * 방문 좌표가 등록된 집 좌표의 반경(HOME_MATCH_RADIUS_METERS) 이내인지 판정.
+     * 집 좌표나 방문 좌표가 없으면 false(분류 불가 → 외출로 취급).
+     */
+    private boolean isAtHome(Double visitLat, Double visitLng, Double homeLat, Double homeLng) {
+        if (visitLat == null || visitLng == null || homeLat == null || homeLng == null) {
+            return false;
+        }
+        double distance = haversineMeters(visitLat, visitLng, homeLat, homeLng);
+        return distance <= HOME_MATCH_RADIUS_METERS;
+    }
+
+    /**
+     * 두 좌표 사이의 거리(미터)를 Haversine 공식으로 계산.
+     * 위경도 차이를 지구 곡률을 반영한 실제 지표면 거리로 변환한다.
+     * (안드로이드 StayPointDetector와 동일한 방식)
+     */
+    private static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+        final double earthRadiusMeters = 6_371_000.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadiusMeters * c;
     }
 }
  

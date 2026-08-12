@@ -28,6 +28,12 @@ public class UserPreferences {
     @Size(max = 100)
     private String location;
 
+    /** 거주지(집) 위도 - 방문 장소를 집/외출로 분류하는 기준 (없을 수 있음) */
+    private Double homeLatitude;
+
+    /** 거주지(집) 경도 */
+    private Double homeLongitude;
+
     @Size(max = 500)
     private String familyInfo;
 

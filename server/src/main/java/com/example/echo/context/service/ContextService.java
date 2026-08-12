@@ -77,7 +77,11 @@ public class ContextService {
 
         // 4. 위치 데이터 변환: RawLocationData → LocationService → LocationData
         //    변환 결과는 contextStore에 저장되어 세션 동안 재사용 (API 재호출 없음)
-        LocationData locationData = locationService.enrichLocationData(rawLocationData);
+        //    등록된 집 좌표를 함께 넘겨 방문 장소를 집/외출로 분류(isHome)한다.
+        Double homeLatitude = preferences != null ? preferences.getHomeLatitude() : null;
+        Double homeLongitude = preferences != null ? preferences.getHomeLongitude() : null;
+        LocationData locationData = locationService.enrichLocationData(
+                rawLocationData, homeLatitude, homeLongitude);
 
         // 5. 컨텍스트 생성 및 저장
         WeatherData weather = weatherClient.getCachedUserWeather(userId);
