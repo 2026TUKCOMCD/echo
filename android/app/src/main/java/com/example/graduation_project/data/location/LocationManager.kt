@@ -3,6 +3,7 @@ package com.example.graduation_project.data.location
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -20,7 +21,9 @@ class LocationManager @VisibleForTesting internal constructor(
     )
 
     companion object {
-        private const val LOCATION_TIMEOUT_MS = 5_000L
+        private const val TAG = "LocationManager"
+        // 집 등록은 사용자가 한 번 누르는 액션이라 정확도를 위해 여유 있게 대기
+        private const val LOCATION_TIMEOUT_MS = 15_000L
     }
 
     @SuppressLint("MissingPermission")
@@ -30,11 +33,13 @@ class LocationManager @VisibleForTesting internal constructor(
                 val cancellationToken = CancellationTokenSource()
 
                 fusedLocationClient.getCurrentLocation(
-                    Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                    Priority.PRIORITY_HIGH_ACCURACY,
                     cancellationToken.token
                 ).addOnSuccessListener { loc ->
+                    Log.d(TAG, "getCurrentLocation success: ${loc?.let { "(${it.latitude}, ${it.longitude})" } ?: "null"}")
                     continuation.resume(loc)
-                }.addOnFailureListener {
+                }.addOnFailureListener { e ->
+                    Log.w(TAG, "getCurrentLocation failed", e)
                     continuation.resume(null)
                 }
 
@@ -44,6 +49,9 @@ class LocationManager @VisibleForTesting internal constructor(
             }
         }
 
+        if (location == null) {
+            Log.w(TAG, "getCurrentLocation null (타임아웃 ${LOCATION_TIMEOUT_MS}ms 또는 미가용) → lastLocation 폴백")
+        }
         return location ?: getLastKnownLocation()
     }
 
@@ -51,7 +59,13 @@ class LocationManager @VisibleForTesting internal constructor(
     private suspend fun getLastKnownLocation(): Location? =
         suspendCancellableCoroutine { continuation ->
             fusedLocationClient.lastLocation
-                .addOnSuccessListener { loc -> continuation.resume(loc) }
-                .addOnFailureListener { continuation.resume(null) }
+                .addOnSuccessListener { loc ->
+                    Log.d(TAG, "lastLocation: ${loc?.let { "(${it.latitude}, ${it.longitude})" } ?: "null"}")
+                    continuation.resume(loc)
+                }
+                .addOnFailureListener { e ->
+                    Log.w(TAG, "lastLocation failed", e)
+                    continuation.resume(null)
+                }
         }
 }
