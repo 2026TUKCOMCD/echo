@@ -36,10 +36,23 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ConversationService {
 
-    // STT 결과가 빈 문자열이면(무음·너무 짧은 녹음) AI를 호출하지 않고 바로 이 안내로 응답한다.
+    // STT 결과가 빈 문자열이면(무음·너무 짧은 녹음) AI를 호출하지 않고 바로 안내로 응답한다.
     // 빈 user 메시지를 그대로 보내면 일부 프로바이더(Gemini 계열)가 "메시지가 model 턴으로
     // 끝난다"며 400을 반환하는 문제가 있어, 애초에 빈 메시지를 만들지 않는 쪽으로 막는다.
-    private static final String EMPTY_STT_FALLBACK_RESPONSE = "죄송해요, 잘 못 들었어요. 다시 한 번 말씀해 주시겠어요?";
+    // 연속 횟수에 따라 문구를 단계적으로 바꾼다 - 시스템 프롬프트의 [이탈 발화 및 무응답 대응]과
+    // 같은 3단계 패턴(1회 재요청 → 2회 화제 전환 제안 → 3회 마무리 유도).
+    private static final String EMPTY_STT_RETRY = "죄송해요, 잘 못 들었어요. 다시 한 번 말씀해 주시겠어요?";
+    private static final String EMPTY_STT_OFFER_TOPIC_SWITCH = "괜찮아요, 천천히 하셔도 돼요. 편하게 다른 이야기 해보셔도 좋아요.";
+    private static final String EMPTY_STT_WRAP_UP = "오늘은 여기까지 이야기 나눌까요? 다음에 또 편하게 말씀해 주세요.";
+
+    private static String emptySttFallbackResponse(int consecutiveCount) {
+        if (consecutiveCount <= 1) {
+            return EMPTY_STT_RETRY;
+        } else if (consecutiveCount == 2) {
+            return EMPTY_STT_OFFER_TOPIC_SWITCH;
+        }
+        return EMPTY_STT_WRAP_UP;
+    }
 
     private final VoiceService voiceService;
     private final PromptService promptService;
@@ -107,11 +120,15 @@ public class ConversationService {
 
         // 3. AI 응답 생성 (OpenAI 권장 방식: messages 배열)
         //    STT 결과가 비어있으면(무음 등) AI를 호출하지 않고 바로 재요청 안내로 응답한다.
+        //    연속 횟수에 따라 문구를 단계적으로 바꾸고, 알아들을 수 있는 발화가 들어오면 리셋한다.
         String aiResponse;
         if (sttEmpty) {
-            log.info("STT 결과가 비어있어 AI 호출 없이 재요청 안내로 응답 - userId: {}", userId);
-            aiResponse = EMPTY_STT_FALLBACK_RESPONSE;
+            context.setConsecutiveEmptySttCount(context.getConsecutiveEmptySttCount() + 1);
+            log.info("STT 결과가 비어있어 AI 호출 없이 안내로 응답 - userId: {}, 연속 {}회",
+                    userId, context.getConsecutiveEmptySttCount());
+            aiResponse = emptySttFallbackResponse(context.getConsecutiveEmptySttCount());
         } else {
+            context.setConsecutiveEmptySttCount(0);
             String systemPrompt = context.getSystemPrompt();
             List<ConversationTurn> history = context.getConversationHistory();
             aiResponse = aiService.generateResponse(systemPrompt, history, userMessage, context.getSessionModel());
