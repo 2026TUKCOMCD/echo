@@ -422,19 +422,35 @@ class SettingsViewModel(
             _uiState.update { it.copy(errorMessage = "위치 권한이 필요합니다. 권한을 허용한 뒤 다시 시도해주세요.") }
             return
         }
+        // 권한이 있어도 기기 위치(GPS) 토글이 꺼져 있으면 좌표를 받을 수 없음 → 명확히 안내
+        val sysLm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val locationEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            sysLm.isLocationEnabled
+        } else {
+            sysLm.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                sysLm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        }
+        if (!locationEnabled) {
+            android.util.Log.w("SettingsVM", "집 등록: 기기 위치(GPS) 꺼짐")
+            _uiState.update { it.copy(errorMessage = "기기의 위치(GPS)가 꺼져 있어요. 위치를 켜고 다시 시도해주세요.") }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isRegisteringHome = true) }
+            android.util.Log.d("SettingsVM", "집 등록: 현재 위치 요청 시작")
             val location = com.example.graduation_project.data.location.LocationManager(context)
                 .getCurrentLocation()
             if (location == null) {
+                android.util.Log.w("SettingsVM", "집 등록: 위치 null (getCurrentLocation + lastLocation 모두 실패)")
                 _uiState.update {
                     it.copy(
                         isRegisteringHome = false,
-                        errorMessage = "현재 위치를 가져오지 못했습니다. 잠시 후 다시 시도해주세요."
+                        errorMessage = "현재 위치를 가져오지 못했습니다. 실외에서 잠시 후 다시 시도해주세요."
                     )
                 }
                 return@launch
             }
+            android.util.Log.d("SettingsVM", "집 등록: 위치 획득 (${location.latitude}, ${location.longitude}) → 서버 저장")
             when (val result = userRepository.updateHomeLocation(location.latitude, location.longitude)) {
                 is ApiResult.Success -> _uiState.update {
                     applyPrefs(it, result.data).copy(
@@ -442,8 +458,11 @@ class SettingsViewModel(
                         savedMessage = "현재 위치를 집으로 등록했습니다"
                     )
                 }
-                is ApiResult.Error -> _uiState.update {
-                    it.copy(isRegisteringHome = false, errorMessage = "집 등록에 실패했습니다. 다시 시도해주세요.")
+                is ApiResult.Error -> {
+                    android.util.Log.w("SettingsVM", "집 등록: 서버 저장 실패 - ${result.exception.message}")
+                    _uiState.update {
+                        it.copy(isRegisteringHome = false, errorMessage = "집 등록에 실패했습니다. 다시 시도해주세요.")
+                    }
                 }
             }
         }
