@@ -36,6 +36,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ConversationService {
 
+    // STT 결과가 빈 문자열이면(무음·너무 짧은 녹음) AI를 호출하지 않고 바로 이 안내로 응답한다.
+    // 빈 user 메시지를 그대로 보내면 일부 프로바이더(Gemini 계열)가 "메시지가 model 턴으로
+    // 끝난다"며 400을 반환하는 문제가 있어, 애초에 빈 메시지를 만들지 않는 쪽으로 막는다.
+    private static final String EMPTY_STT_FALLBACK_RESPONSE = "죄송해요, 잘 못 들었어요. 다시 한 번 말씀해 주시겠어요?";
+
     private final VoiceService voiceService;
     private final PromptService promptService;
     private final AIService aiService;
@@ -98,17 +103,27 @@ public class ConversationService {
 
         // 2. STT 변환
         String userMessage = voiceService.speechToText(audioFile);
+        boolean sttEmpty = userMessage.isBlank();
 
         // 3. AI 응답 생성 (OpenAI 권장 방식: messages 배열)
-        String systemPrompt = context.getSystemPrompt();
-        List<ConversationTurn> history = context.getConversationHistory();
-        String aiResponse = aiService.generateResponse(systemPrompt, history, userMessage, context.getSessionModel());
+        //    STT 결과가 비어있으면(무음 등) AI를 호출하지 않고 바로 재요청 안내로 응답한다.
+        String aiResponse;
+        if (sttEmpty) {
+            log.info("STT 결과가 비어있어 AI 호출 없이 재요청 안내로 응답 - userId: {}", userId);
+            aiResponse = EMPTY_STT_FALLBACK_RESPONSE;
+        } else {
+            String systemPrompt = context.getSystemPrompt();
+            List<ConversationTurn> history = context.getConversationHistory();
+            aiResponse = aiService.generateResponse(systemPrompt, history, userMessage, context.getSessionModel());
+        }
 
         // 4. TTS 변환
         byte[] audioData = voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings());
 
         // 5. 히스토리 업데이트 (동기)
-        contextService.addConversationTurn(userId, userMessage, aiResponse);
+        //    빈 user 메시지는 기록하지 않는다(null이면 첫 인사 턴처럼 AI 발화만 기록됨) -
+        //    이후 턴에서 이 히스토리가 다시 messages 배열에 실릴 때 빈 user 메시지가 섞이지 않도록.
+        contextService.addConversationTurn(userId, sttEmpty ? null : userMessage, aiResponse);
 
         return ConversationResponse.builder()
                 .userMessage(userMessage)
@@ -181,6 +196,7 @@ public class ConversationService {
                 .userId(context.getUserId())
                 .preferences(context.getPreferences())
                 .conversationHistory(List.copyOf(context.getConversationHistory()))
+                .sessionModel(context.getSessionModel())
                 .build();
     }
 
