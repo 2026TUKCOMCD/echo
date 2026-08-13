@@ -33,7 +33,7 @@ public class ElevenLabsTtsProvider implements TtsProvider {
     private String model;
 
     private static final ElevenLabsTtsRequest.VoiceParams DEFAULT_VOICE_PARAMS =
-        ElevenLabsTtsRequest.VoiceParams.builder().stability(0.5).similarityBoost(0.75).build();
+        ElevenLabsTtsRequest.VoiceParams.builder().stability(0.7).similarityBoost(0.75).build();
 
     // voiceTone → ElevenLabs voice_settings(stability, similarity_boost) 매핑
     private static final Map<String, ElevenLabsTtsRequest.VoiceParams> TONE_TO_VOICE_PARAMS = Map.of(
