@@ -422,6 +422,7 @@ class ConversationServiceTest2 {
                             .timestamp(LocalDateTime.now())
                             .build()
             );
+            mockContext.setSessionModel("anthropic/claude-sonnet-5");
             given(contextService.getContext(userId)).willReturn(mockContext);
             willDoNothing().given(contextService).finalizeContext(userId);
 
@@ -445,6 +446,8 @@ class ConversationServiceTest2 {
             assertThat(snapshot).isNotSameAs(mockContext);
             assertThat(snapshot.getUserId()).isEqualTo(mockContext.getUserId());
             assertThat(snapshot.getConversationHistory()).isEqualTo(mockContext.getConversationHistory());
+            // 회귀 방지: sessionModel 누락 시 기억 추출 API 호출이 "No models provided"로 실패했었음
+            assertThat(snapshot.getSessionModel()).isEqualTo(mockContext.getSessionModel());
         }
 
         @Test

@@ -181,6 +181,7 @@ public class ConversationService {
                 .userId(context.getUserId())
                 .preferences(context.getPreferences())
                 .conversationHistory(List.copyOf(context.getConversationHistory()))
+                .sessionModel(context.getSessionModel())
                 .build();
     }
 
