@@ -1,47 +1,36 @@
 /*
- * OpenRouter 채팅 모델 세션별 로테이션
+ * OpenRouter 채팅 모델 세션별 순차 로테이션
  *
- * 선택 방식: 대화 세션 시작 시 1회 무작위 선택
+ * 선택 방식: 대화 세션 시작 시 1회 순차 선택 (카운터 % 후보 개수)
  * - ConversationService.startConversation()에서 pickModelForSession()을 호출해
  *   UserContext.sessionModel에 저장하고, 그 세션의 모든 AI 호출(인사·응답·일기·기억 추출)이
  *   같은 모델을 재사용한다 (systemPrompt·recallGuide와 동일한 "세션당 1회 확정" 패턴)
- * - 세션이 이미 UserContext로 상태를 들고 있으므로(ContextService), 이 서비스 자체는
- *   무상태로 유지한다 (호출마다 새로 무작위 선택만 하면 됨)
+ * - 세션마다 다음 후보로 순서대로 넘어가며, 마지막 후보 다음엔 다시 처음으로 돌아온다
+ * - 카운터는 서버 프로세스 생존 기간에 한정된 인메모리 상태다(재시작 시 처음부터 다시 순환).
+ *   세션 자체도 인메모리(ContextService)로 관리되므로 서버 재시작에 특별한 내구성이
+ *   필요하지 않다 - 여러 워커/인스턴스로 수평 확장하면 인스턴스별로 별도 순환됨에 유의
  */
 package com.example.echo.ai.service;
 
 import com.example.echo.ai.config.OpenRouterChatProperties;
 import com.example.echo.ai.exception.AIException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.security.SecureRandom;
 import java.util.List;
-import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class ModelRotationService {
 
     private final OpenRouterChatProperties chatProperties;
-    private final Random random;
-
-    @Autowired
-    public ModelRotationService(OpenRouterChatProperties chatProperties) {
-        this(chatProperties, new SecureRandom());
-    }
+    private final AtomicInteger counter = new AtomicInteger(0);
 
     /**
-     * 테스트에서 선택 결과를 고정하기 위한 생성자 (패키지 전용)
-     */
-    ModelRotationService(OpenRouterChatProperties chatProperties, Random random) {
-        this.chatProperties = chatProperties;
-        this.random = random;
-    }
-
-    /**
-     * 이번 대화 세션에서 사용할 모델을 무작위로 선택한다.
+     * 이번 대화 세션에서 사용할 모델을 순차적으로 선택한다.
      * (예: "anthropic/claude-sonnet-5")
      */
     public String pickModelForSession() {
@@ -50,8 +39,9 @@ public class ModelRotationService {
             throw new AIException("openrouter.chat.models 설정이 비어 있습니다.");
         }
 
-        String picked = models.get(random.nextInt(models.size()));
-        log.info("OpenRouter 이번 세션 모델: {}", picked);
+        int index = Math.floorMod(counter.getAndIncrement(), models.size());
+        String picked = models.get(index);
+        log.info("OpenRouter 이번 세션 모델(순차 로테이션): {}", picked);
         return picked;
     }
 

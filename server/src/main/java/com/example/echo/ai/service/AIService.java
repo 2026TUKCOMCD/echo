@@ -8,7 +8,7 @@
  * 데이터 흐름:
  *   PromptService에서 조합된 프롬프트(String) 수신
  *   → OpenRouter Chat Completion API 호출 (모델은 대화 세션 시작 시 ModelRotationService가
- *     1회 무작위 선택해 UserContext.sessionModel에 저장, 세션 내내 재사용)
+ *     1회 순차 선택해 UserContext.sessionModel에 저장, 세션 내내 재사용)
  *   → 응답 텍스트 반환
  *
  * 설정값 (application.yaml):

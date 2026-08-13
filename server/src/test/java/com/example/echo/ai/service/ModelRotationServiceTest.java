@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,63 +21,63 @@ class ModelRotationServiceTest {
             "openai/gpt-4o-mini"
     );
 
-    private ModelRotationService serviceWithFixedIndex(List<String> models, int fixedIndex) {
+    private ModelRotationService service(List<String> models) {
         OpenRouterChatProperties properties = new OpenRouterChatProperties();
         properties.setModels(models);
-
-        Random fixedRandom = new Random() {
-            @Override
-            public int nextInt(int bound) {
-                return fixedIndex;
-            }
-        };
-
-        return new ModelRotationService(properties, fixedRandom);
+        return new ModelRotationService(properties);
     }
 
     @Test
-    @DisplayName("pickModelForSession - 무작위 선택 결과가 후보 인덱스 0에 대응하는 모델을 반환")
-    void pickModelForSession_firstCandidate() {
-        assertThat(serviceWithFixedIndex(MODELS, 0).pickModelForSession()).isEqualTo(MODELS.get(0));
+    @DisplayName("pickModelForSession - 첫 호출은 첫 번째 후보 모델을 반환")
+    void pickModelForSession_firstCallReturnsFirstCandidate() {
+        assertThat(service(MODELS).pickModelForSession()).isEqualTo(MODELS.get(0));
     }
 
     @Test
-    @DisplayName("pickModelForSession - 무작위 선택 결과가 마지막 후보 인덱스에 대응하는 모델을 반환")
-    void pickModelForSession_lastCandidate() {
-        assertThat(serviceWithFixedIndex(MODELS, MODELS.size() - 1).pickModelForSession())
-                .isEqualTo(MODELS.get(MODELS.size() - 1));
+    @DisplayName("pickModelForSession - 세션(호출)마다 후보를 순서대로 순환")
+    void pickModelForSession_cyclesThroughCandidatesInOrder() {
+        ModelRotationService service = service(MODELS);
+
+        for (String expected : MODELS) {
+            assertThat(service.pickModelForSession()).isEqualTo(expected);
+        }
+    }
+
+    @Test
+    @DisplayName("pickModelForSession - 후보 개수만큼 호출 후 다시 처음 후보로 순환")
+    void pickModelForSession_wrapsAroundAfterFullCycle() {
+        ModelRotationService service = service(MODELS);
+
+        for (int i = 0; i < MODELS.size(); i++) {
+            service.pickModelForSession();
+        }
+
+        assertThat(service.pickModelForSession()).isEqualTo(MODELS.get(0));
     }
 
     @Test
     @DisplayName("pickModelForSession - 후보 목록이 비어있으면 AIException")
     void pickModelForSession_emptyModels_throws() {
-        OpenRouterChatProperties properties = new OpenRouterChatProperties();
-        properties.setModels(Collections.emptyList());
-        ModelRotationService service = new ModelRotationService(properties, new Random());
+        ModelRotationService service = service(Collections.emptyList());
 
         assertThatThrownBy(service::pickModelForSession).isInstanceOf(AIException.class);
     }
 
     @Test
-    @DisplayName("pickModelForSession - 여러 세션에 걸쳐 서로 다른 모델이 선택될 수 있다 (세션마다 재선택)")
-    void pickModelForSession_variesAcrossSessions() {
-        OpenRouterChatProperties properties = new OpenRouterChatProperties();
-        properties.setModels(MODELS);
-        ModelRotationService service = new ModelRotationService(properties, new Random());
+    @DisplayName("pickModelForSession - 새 인스턴스는 항상 첫 번째 후보부터 다시 시작 (서버 재시작 시 처음부터 순환)")
+    void pickModelForSession_freshInstanceRestartsFromFirst() {
+        ModelRotationService first = service(MODELS);
+        first.pickModelForSession();
+        first.pickModelForSession();
 
-        // 실제 무작위 선택기로 충분히 반복하면 5개 후보 중 2개 이상은 나와야 한다 (통계적 검증)
-        long distinctCount = java.util.stream.IntStream.range(0, 50)
-                .mapToObj(i -> service.pickModelForSession())
-                .distinct()
-                .count();
-
-        assertThat(distinctCount).isGreaterThan(1);
+        ModelRotationService fresh = service(MODELS);
+        assertThat(fresh.pickModelForSession()).isEqualTo(MODELS.get(0));
     }
 
     @Test
     @DisplayName("displayName - 후보 5개 모두 음성으로 자연스러운 표시 이름으로 변환")
     void displayName_forEachCandidate() {
-        ModelRotationService service = serviceWithFixedIndex(MODELS, 0);
+        ModelRotationService service = service(MODELS);
 
         assertThat(service.displayName("openai/gpt-5.5")).isEqualTo("GPT 5.5");
         assertThat(service.displayName("anthropic/claude-sonnet-5")).isEqualTo("Claude Sonnet 5");
