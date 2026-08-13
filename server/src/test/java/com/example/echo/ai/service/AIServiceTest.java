@@ -48,13 +48,14 @@ class AIServiceTest {
 
     private UserContext context;
 
+    private static final String TEST_MODEL = "anthropic/claude-sonnet-5";
+
     private Logger aiServiceLogger;
     private ListAppender<ILoggingEvent> logAppender;
 
     @BeforeEach
     void setUp() {
-        lenient().when(modelRotationService.currentModel()).thenReturn("anthropic/claude-sonnet-5");
-        lenient().when(modelRotationService.currentModelDisplayName()).thenReturn("Claude Sonnet 5");
+        lenient().when(modelRotationService.displayName(TEST_MODEL)).thenReturn("Claude Sonnet 5");
 
         OpenRouterChatProperties chatProperties = new OpenRouterChatProperties();
         chatProperties.setTemperature(0.7);
@@ -64,6 +65,7 @@ class AIServiceTest {
 
         context = UserContext.builder()
                 .userId(1L)
+                .sessionModel(TEST_MODEL)
                 .build();
 
         // 로그 레벨을 DEBUG로 격상한 상황(운영 DEBUG 오버라이드 등)을 그대로 재현해서 캡처
@@ -102,7 +104,7 @@ class AIServiceTest {
         String result = aiService.generateGreeting(systemPrompt, context);
 
         // Then
-        assertThat(result).isEqualTo("오늘은 Claude Sonnet 5 모델과 함께 대화를 나눠요. 안녕하세요! 오늘 하루는 어떠셨어요?");
+        assertThat(result).isEqualTo("이번에는 Claude Sonnet 5 모델과 함께 대화를 나눠요. 안녕하세요! 오늘 하루는 어떠셨어요?");
 
         // 메시지 구조 검증
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
@@ -156,7 +158,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse(systemPrompt, history, userMessage);
+        String result = aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
 
         // Then
         assertThat(result).isEqualTo("좋은 질문이네요!");
@@ -164,7 +166,7 @@ class AIServiceTest {
         // 메시지 구조 검증: system(1) + history(user+assistant)(2) + current user(1) = 4
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
         when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
-        aiService.generateResponse(systemPrompt, history, userMessage);
+        aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
 
         ChatCompletionRequest capturedRequest = captor.getValue();
         assertThat(capturedRequest.getMessages()).hasSize(4);
@@ -190,7 +192,7 @@ class AIServiceTest {
         when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
 
         // When
-        aiService.generateResponse(systemPrompt, history, userMessage);
+        aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
 
         // Then: system(1) + current user(1) = 2. 단계 안내용 추가 system 메시지는 붙지 않는다
         assertThat(captor.getValue().getMessages()).hasSize(2);
@@ -215,7 +217,7 @@ class AIServiceTest {
                 .thenThrow(feignException);
 
         // When & Then
-        assertThatThrownBy(() -> aiService.generateResponse(systemPrompt, history, userMessage))
+        assertThatThrownBy(() -> aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL))
                 .isInstanceOf(AIException.class)
                 .hasMessageContaining("AI 응답 생성 실패")
                 .hasCause(feignException);
@@ -259,7 +261,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse(systemPrompt, history, userMessage);
+        String result = aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
 
         // Then
         assertThat(result).isEqualTo(aiResponseContent);
@@ -290,7 +292,7 @@ class AIServiceTest {
                 .thenReturn(nullChoicesResponse);
 
         // When
-        String result1 = aiService.generateResponse(systemPrompt, history, userMessage);
+        String result1 = aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
 
         // Then
         assertThat(result1).isEmpty();
@@ -303,7 +305,7 @@ class AIServiceTest {
                 .thenReturn(emptyChoicesResponse);
 
         // When
-        String result2 = aiService.generateResponse(systemPrompt, history, userMessage);
+        String result2 = aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
 
         // Then
         assertThat(result2).isEmpty();

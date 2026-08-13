@@ -1,10 +1,14 @@
 /*
- * OpenRouter 채팅 모델 매일 로테이션
+ * OpenRouter 채팅 모델 세션별 순차 로테이션
  *
- * 선택 방식: 날짜 기반 stateless 선택 (LocalDate.toEpochDay() % 후보 개수)
- * - 인메모리 인덱스를 두지 않음 -> 서버가 낮에 재시작돼도 같은 날엔 항상 같은 모델
- * - @Scheduled 잡은 자정에 현재 모델을 로그로 남기는 관찰용 역할이며,
- *   실제 선택은 매 요청마다 재계산되므로 스케줄러가 못 돌아도 정확성에 영향 없음
+ * 선택 방식: 대화 세션 시작 시 1회 순차 선택 (카운터 % 후보 개수)
+ * - ConversationService.startConversation()에서 pickModelForSession()을 호출해
+ *   UserContext.sessionModel에 저장하고, 그 세션의 모든 AI 호출(인사·응답·일기·기억 추출)이
+ *   같은 모델을 재사용한다 (systemPrompt·recallGuide와 동일한 "세션당 1회 확정" 패턴)
+ * - 세션마다 다음 후보로 순서대로 넘어가며, 마지막 후보 다음엔 다시 처음으로 돌아온다
+ * - 카운터는 서버 프로세스 생존 기간에 한정된 인메모리 상태다(재시작 시 처음부터 다시 순환).
+ *   세션 자체도 인메모리(ContextService)로 관리되므로 서버 재시작에 특별한 내구성이
+ *   필요하지 않다 - 여러 워커/인스턴스로 수평 확장하면 인스턴스별로 별도 순환됨에 유의
  */
 package com.example.echo.ai.service;
 
@@ -12,14 +16,10 @@ import com.example.echo.ai.config.OpenRouterChatProperties;
 import com.example.echo.ai.exception.AIException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.time.Clock;
-import java.time.LocalDate;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -27,31 +27,29 @@ import java.util.List;
 public class ModelRotationService {
 
     private final OpenRouterChatProperties chatProperties;
-    private final Clock clock;
+    private final AtomicInteger counter = new AtomicInteger(0);
 
     /**
-     * 오늘 사용할 모델을 반환한다. (예: "anthropic/claude-sonnet-5")
+     * 이번 대화 세션에서 사용할 모델을 순차적으로 선택한다.
+     * (예: "anthropic/claude-sonnet-5")
      */
-    public String currentModel() {
+    public String pickModelForSession() {
         List<String> models = chatProperties.getModels();
         if (models == null || models.isEmpty()) {
             throw new AIException("openrouter.chat.models 설정이 비어 있습니다.");
         }
 
-        long day = LocalDate.now(clock).toEpochDay();
-        int index = Math.floorMod(day, models.size());
-        return models.get(index);
+        int index = Math.floorMod(counter.getAndIncrement(), models.size());
+        String picked = models.get(index);
+        log.info("OpenRouter 이번 세션 모델(순차 로테이션): {}", picked);
+        return picked;
     }
 
     /**
-     * 오늘의 모델을 사람이 읽기 좋은(음성으로 발화 가능한) 이름으로 반환한다.
+     * 모델 ID를 사람이 읽기 좋은(음성으로 발화 가능한) 이름으로 반환한다.
      * 예: "anthropic/claude-sonnet-5" -> "Claude Sonnet 5", "openai/gpt-5.5" -> "GPT 5.5"
      */
-    public String currentModelDisplayName() {
-        return toDisplayName(currentModel());
-    }
-
-    private static String toDisplayName(String modelId) {
+    public String displayName(String modelId) {
         String slug = modelId.contains("/") ? modelId.substring(modelId.indexOf('/') + 1) : modelId;
         String[] parts = slug.split("-");
 
@@ -70,15 +68,5 @@ public class ModelRotationService {
             return word;
         }
         return Character.toUpperCase(word.charAt(0)) + word.substring(1);
-    }
-
-    @Scheduled(cron = "0 0 0 * * *", zone = "Asia/Seoul")
-    public void logDailyRotation() {
-        log.info("OpenRouter 오늘의 채팅 모델: {}", currentModel());
-    }
-
-    @EventListener(ApplicationReadyEvent.class)
-    public void logOnStartup() {
-        log.info("OpenRouter 오늘의 채팅 모델 (시작 시): {}", currentModel());
     }
 }

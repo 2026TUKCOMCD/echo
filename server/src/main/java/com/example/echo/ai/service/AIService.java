@@ -7,7 +7,8 @@
  *
  * 데이터 흐름:
  *   PromptService에서 조합된 프롬프트(String) 수신
- *   → OpenRouter Chat Completion API 호출 (모델은 ModelRotationService가 매일 자동 선택)
+ *   → OpenRouter Chat Completion API 호출 (모델은 대화 세션 시작 시 ModelRotationService가
+ *     1회 순차 선택해 UserContext.sessionModel에 저장, 세션 내내 재사용)
  *   → 응답 텍스트 반환
  *
  * 설정값 (application.yaml):
@@ -37,7 +38,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AIService {
 
-    private static final String MODEL_ANNOUNCEMENT_FORMAT = "오늘은 %s 모델과 함께 대화를 나눠요. ";
+    private static final String MODEL_ANNOUNCEMENT_FORMAT = "이번에는 %s 모델과 함께 대화를 나눠요. ";
 
     private final OpenRouterClient openRouterClient;
     private final ModelRotationService modelRotationService;
@@ -54,6 +55,8 @@ public class AIService {
     public String generateGreeting(String systemPrompt, UserContext context) {
         log.debug("Generating greeting for user: {}", context.getUserId());
 
+        String model = context.getSessionModel();
+
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
 
         // 시스템 프롬프트 추가
@@ -69,7 +72,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(modelRotationService.currentModel())
+                .model(model)
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -78,7 +81,7 @@ public class AIService {
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
             String greeting = extractContent(response);
-            String announcedGreeting = String.format(MODEL_ANNOUNCEMENT_FORMAT, modelRotationService.currentModelDisplayName()) + greeting;
+            String announcedGreeting = String.format(MODEL_ANNOUNCEMENT_FORMAT, modelRotationService.displayName(model)) + greeting;
 
             log.debug("Generated greeting - length: {}", announcedGreeting.length());
             return announcedGreeting;
@@ -102,10 +105,11 @@ public class AIService {
      * @param systemPrompt 시스템 프롬프트 (캐싱된 것 사용)
      * @param history 대화 히스토리 (ConversationTurn 리스트)
      * @param userMessage 현재 사용자 메시지
+     * @param model 이번 세션에 확정된 모델 (UserContext.sessionModel)
      * @return AI가 생성한 응답 메시지
      * @throws AIException API 호출 실패 시
      */
-    public String generateResponse(String systemPrompt, List<ConversationTurn> history, String userMessage) {
+    public String generateResponse(String systemPrompt, List<ConversationTurn> history, String userMessage, String model) {
         log.debug("Generating response - history size: {}, userMessage length: {}",
                 history != null ? history.size() : 0, userMessage != null ? userMessage.length() : 0);
 
@@ -142,7 +146,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(modelRotationService.currentModel())
+                .model(model)
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -164,10 +168,11 @@ public class AIService {
      * 일기 생성
      *
      * @param diaryPrompt PromptService.buildDiaryPrompt()로 조합된 일기 프롬프트
+     * @param model 이번 세션에 확정된 모델 (UserContext.sessionModel)
      * @return AI가 생성한 일기 본문
      * @throws AIException API 호출 실패 또는 빈 응답 시
      */
-    public String generateDiary(String diaryPrompt) {
+    public String generateDiary(String diaryPrompt, String model) {
         log.debug("Generating diary - prompt length: {}", diaryPrompt != null ? diaryPrompt.length() : 0);
 
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
@@ -183,7 +188,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(modelRotationService.currentModel())
+                .model(model)
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -213,10 +218,11 @@ public class AIService {
      * 응답은 원문 그대로 반환하며, 파싱은 호출자(MemoryService)가 담당한다.
      *
      * @param memoryPrompt PromptService.buildMemoryPrompt()로 조합된 기억 추출 프롬프트
+     * @param model 이번 세션에 확정된 모델 (UserContext.sessionModel)
      * @return AI가 생성한 JSON 배열 원문
      * @throws AIException API 호출 실패 또는 빈 응답 시
      */
-    public String generateMemoryExtraction(String memoryPrompt) {
+    public String generateMemoryExtraction(String memoryPrompt, String model) {
         log.debug("Extracting memories - prompt length: {}", memoryPrompt != null ? memoryPrompt.length() : 0);
 
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
@@ -232,7 +238,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(modelRotationService.currentModel())
+                .model(model)
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())

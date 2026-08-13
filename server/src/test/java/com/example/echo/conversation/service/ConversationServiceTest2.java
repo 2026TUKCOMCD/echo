@@ -1,6 +1,7 @@
 package com.example.echo.conversation.service;
 
 import com.example.echo.ai.service.AIService;
+import com.example.echo.ai.service.ModelRotationService;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
@@ -57,6 +58,9 @@ class ConversationServiceTest2 {
 
     @Mock
     private AIService aiService;
+
+    @Mock
+    private ModelRotationService modelRotationService;
 
     @Mock
     private ContextService contextService;
@@ -235,7 +239,7 @@ class ConversationServiceTest2 {
             given(contextService.getContext(userId)).willReturn(mockContext);
             given(voiceService.speechToText(audioFile)).willReturn(userMessage);
             // OpenAI 권장 방식: messages 배열로 직접 전달
-            given(aiService.generateResponse(eq(systemPrompt), any(), eq(userMessage))).willReturn(aiResponse);
+            given(aiService.generateResponse(eq(systemPrompt), any(), eq(userMessage), any())).willReturn(aiResponse);
             given(voiceService.textToSpeech(aiResponse, mockVoiceSettings)).willReturn(responseAudio);
 
             // when
@@ -265,7 +269,7 @@ class ConversationServiceTest2 {
 
             given(contextService.getContext(userId)).willReturn(mockContext);
             given(voiceService.speechToText(audioFile)).willReturn(userMessage);
-            given(aiService.generateResponse(eq(systemPrompt), any(), eq(userMessage))).willReturn(aiResponse);
+            given(aiService.generateResponse(eq(systemPrompt), any(), eq(userMessage), any())).willReturn(aiResponse);
             given(voiceService.textToSpeech(aiResponse, mockVoiceSettings)).willReturn(audio);
 
             // when
@@ -275,7 +279,7 @@ class ConversationServiceTest2 {
             var inOrder = inOrder(contextService, voiceService, aiService);
             inOrder.verify(contextService).getContext(userId);
             inOrder.verify(voiceService).speechToText(audioFile);
-            inOrder.verify(aiService).generateResponse(eq(systemPrompt), any(), eq(userMessage));
+            inOrder.verify(aiService).generateResponse(eq(systemPrompt), any(), eq(userMessage), any());
             inOrder.verify(voiceService).textToSpeech(aiResponse, mockVoiceSettings);
         }
 

@@ -70,7 +70,7 @@ public class MemoryService {
         List<MemoryItem> items;
         try {
             String prompt = promptService.buildMemoryPrompt(context, existing);
-            String raw = aiService.generateMemoryExtraction(prompt);
+            String raw = aiService.generateMemoryExtraction(prompt, context.getSessionModel());
             items = parseMemories(raw);
         } catch (Exception e) {
             log.warn("장기기억 추출 실패 - 기존 기억 {}건 유지 - userId: {}", existing.size(), userId, e);

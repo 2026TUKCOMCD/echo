@@ -5,10 +5,6 @@ import com.example.echo.ai.exception.AIException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 
@@ -25,61 +21,68 @@ class ModelRotationServiceTest {
             "openai/gpt-4o-mini"
     );
 
-    private ModelRotationService serviceAt(long epochDay) {
+    private ModelRotationService service(List<String> models) {
         OpenRouterChatProperties properties = new OpenRouterChatProperties();
-        properties.setModels(MODELS);
-
-        Instant instant = Instant.EPOCH.plusSeconds(epochDay * 24 * 60 * 60);
-        Clock clock = Clock.fixed(instant, ZoneOffset.UTC);
-
-        return new ModelRotationService(properties, clock);
+        properties.setModels(models);
+        return new ModelRotationService(properties);
     }
 
     @Test
-    @DisplayName("day 0 -> 첫 번째 후보 모델")
-    void currentModel_dayZero() {
-        assertThat(serviceAt(0).currentModel()).isEqualTo(MODELS.get(0));
+    @DisplayName("pickModelForSession - 첫 호출은 첫 번째 후보 모델을 반환")
+    void pickModelForSession_firstCallReturnsFirstCandidate() {
+        assertThat(service(MODELS).pickModelForSession()).isEqualTo(MODELS.get(0));
     }
 
     @Test
-    @DisplayName("day = 후보 개수 -> 다시 첫 번째 후보로 순환")
-    void currentModel_wrapsAroundAfterFullCycle() {
-        assertThat(serviceAt(MODELS.size()).currentModel()).isEqualTo(MODELS.get(0));
+    @DisplayName("pickModelForSession - 세션(호출)마다 후보를 순서대로 순환")
+    void pickModelForSession_cyclesThroughCandidatesInOrder() {
+        ModelRotationService service = service(MODELS);
+
+        for (String expected : MODELS) {
+            assertThat(service.pickModelForSession()).isEqualTo(expected);
+        }
     }
 
     @Test
-    @DisplayName("day 2 -> 세 번째 후보 모델")
-    void currentModel_midCycleDay() {
-        assertThat(serviceAt(2).currentModel()).isEqualTo(MODELS.get(2));
+    @DisplayName("pickModelForSession - 후보 개수만큼 호출 후 다시 처음 후보로 순환")
+    void pickModelForSession_wrapsAroundAfterFullCycle() {
+        ModelRotationService service = service(MODELS);
+
+        for (int i = 0; i < MODELS.size(); i++) {
+            service.pickModelForSession();
+        }
+
+        assertThat(service.pickModelForSession()).isEqualTo(MODELS.get(0));
     }
 
     @Test
-    @DisplayName("후보 목록이 비어있으면 AIException")
-    void currentModel_emptyModels_throws() {
-        OpenRouterChatProperties properties = new OpenRouterChatProperties();
-        properties.setModels(Collections.emptyList());
-        ModelRotationService service = new ModelRotationService(properties, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
+    @DisplayName("pickModelForSession - 후보 목록이 비어있으면 AIException")
+    void pickModelForSession_emptyModels_throws() {
+        ModelRotationService service = service(Collections.emptyList());
 
-        assertThatThrownBy(service::currentModel).isInstanceOf(AIException.class);
+        assertThatThrownBy(service::pickModelForSession).isInstanceOf(AIException.class);
     }
 
     @Test
-    @DisplayName("동일한 날짜면 여러 번 호출해도 같은 모델을 반환 (재시작에도 안전)")
-    void currentModel_isStableForSameDate() {
-        ModelRotationService service = serviceAt(5);
-        String first = service.currentModel();
-        String second = service.currentModel();
+    @DisplayName("pickModelForSession - 새 인스턴스는 항상 첫 번째 후보부터 다시 시작 (서버 재시작 시 처음부터 순환)")
+    void pickModelForSession_freshInstanceRestartsFromFirst() {
+        ModelRotationService first = service(MODELS);
+        first.pickModelForSession();
+        first.pickModelForSession();
 
-        assertThat(first).isEqualTo(second);
+        ModelRotationService fresh = service(MODELS);
+        assertThat(fresh.pickModelForSession()).isEqualTo(MODELS.get(0));
     }
 
     @Test
-    @DisplayName("currentModelDisplayName - 후보 5개 모두 음성으로 자연스러운 표시 이름으로 변환")
-    void currentModelDisplayName_forEachCandidate() {
-        assertThat(serviceAt(0).currentModelDisplayName()).isEqualTo("GPT 5.5");           // openai/gpt-5.5
-        assertThat(serviceAt(1).currentModelDisplayName()).isEqualTo("Claude Sonnet 5");   // anthropic/claude-sonnet-5
-        assertThat(serviceAt(2).currentModelDisplayName()).isEqualTo("Gemini 3.1 Flash Lite"); // google/gemini-3.1-flash-lite
-        assertThat(serviceAt(3).currentModelDisplayName()).isEqualTo("Claude Haiku 4.5");  // anthropic/claude-haiku-4.5
-        assertThat(serviceAt(4).currentModelDisplayName()).isEqualTo("GPT 4o Mini");       // openai/gpt-4o-mini
+    @DisplayName("displayName - 후보 5개 모두 음성으로 자연스러운 표시 이름으로 변환")
+    void displayName_forEachCandidate() {
+        ModelRotationService service = service(MODELS);
+
+        assertThat(service.displayName("openai/gpt-5.5")).isEqualTo("GPT 5.5");
+        assertThat(service.displayName("anthropic/claude-sonnet-5")).isEqualTo("Claude Sonnet 5");
+        assertThat(service.displayName("google/gemini-3.1-flash-lite")).isEqualTo("Gemini 3.1 Flash Lite");
+        assertThat(service.displayName("anthropic/claude-haiku-4.5")).isEqualTo("Claude Haiku 4.5");
+        assertThat(service.displayName("openai/gpt-4o-mini")).isEqualTo("GPT 4o Mini");
     }
 }

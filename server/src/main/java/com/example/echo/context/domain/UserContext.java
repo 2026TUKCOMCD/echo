@@ -36,6 +36,13 @@ public class UserContext {
      */
     private String systemPrompt;
 
+    /**
+     * 이번 세션에서 사용할 OpenRouter 모델
+     * 대화 시작 시 ModelRotationService.pickModelForSession()으로 1회 확정되어
+     * 대화 종료까지(인사·응답·일기·기억 추출 모두) 재사용된다
+     */
+    private String sessionModel;
+
     private LocalDateTime lastAccessTime;
     private boolean isActive;
 }

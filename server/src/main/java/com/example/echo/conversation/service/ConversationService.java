@@ -1,6 +1,7 @@
 package com.example.echo.conversation.service;
 
 import com.example.echo.ai.service.AIService;
+import com.example.echo.ai.service.ModelRotationService;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
 import com.example.echo.conversation.dto.ConversationEndResponse;
@@ -38,6 +39,7 @@ public class ConversationService {
     private final VoiceService voiceService;
     private final PromptService promptService;
     private final AIService aiService;
+    private final ModelRotationService modelRotationService;
     private final ContextService contextService;
     private final DiaryService diaryService;
     private final HealthDataService healthDataService;
@@ -71,6 +73,9 @@ public class ConversationService {
                 promptService.buildSystemPrompt(context, lifeMemories, recallGuide), userId);
         context.setSystemPrompt(systemPrompt);
 
+        // 3-1. 이번 세션에서 쓸 모델을 1회 확정 (세션 내내 재사용 - 인사·응답·일기·기억 추출 모두)
+        context.setSessionModel(modelRotationService.pickModelForSession());
+
         // 4. 첫 인사 생성
         String firstMessage = aiService.generateGreeting(systemPrompt, context);
 
@@ -97,7 +102,7 @@ public class ConversationService {
         // 3. AI 응답 생성 (OpenAI 권장 방식: messages 배열)
         String systemPrompt = context.getSystemPrompt();
         List<ConversationTurn> history = context.getConversationHistory();
-        String aiResponse = aiService.generateResponse(systemPrompt, history, userMessage);
+        String aiResponse = aiService.generateResponse(systemPrompt, history, userMessage, context.getSessionModel());
 
         // 4. TTS 변환
         byte[] audioData = voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings());
