@@ -301,7 +301,7 @@ class ConversationServiceTest2 {
         }
 
         @Test
-        @DisplayName("성공: STT 결과가 비어있으면(무음 등) AI를 호출하지 않고 재요청 안내로 응답한다")
+        @DisplayName("성공: STT 결과가 처음 비어있으면(무음 등) AI를 호출하지 않고 1단계 재요청 안내로 응답한다")
         void success_emptySttSkipsAiCallAndAsksToRepeat() {
             // given: 무음/너무 짧은 녹음이라 Whisper가 빈 문자열을 반환하는 상황
             MultipartFile audioFile = new MockMultipartFile(
@@ -328,6 +328,76 @@ class ConversationServiceTest2 {
             // 그리고: 히스토리에는 빈 user 메시지 대신 null이 기록되어야 함
             // (다음 턴에서 이 히스토리가 messages 배열에 실릴 때 빈 메시지가 섞이지 않도록)
             then(contextService).should().addConversationTurn(eq(userId), isNull(), anyString());
+        }
+
+        @Test
+        @DisplayName("성공: STT가 연속 2번 비어있으면 화제 전환을 제안하는 2단계 안내로 바뀐다")
+        void success_secondConsecutiveEmptyStt_offersTopicSwitch() {
+            // given
+            MultipartFile audioFile = new MockMultipartFile(
+                    "audio", "silence.mp3", "audio/mpeg", "silence".getBytes()
+            );
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn("");
+            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
+
+            // when: 같은 세션에서 연속 2번
+            conversationService.processUserMessage(userId, audioFile);
+            ConversationResponse result = conversationService.processUserMessage(userId, audioFile);
+
+            // then
+            assertThat(result.getAiResponse()).contains("다른 이야기");
+            then(aiService).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("성공: STT가 연속 3번 이상 비어있으면 마무리를 유도하는 3단계 안내로 바뀐다")
+        void success_thirdConsecutiveEmptyStt_suggestsWrapUp() {
+            // given
+            MultipartFile audioFile = new MockMultipartFile(
+                    "audio", "silence.mp3", "audio/mpeg", "silence".getBytes()
+            );
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn("");
+            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
+
+            // when: 같은 세션에서 연속 3번
+            conversationService.processUserMessage(userId, audioFile);
+            conversationService.processUserMessage(userId, audioFile);
+            ConversationResponse result = conversationService.processUserMessage(userId, audioFile);
+
+            // then
+            assertThat(result.getAiResponse()).contains("여기까지");
+        }
+
+        @Test
+        @DisplayName("성공: 중간에 알아들을 수 있는 발화가 들어오면 연속 카운트가 리셋되어 다시 1단계로 돌아간다")
+        void success_understoodSpeechResetsConsecutiveEmptyCount() {
+            // given
+            MultipartFile silentAudio = new MockMultipartFile(
+                    "audio", "silence.mp3", "audio/mpeg", "silence".getBytes()
+            );
+            MultipartFile realAudio = new MockMultipartFile(
+                    "audio", "real.mp3", "audio/mpeg", "real".getBytes()
+            );
+            String systemPrompt = "시스템 프롬프트";
+            String userMessage = "오늘 날씨가 좋네요";
+            mockContext.setSystemPrompt(systemPrompt);
+
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(silentAudio)).willReturn("");
+            given(voiceService.speechToText(realAudio)).willReturn(userMessage);
+            given(aiService.generateResponse(eq(systemPrompt), any(), eq(userMessage), any()))
+                    .willReturn("AI 응답");
+            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
+
+            // when: 무음 1회 → 알아들을 수 있는 발화 1회 → 다시 무음 1회
+            conversationService.processUserMessage(userId, silentAudio);
+            conversationService.processUserMessage(userId, realAudio);
+            ConversationResponse result = conversationService.processUserMessage(userId, silentAudio);
+
+            // then: 리셋되었으므로 2단계가 아니라 다시 1단계 문구여야 함
+            assertThat(result.getAiResponse()).contains("다시 한 번 말씀해");
         }
     }
 

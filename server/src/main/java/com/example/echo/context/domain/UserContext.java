@@ -43,6 +43,13 @@ public class UserContext {
      */
     private String sessionModel;
 
+    /**
+     * STT 결과가 비어있던(무음·너무 짧은 녹음 등) 연속 횟수.
+     * 알아들을 수 있는 발화가 들어오면 0으로 리셋된다. 연속 횟수에 따라
+     * 재요청 안내 문구를 단계적으로 바꾸는 데 쓰인다([이탈 발화 및 무응답 대응]과 같은 패턴).
+     */
+    private int consecutiveEmptySttCount;
+
     private LocalDateTime lastAccessTime;
     private boolean isActive;
 }
