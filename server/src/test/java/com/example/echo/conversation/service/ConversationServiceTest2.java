@@ -299,6 +299,36 @@ class ConversationServiceTest2 {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("Context not found");
         }
+
+        @Test
+        @DisplayName("성공: STT 결과가 비어있으면(무음 등) AI를 호출하지 않고 재요청 안내로 응답한다")
+        void success_emptySttSkipsAiCallAndAsksToRepeat() {
+            // given: 무음/너무 짧은 녹음이라 Whisper가 빈 문자열을 반환하는 상황
+            MultipartFile audioFile = new MockMultipartFile(
+                    "audio", "silence.mp3", "audio/mpeg", "silence".getBytes()
+            );
+            String systemPrompt = "시스템 프롬프트";
+            byte[] responseAudio = "response audio".getBytes();
+
+            mockContext.setSystemPrompt(systemPrompt);
+
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn("");
+            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn(responseAudio);
+
+            // when
+            ConversationResponse result = conversationService.processUserMessage(userId, audioFile);
+
+            // then: AI를 호출하지 않고 바로 재요청 안내로 응답
+            then(aiService).shouldHaveNoInteractions();
+            assertThat(result.getUserMessage()).isEmpty();
+            assertThat(result.getAiResponse()).contains("다시 한 번 말씀해");
+            assertThat(result.getAudioData()).isEqualTo(responseAudio);
+
+            // 그리고: 히스토리에는 빈 user 메시지 대신 null이 기록되어야 함
+            // (다음 턴에서 이 히스토리가 messages 배열에 실릴 때 빈 메시지가 섞이지 않도록)
+            then(contextService).should().addConversationTurn(eq(userId), isNull(), anyString());
+        }
     }
 
     @Nested
