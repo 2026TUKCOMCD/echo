@@ -16,6 +16,7 @@ import com.example.graduation_project.data.voice.AudioPlayerManager
 import com.example.graduation_project.data.voice.AudioRecordManager
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.IHealthRepository
+import com.example.graduation_project.domain.voice.AudioPlayListener
 import com.example.graduation_project.domain.voice.AudioRecordException
 import com.example.graduation_project.domain.voice.AudioRecordListener
 import com.example.graduation_project.domain.voice.AudioRecordState
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -82,6 +84,7 @@ class ConversationViewModelTest {
 
     private lateinit var viewModel: ConversationViewModel
     private val audioRecordListenerSlot: CapturingSlot<AudioRecordListener> = slot()
+    private val audioPlayListenerSlot: CapturingSlot<AudioPlayListener> = slot()
 
     @Before
     fun setUp() {
@@ -106,6 +109,7 @@ class ConversationViewModelTest {
 
         every { mockAudioRecordManager.state } returns mockAudioRecordState
         every { mockAudioRecordManager.setListener(capture(audioRecordListenerSlot)) } just Runs
+        every { mockAudioPlayerManager.setListener(capture(audioPlayListenerSlot)) } just Runs
         every { mockHealthRepository.getAvailability() } returns HealthConnectAvailability.NotSupported
 
         viewModel = ConversationViewModel(
@@ -255,6 +259,49 @@ class ConversationViewModelTest {
             advanceUntilIdle()
 
             // 재생 중에도 대화 종료가 동작해야 함 (기존에는 조용히 무시되던 버그)
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+        }
+
+    // ===== 재생 완료 후 발화 대기 전환(여백) 테스트 =====
+
+    @Test
+    fun `재생 완료 후 대기 시간이 지나면 Listening으로 전환되고 녹음이 시작된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Success(ConversationStartResponse(message = "안녕하세요", audioData = "dummy-audio"))
+            viewModel.startConversation()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+
+            // when: 재생 완료 콜백 발생 (실제 재생 종료 시 AudioPlayerManager가 호출하는 것과 동일)
+            audioPlayListenerSlot.captured.onPlaybackComplete()
+            advanceUntilIdle()
+
+            // then: 여백 후 Listening 전환 + 녹음 시작
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+            verify { mockAudioRecordManager.start() }
+        }
+
+    @Test
+    fun `재생 완료 후 여백 대기 중 endConversation이 호출되면 뒤늦게 Listening으로 되돌아가지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // given: AI가 말하는 중(Playing)
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Success(ConversationStartResponse(message = "안녕하세요", audioData = "dummy-audio"))
+            viewModel.startConversation()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+
+            coEvery { mockRepository.endConversation() } returns
+                ApiResult.Success(ConversationEndResponse())
+
+            // when: 재생 완료로 Listening 전환 여백이 예약된 직후, 그 여백이 끝나기 전에 대화 종료
+            audioPlayListenerSlot.captured.onPlaybackComplete()
+            viewModel.endConversation()
+            advanceUntilIdle()
+
+            // then: 지연된 전환이 뒤늦게 실행되어 Ended를 덮어쓰면 안 됨
+            // (종료 중인데 마이크가 다시 켜지는 버그 방지)
             assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
         }
 
