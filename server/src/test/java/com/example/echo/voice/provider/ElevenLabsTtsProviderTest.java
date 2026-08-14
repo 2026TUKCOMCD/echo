@@ -141,4 +141,17 @@ class ElevenLabsTtsProviderTest {
             req.getVoiceSettings().getStability() == 0.7
         ));
     }
+
+    @Test
+    @DisplayName("voiceTone이 없으면 DEFAULT_VOICE_PARAMS(stability=0.7)가 사용됨")
+    void noVoiceTone_usesDefaultVoiceParams() {
+        when(elevenLabsClient.synthesize(any(), any())).thenReturn("audio".getBytes());
+
+        provider.synthesize("테스트", null);
+
+        verify(elevenLabsClient).synthesize(eq("sf8Bpb1IU97NI9BHSMRf"), argThat(req ->
+            req.getVoiceSettings().getStability() == 0.7
+                && req.getVoiceSettings().getSimilarityBoost() == 0.75
+        ));
+    }
 }
