@@ -59,6 +59,7 @@ data class MessageUiModel(
  * @param userRetryCount 사용자 재시도 버튼 클릭 횟수 (네트워크/서버 오류)
  * @param isRetryButtonEnabled 재시도 버튼 활성화 여부
  * @param showContactSupport 고객센터 연결 버튼 표시 여부 (재시도 3회 초과)
+ * @param startFailed 대화 시작 실패 여부 (true면 화면이 잠시 후 홈으로 복귀)
  * @param showFarewellDialog 종료 확인 다이얼로그 표시 여부
  */
 data class ConversationUiState(
@@ -85,6 +86,8 @@ data class ConversationUiState(
     val userRetryCount: Int = 0,
     val isRetryButtonEnabled: Boolean = false,
     val showContactSupport: Boolean = false,
+    // 대화 시작 실패 → 홈 복귀 (1회성 이벤트, 소비 후 false로 리셋)
+    val startFailed: Boolean = false,
     // 종료 다이얼로그
     val showFarewellDialog: Boolean = false,
     // 음성 감지 여부 (VAD)

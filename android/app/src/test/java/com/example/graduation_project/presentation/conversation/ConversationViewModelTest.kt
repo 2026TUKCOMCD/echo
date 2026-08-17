@@ -49,6 +49,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -195,6 +197,44 @@ class ConversationViewModelTest {
             advanceUntilIdle()
 
             assertEquals(ConversationState.Idle, viewModel.uiState.value.conversationState)
+        }
+
+    @Test
+    fun `startConversation 실패 시 startFailed가 true가 된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Error(ApiException.NetworkError())
+
+            viewModel.startConversation()
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.startFailed)
+        }
+
+    @Test
+    fun `consumeStartFailedEvent 호출 시 startFailed가 false로 리셋된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            coEvery { mockRepository.startConversation(any(), any()) } returns
+                ApiResult.Error(ApiException.NetworkError())
+
+            viewModel.startConversation()
+            advanceUntilIdle()
+            viewModel.consumeStartFailedEvent()
+
+            assertFalse(viewModel.uiState.value.startFailed)
+        }
+
+    @Test
+    fun `sendMessage 실패 시에는 startFailed가 true로 바뀌지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            coEvery { mockRepository.sendMessage(any()) } returns
+                ApiResult.Error(ApiException.NetworkError())
+
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.startFailed)
         }
 
     @Test
