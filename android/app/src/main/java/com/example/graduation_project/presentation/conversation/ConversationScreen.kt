@@ -243,10 +243,15 @@ private fun StateTextSection(
     )
 
     val subText = when {
-        state is ConversationState.Playing && !currentAiMessage.isNullOrBlank() ->
-            currentAiMessage.take(80) + if (currentAiMessage.length > 80) "…" else ""
+        // 사용자 실시간 발화 텍스트가 있으면 최우선 표시
         state is ConversationState.Listening && !currentUserSpeech.isNullOrBlank() ->
             currentUserSpeech
+        // AI가 마지막으로 한 말: 재생 중뿐 아니라 응답을 기다리는 동안(Listening, Recording)에도 유지
+        !currentAiMessage.isNullOrBlank() &&
+            (state is ConversationState.Playing ||
+                state is ConversationState.Listening ||
+                state is ConversationState.Recording) ->
+            currentAiMessage
         else -> null
     }
 
