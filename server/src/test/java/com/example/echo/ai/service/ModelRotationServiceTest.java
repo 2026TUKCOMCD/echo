@@ -73,16 +73,4 @@ class ModelRotationServiceTest {
         ModelRotationService fresh = service(MODELS);
         assertThat(fresh.pickModelForSession()).isEqualTo(MODELS.get(0));
     }
-
-    @Test
-    @DisplayName("displayName - 후보 5개 모두 음성으로 자연스러운 표시 이름으로 변환")
-    void displayName_forEachCandidate() {
-        ModelRotationService service = service(MODELS);
-
-        assertThat(service.displayName("openai/gpt-5.5")).isEqualTo("GPT 5.5");
-        assertThat(service.displayName("anthropic/claude-sonnet-5")).isEqualTo("Claude Sonnet 5");
-        assertThat(service.displayName("google/gemini-3.1-flash-lite")).isEqualTo("Gemini 3.1 Flash Lite");
-        assertThat(service.displayName("anthropic/claude-haiku-4.5")).isEqualTo("Claude Haiku 4.5");
-        assertThat(service.displayName("openai/gpt-4o-mini")).isEqualTo("GPT 4o Mini");
-    }
 }

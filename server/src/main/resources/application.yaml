@@ -39,16 +39,13 @@ openai:
     model: whisper-1
     language: ko
 
-# OpenRouter (채팅 전용) - 대화 세션마다 아래 목록에서 순서대로 하나씩 선택됨 (ModelRotationService)
+# OpenRouter (채팅 전용) - 단일 모델(terra)로 고정
 openrouter:
   api:
     url: https://openrouter.ai/api/v1
   chat:
     models:
-      - anthropic/claude-sonnet-5
       - openai/gpt-5.6-terra
-      - anthropic/claude-haiku-4.5
-      - openai/gpt-5.5
     temperature: 0.7
     max-tokens: 1024
 
