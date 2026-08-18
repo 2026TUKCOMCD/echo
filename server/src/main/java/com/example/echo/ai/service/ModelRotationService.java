@@ -44,29 +44,4 @@ public class ModelRotationService {
         log.info("OpenRouter 이번 세션 모델(순차 로테이션): {}", picked);
         return picked;
     }
-
-    /**
-     * 모델 ID를 사람이 읽기 좋은(음성으로 발화 가능한) 이름으로 반환한다.
-     * 예: "anthropic/claude-sonnet-5" -> "Claude Sonnet 5", "openai/gpt-5.5" -> "GPT 5.5"
-     */
-    public String displayName(String modelId) {
-        String slug = modelId.contains("/") ? modelId.substring(modelId.indexOf('/') + 1) : modelId;
-        String[] parts = slug.split("-");
-
-        StringBuilder displayName = new StringBuilder();
-        for (String part : parts) {
-            if (displayName.length() > 0) {
-                displayName.append(' ');
-            }
-            displayName.append("gpt".equalsIgnoreCase(part) ? "GPT" : capitalize(part));
-        }
-        return displayName.toString();
-    }
-
-    private static String capitalize(String word) {
-        if (word.isEmpty()) {
-            return word;
-        }
-        return Character.toUpperCase(word.charAt(0)) + word.substring(1);
-    }
 }

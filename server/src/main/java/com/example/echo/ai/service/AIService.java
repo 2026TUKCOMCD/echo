@@ -2,17 +2,17 @@
  * AI 응답 생성 서비스
  *
  * 역할: OpenRouter API를 호출하여 AI 응답 생성
- * - generateGreeting(): 대화 시작 시 첫 인사 생성 (오늘의 로테이션 모델을 음성으로 안내하는 문장 포함)
+ * - generateGreeting(): 대화 시작 시 첫 인사 생성
  * - generateResponse(): 사용자 메시지에 대한 응답 생성
  *
  * 데이터 흐름:
  *   PromptService에서 조합된 프롬프트(String) 수신
  *   → OpenRouter Chat Completion API 호출 (모델은 대화 세션 시작 시 ModelRotationService가
- *     1회 순차 선택해 UserContext.sessionModel에 저장, 세션 내내 재사용)
+ *     UserContext.sessionModel에 저장해 세션 내내 재사용)
  *   → 응답 텍스트 반환
  *
  * 설정값 (application.yaml):
- *   - openrouter.chat.models: 로테이션 후보 모델 목록
+ *   - openrouter.chat.models: 사용할 모델 (단일 모델 고정)
  *   - openrouter.chat.temperature: 창의성 (0.7)
  *   - openrouter.chat.max-tokens: 최대 토큰 (1024)
  */
@@ -38,10 +38,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AIService {
 
-    private static final String MODEL_ANNOUNCEMENT_FORMAT = "이번에는 %s 모델과 함께 대화를 나눠요. ";
-
     private final OpenRouterClient openRouterClient;
-    private final ModelRotationService modelRotationService;
     private final OpenRouterChatProperties chatProperties;
 
     /**
@@ -81,10 +78,9 @@ public class AIService {
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
             String greeting = extractContent(response);
-            String announcedGreeting = String.format(MODEL_ANNOUNCEMENT_FORMAT, modelRotationService.displayName(model)) + greeting;
 
-            log.debug("Generated greeting - length: {}", announcedGreeting.length());
-            return announcedGreeting;
+            log.debug("Generated greeting - length: {}", greeting.length());
+            return greeting;
         } catch (FeignException e) {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 인사 생성 실패: " + e.getMessage(), e);

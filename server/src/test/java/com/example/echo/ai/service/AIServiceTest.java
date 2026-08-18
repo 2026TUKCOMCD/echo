@@ -31,7 +31,6 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -40,9 +39,6 @@ class AIServiceTest {
 
     @Mock
     private OpenRouterClient openRouterClient;
-
-    @Mock
-    private ModelRotationService modelRotationService;
 
     private AIService aiService;
 
@@ -55,13 +51,11 @@ class AIServiceTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(modelRotationService.displayName(TEST_MODEL)).thenReturn("Claude Sonnet 5");
-
         OpenRouterChatProperties chatProperties = new OpenRouterChatProperties();
         chatProperties.setTemperature(0.7);
         chatProperties.setMaxTokens(1024);
 
-        aiService = new AIService(openRouterClient, modelRotationService, chatProperties);
+        aiService = new AIService(openRouterClient, chatProperties);
 
         context = UserContext.builder()
                 .userId(1L)
@@ -104,7 +98,7 @@ class AIServiceTest {
         String result = aiService.generateGreeting(systemPrompt, context);
 
         // Then
-        assertThat(result).isEqualTo("이번에는 Claude Sonnet 5 모델과 함께 대화를 나눠요. 안녕하세요! 오늘 하루는 어떠셨어요?");
+        assertThat(result).isEqualTo("안녕하세요! 오늘 하루는 어떠셨어요?");
 
         // 메시지 구조 검증
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
