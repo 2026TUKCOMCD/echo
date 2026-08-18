@@ -99,7 +99,69 @@ class LocationManagerTest {
             verify(exactly = 1) { mockFusedClient.lastLocation }
         }
 
+    // ===== 4. 집 등록용 다중 샘플 평균 =====
+
+    @Test
+    fun `getAveragedCurrentLocation 성공 시 위도경도 평균 반환`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val sample1 = realLocation(37.5665, 126.9780)
+            val sample2 = realLocation(37.5666, 126.9781)
+            val sample3 = realLocation(37.5664, 126.9779)
+            stubCurrentLocationSequence(sample1, sample2, sample3)
+            stubLastLocation(successResult = null)
+
+            val result = locationManager.getAveragedCurrentLocation(sampleCount = 3, sampleDelayMs = 1_000L)
+
+            assertEquals(37.5665, result?.latitude ?: 0.0, 0.0001)
+            assertEquals(126.9780, result?.longitude ?: 0.0, 0.0001)
+            verify(exactly = 3) { mockFusedClient.getCurrentLocation(any<Int>(), any<CancellationToken>()) }
+        }
+
+    @Test
+    fun `getAveragedCurrentLocation 일부 샘플 실패해도 유효한 샘플만으로 평균`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val sample1 = realLocation(37.5665, 126.9780)
+            val sample3 = realLocation(37.5667, 126.9782)
+            stubCurrentLocationSequence(sample1, null, sample3)
+            stubLastLocation(successResult = null)
+
+            val result = locationManager.getAveragedCurrentLocation(sampleCount = 3, sampleDelayMs = 1_000L)
+
+            assertEquals(37.5666, result?.latitude ?: 0.0, 0.0001)
+        }
+
+    @Test
+    fun `getAveragedCurrentLocation 모든 샘플 실패 시 null 반환`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            stubCurrentLocationSequence(null, null, null)
+            stubLastLocation(successResult = null)
+
+            val result = locationManager.getAveragedCurrentLocation(sampleCount = 3, sampleDelayMs = 1_000L)
+
+            assertNull(result)
+        }
+
     // ===== 헬퍼 =====
+
+    private fun realLocation(lat: Double, lng: Double): Location {
+        val location = mockk<Location>()
+        every { location.latitude } returns lat
+        every { location.longitude } returns lng
+        return location
+    }
+
+    private fun stubCurrentLocationSequence(vararg results: Location?) {
+        val tasks = results.map { result ->
+            val task = mockk<Task<Location>>()
+            every { task.addOnSuccessListener(any<OnSuccessListener<Location>>()) } answers {
+                firstArg<OnSuccessListener<Location>>().onSuccess(result)
+                task
+            }
+            every { task.addOnFailureListener(any()) } returns task
+            task
+        }
+        every { mockFusedClient.getCurrentLocation(any<Int>(), any<CancellationToken>()) } returnsMany tasks
+    }
 
     private fun stubCurrentLocation(successResult: Location?) {
         val task = mockk<Task<Location>>()

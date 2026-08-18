@@ -437,9 +437,9 @@ class SettingsViewModel(
         }
         viewModelScope.launch {
             _uiState.update { it.copy(isRegisteringHome = true) }
-            android.util.Log.d("SettingsVM", "집 등록: 현재 위치 요청 시작")
+            android.util.Log.d("SettingsVM", "집 등록: 현재 위치 요청 시작 (평균 측정)")
             val location = com.example.graduation_project.data.location.LocationManager(context)
-                .getCurrentLocation()
+                .getAveragedCurrentLocation()
             if (location == null) {
                 android.util.Log.w("SettingsVM", "집 등록: 위치 null (getCurrentLocation + lastLocation 모두 실패)")
                 _uiState.update {
@@ -452,11 +452,23 @@ class SettingsViewModel(
             }
             android.util.Log.d("SettingsVM", "집 등록: 위치 획득 (${location.latitude}, ${location.longitude}) → 서버 저장")
             when (val result = userRepository.updateHomeLocation(location.latitude, location.longitude)) {
-                is ApiResult.Success -> _uiState.update {
-                    applyPrefs(it, result.data).copy(
-                        isRegisteringHome = false,
-                        savedMessage = "현재 위치를 집으로 등록했습니다"
-                    )
+                is ApiResult.Success -> {
+                    // 등록된 주소를 보여줘서 실내 GPS 오차로 엉뚱한 곳이 등록됐는지 바로 확인할 수 있게 함
+                    // (조회 전용 API라 실패해도 등록 자체는 이미 성공한 것으로 처리)
+                    val addressPreview = userRepository.previewHomeAddress(location.latitude, location.longitude)
+                    val addressText = (addressPreview as? ApiResult.Success)?.data
+                        ?.let { it.placeName ?: it.address }
+
+                    _uiState.update {
+                        applyPrefs(it, result.data).copy(
+                            isRegisteringHome = false,
+                            savedMessage = if (addressText != null) {
+                                "현재 위치를 집으로 등록했습니다: $addressText"
+                            } else {
+                                "현재 위치를 집으로 등록했습니다"
+                            }
+                        )
+                    }
                 }
                 is ApiResult.Error -> {
                     android.util.Log.w("SettingsVM", "집 등록: 서버 저장 실패 - ${result.exception.message}")
