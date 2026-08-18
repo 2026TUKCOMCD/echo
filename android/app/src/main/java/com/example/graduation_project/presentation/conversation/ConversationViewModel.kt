@@ -443,6 +443,7 @@ class ConversationViewModel(
                     // Sending → Idle
                     transitionTo(ConversationState.Idle)
                     handleApiError(result.exception)
+                    _uiState.update { it.copy(startFailed = true) }
                 }
             }
         }
@@ -738,6 +739,14 @@ class ConversationViewModel(
      */
     fun dismissError() {
         _uiState.update { it.copy(errorMessage = null, currentError = null) }
+    }
+
+    /**
+     * 대화 시작 실패로 인한 홈 복귀 이벤트를 처리 완료로 표시합니다.
+     * - ConversationScreen에서 홈으로 복귀하기 직전 호출
+     */
+    fun consumeStartFailedEvent() {
+        _uiState.update { it.copy(startFailed = false) }
     }
 
     /**

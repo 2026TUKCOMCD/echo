@@ -114,6 +114,15 @@ fun ConversationScreen(
         }
     }
 
+    // 대화 시작 실패 시 에러 메시지를 잠깐 보여준 뒤 홈으로 복귀
+    LaunchedEffect(uiState.startFailed) {
+        if (uiState.startFailed) {
+            delay(2000L)
+            viewModel.consumeStartFailedEvent()
+            onBack()
+        }
+    }
+
     // 자동 시작은 화면당 1회만. 권한 다이얼로그로 content가 컴포지션에서 빠졌다가
     // 다시 들어오거나(설정 왕복), 회전으로 컴포지션이 재생성돼도 재발화하지 않도록
     // 플래그를 권한 게이트 "바깥"에 둔다.
