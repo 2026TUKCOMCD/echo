@@ -15,6 +15,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +52,46 @@ class VoiceServiceImplTest {
         ReflectionTestUtils.setField(voiceService, "whisperModel", "whisper-1");
         ReflectionTestUtils.setField(voiceService, "defaultLanguage", "ko");
         ReflectionTestUtils.setField(voiceService, "ttsProvider", "elevenlabs");
+        ReflectionTestUtils.setField(voiceService, "minDurationMs", 300L);
+        ReflectionTestUtils.setField(voiceService, "minEnergyDbfs", -45.0);
+        ReflectionTestUtils.setField(voiceService, "noSpeechThreshold", 0.6);
+        ReflectionTestUtils.setField(voiceService, "logprobThreshold", -1.0);
+        ReflectionTestUtils.setField(voiceService, "compressionRatioThreshold", 2.4);
+    }
+
+    /** 44바이트 표준 PCM WAV 헤더 + 지정한 진폭의 무음/발화를 흉내낸 PCM 데이터를 생성 */
+    private static byte[] buildWavBytes(int sampleRate, int durationMs, short amplitude) {
+        int numSamples = sampleRate * durationMs / 1000;
+        int dataSize = numSamples * 2; // 16-bit mono
+        int byteRate = sampleRate * 2;
+
+        ByteBuffer buffer = ByteBuffer.allocate(44 + dataSize).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.put("RIFF".getBytes());
+        buffer.putInt(36 + dataSize);
+        buffer.put("WAVE".getBytes());
+        buffer.put("fmt ".getBytes());
+        buffer.putInt(16);
+        buffer.putShort((short) 1);
+        buffer.putShort((short) 1);
+        buffer.putInt(sampleRate);
+        buffer.putInt(byteRate);
+        buffer.putShort((short) 2);
+        buffer.putShort((short) 16);
+        buffer.put("data".getBytes());
+        buffer.putInt(dataSize);
+        for (int i = 0; i < numSamples; i++) {
+            buffer.putShort(amplitude);
+        }
+        return buffer.array();
+    }
+
+    private static WhisperTranscriptionResponse.Segment buildSegment(
+            double noSpeechProb, double avgLogprob, double compressionRatio) {
+        WhisperTranscriptionResponse.Segment segment = new WhisperTranscriptionResponse.Segment();
+        ReflectionTestUtils.setField(segment, "noSpeechProb", noSpeechProb);
+        ReflectionTestUtils.setField(segment, "avgLogprob", avgLogprob);
+        ReflectionTestUtils.setField(segment, "compressionRatio", compressionRatio);
+        return segment;
     }
 
     // ========== STT 테스트 ==========
@@ -69,7 +111,7 @@ class VoiceServiceImplTest {
             WhisperTranscriptionResponse response = new WhisperTranscriptionResponse();
             ReflectionTestUtils.setField(response, "text", "안녕하세요");
 
-            when(sttClient.transcribe(any(), eq("whisper-1"), eq("ko"), eq("json")))
+            when(sttClient.transcribe(any(), eq("whisper-1"), eq("ko"), eq("verbose_json")))
                     .thenReturn(response);
 
             // When
@@ -188,7 +230,7 @@ class VoiceServiceImplTest {
         @DisplayName("wav 형식 파일도 정상 처리")
         void wavFormat_success() {
             MockMultipartFile wavFile = new MockMultipartFile(
-                    "file", "test.wav", "audio/wav", "fake-wav".getBytes()
+                    "file", "test.wav", "audio/wav", buildWavBytes(16000, 1000, (short) 20000)
             );
 
             WhisperTranscriptionResponse response = new WhisperTranscriptionResponse();
@@ -199,6 +241,131 @@ class VoiceServiceImplTest {
             String result = voiceService.speechToText(wavFile);
 
             assertThat(result).isEqualTo("테스트");
+        }
+
+        // ===== [STT 환각 방지] 최소 길이/에너지 사전 체크 =====
+
+        @Test
+        @DisplayName("짧고 동시에 조용한 WAV(사실상 빈 오디오)는 Whisper 호출 없이 빈 문자열 반환")
+        void tooShortAndTooQuietWav_skipsSttCall() {
+            MockMultipartFile wavFile = new MockMultipartFile(
+                    "file", "test.wav", "audio/wav", buildWavBytes(16000, 100, (short) 0)
+            );
+
+            String result = voiceService.speechToText(wavFile);
+
+            assertThat(result).isEmpty();
+            verify(sttClient, never()).transcribe(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("짧지만 또렷하고 큰 소리인 WAV는 길이만으로 걸러지지 않고 Whisper까지 호출됨")
+        void shortButLoudWav_stillCallsStt() {
+            MockMultipartFile wavFile = new MockMultipartFile(
+                    "file", "test.wav", "audio/wav", buildWavBytes(16000, 100, (short) 20000)
+            );
+
+            WhisperTranscriptionResponse response = new WhisperTranscriptionResponse();
+            ReflectionTestUtils.setField(response, "text", "네");
+
+            when(sttClient.transcribe(any(), any(), any(), any())).thenReturn(response);
+
+            String result = voiceService.speechToText(wavFile);
+
+            assertThat(result).isEqualTo("네");
+            verify(sttClient, times(1)).transcribe(any(), any(), any(), any());
+        }
+
+        // ===== [STT 환각 방지] verbose_json 신뢰도 필터링 =====
+
+        @Test
+        @DisplayName("no_speech_prob가 높고 avg_logprob가 낮으면 환각으로 판단해 빈 문자열 반환")
+        void highNoSpeechProbAndLowLogprob_filteredAsHallucination() {
+            MockMultipartFile wavFile = new MockMultipartFile(
+                    "file", "test.wav", "audio/wav", buildWavBytes(16000, 1000, (short) 20000)
+            );
+
+            WhisperTranscriptionResponse response = new WhisperTranscriptionResponse();
+            ReflectionTestUtils.setField(response, "text", "시청해주셔서 감사합니다");
+            ReflectionTestUtils.setField(response, "segments", List.of(buildSegment(0.9, -2.0, 1.0)));
+
+            when(sttClient.transcribe(any(), any(), any(), any())).thenReturn(response);
+
+            String result = voiceService.speechToText(wavFile);
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("compression_ratio가 높으면(반복 패턴) 환각으로 판단해 빈 문자열 반환")
+        void highCompressionRatio_filteredAsHallucination() {
+            MockMultipartFile wavFile = new MockMultipartFile(
+                    "file", "test.wav", "audio/wav", buildWavBytes(16000, 1000, (short) 20000)
+            );
+
+            WhisperTranscriptionResponse response = new WhisperTranscriptionResponse();
+            ReflectionTestUtils.setField(response, "text", "네네네네네네네네네네");
+            ReflectionTestUtils.setField(response, "segments", List.of(buildSegment(0.1, -0.2, 3.0)));
+
+            when(sttClient.transcribe(any(), any(), any(), any())).thenReturn(response);
+
+            String result = voiceService.speechToText(wavFile);
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("신뢰도 지표가 정상 범위면 필터링되지 않고 텍스트 그대로 반환")
+        void normalConfidence_notFiltered() {
+            MockMultipartFile wavFile = new MockMultipartFile(
+                    "file", "test.wav", "audio/wav", buildWavBytes(16000, 1000, (short) 20000)
+            );
+
+            WhisperTranscriptionResponse response = new WhisperTranscriptionResponse();
+            ReflectionTestUtils.setField(response, "text", "안녕하세요");
+            ReflectionTestUtils.setField(response, "segments", List.of(buildSegment(0.05, -0.3, 1.2)));
+
+            when(sttClient.transcribe(any(), any(), any(), any())).thenReturn(response);
+
+            String result = voiceService.speechToText(wavFile);
+
+            assertThat(result).isEqualTo("안녕하세요");
+        }
+
+        // ===== [STT 환각 방지] 알려진 환각 문구 백스톱 필터 =====
+
+        @Test
+        @DisplayName("알려진 환각 문구와 정확히 일치하면 빈 문자열 반환")
+        void knownHallucinationPhrase_filtered() {
+            MockMultipartFile wavFile = new MockMultipartFile(
+                    "file", "test.wav", "audio/wav", buildWavBytes(16000, 1000, (short) 20000)
+            );
+
+            WhisperTranscriptionResponse response = new WhisperTranscriptionResponse();
+            ReflectionTestUtils.setField(response, "text", "시청해주셔서 감사합니다.");
+
+            when(sttClient.transcribe(any(), any(), any(), any())).thenReturn(response);
+
+            String result = voiceService.speechToText(wavFile);
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("어르신의 정상적인 짧은 인사(감사합니다)는 백스톱 필터에 걸리지 않음")
+        void legitimateThanksReply_notFiltered() {
+            MockMultipartFile wavFile = new MockMultipartFile(
+                    "file", "test.wav", "audio/wav", buildWavBytes(16000, 1000, (short) 20000)
+            );
+
+            WhisperTranscriptionResponse response = new WhisperTranscriptionResponse();
+            ReflectionTestUtils.setField(response, "text", "감사합니다");
+
+            when(sttClient.transcribe(any(), any(), any(), any())).thenReturn(response);
+
+            String result = voiceService.speechToText(wavFile);
+
+            assertThat(result).isEqualTo("감사합니다");
         }
 
         @Test

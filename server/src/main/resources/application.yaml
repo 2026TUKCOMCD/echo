@@ -38,6 +38,12 @@ openai:
   whisper:
     model: whisper-1
     language: ko
+    # [STT 환각 방지] 아래는 모두 기본값 - 필요 시 환경별로 override
+    min-duration-ms: 300
+    min-energy-dbfs: -45.0
+    no-speech-threshold: 0.6
+    logprob-threshold: -1.0
+    compression-ratio-threshold: 2.4
 
 # OpenRouter (채팅 전용) - 단일 모델(terra)로 고정
 openrouter:

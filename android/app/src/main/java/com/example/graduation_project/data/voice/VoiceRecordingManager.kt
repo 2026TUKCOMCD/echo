@@ -182,9 +182,20 @@ class VoiceRecordingManager(
         audioBuffer.reset()
         isSpeechActive = false
 
+        // 발화 종료 후 붙은 무음 꼬리 제거 (VAD hangover로 인해 최대 silenceDurationMs만큼
+        // 무음이 함께 쌓이므로, STT 환각 방지를 위해 전송 전에 잘라낸다)
+        val trimmedPcmData = WavConverter.trimTrailingSilence(
+            pcmData = pcmData,
+            sampleRate = config.sampleRate,
+            frameSizeBytes = config.frameSize * 2,
+            thresholdDbfs = config.silenceTrimThresholdDbfs,
+            paddingMs = config.silenceTrimPaddingMs
+        )
+        Log.d(TAG, "finalizeSpeech() - trimmed PCM data size: ${trimmedPcmData.size} bytes")
+
         // PCM → WAV 변환
         val wavData = WavConverter.pcmToWav(
-            pcmData = pcmData,
+            pcmData = trimmedPcmData,
             sampleRate = config.sampleRate,
             channels = VadConfig.CHANNELS_MONO,
             bitsPerSample = VadConfig.BITS_PER_SAMPLE
