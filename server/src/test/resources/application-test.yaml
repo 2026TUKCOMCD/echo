@@ -32,12 +32,7 @@ openrouter:
     url: https://openrouter.ai/api/v1
     key: ${OPENROUTER_API_KEY:}
   chat:
-    models:
-      - openai/gpt-5.5
-      - anthropic/claude-sonnet-5
-      - google/gemini-3.1-flash-lite
-      - anthropic/claude-haiku-4.5
-      - openai/gpt-4o-mini
+    model: openai/gpt-5.6-terra
     temperature: 0.7
     max-tokens: 512
 

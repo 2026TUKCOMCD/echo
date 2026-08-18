@@ -88,7 +88,7 @@ class MemoryServiceTest {
         UserContext context = contextWithUserMessage();
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of());
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(eq("기억 프롬프트"), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(eq("기억 프롬프트"))).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "30대에 부산에서 어부로 일했다", "tags": ["부산", "어부"]}]
                 """);
 
@@ -115,7 +115,7 @@ class MemoryServiceTest {
         UserContext context = contextWithUserMessage();
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of());
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
                 다음은 추출된 기억입니다.
                 ```json
                 [{"lifePeriod": "유년기", "topic": "장소", "content": "시골 외갓집에서 여름을 보냈다", "tags": ["외갓집"]}]
@@ -139,7 +139,7 @@ class MemoryServiceTest {
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID))
                 .thenReturn(List.of(memory("기존 기억")));
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("죄송합니다, 추출할 수 없습니다.");
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("죄송합니다, 추출할 수 없습니다.");
 
         // when
         memoryService.extractAndSaveMemories(context);
@@ -157,7 +157,7 @@ class MemoryServiceTest {
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID))
                 .thenReturn(List.of(memory("기존 기억")));
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("[]");
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("[]");
 
         // when
         memoryService.extractAndSaveMemories(context);
@@ -174,7 +174,7 @@ class MemoryServiceTest {
         UserContext context = contextWithUserMessage();
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(memory("기존 기억")));
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(anyString(), any()))
+        when(aiService.generateMemoryExtraction(anyString()))
                 .thenThrow(new AIException("AI 기억 추출 실패: 401"));
 
         // when & then (예외 전파 없음)
@@ -219,7 +219,7 @@ class MemoryServiceTest {
                 .orElseThrow();
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of());
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("[" + items + "]");
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("[" + items + "]");
 
         // when
         memoryService.extractAndSaveMemories(context);
@@ -239,7 +239,7 @@ class MemoryServiceTest {
         UserContext context = contextWithUserMessage();
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of());
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "  ", "tags": []},
                  {"lifePeriod": "중년기", "topic": "가족", "content": "손주 이름은 민준이다", "tags": ["민준"]}]
                 """);
@@ -264,7 +264,7 @@ class MemoryServiceTest {
                 .toList();
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(existing);
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "기억 A", "tags": []},
                  {"lifePeriod": "중년기", "topic": "가족", "content": "기억 B", "tags": []}]
                 """);
@@ -285,7 +285,7 @@ class MemoryServiceTest {
         List<Memory> existing = List.of(memory("기존 기억"));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(existing);
         when(promptService.buildMemoryPrompt(context, existing)).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(eq("기억 프롬프트"), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(eq("기억 프롬프트"))).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "30대에 부산에서 어부로 일했다", "tags": ["부산"]}]
                 """);
 
@@ -303,7 +303,7 @@ class MemoryServiceTest {
         UserContext context = contextWithUserMessage();
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of());
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "30대에 부산에서 어부로 일했다", "tags": ["부산"]}]
                 """);
         doThrow(new RuntimeException("DB 연결 끊김")).when(memoryRepository).saveAll(any());

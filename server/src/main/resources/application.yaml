@@ -44,8 +44,7 @@ openrouter:
   api:
     url: https://openrouter.ai/api/v1
   chat:
-    models:
-      - openai/gpt-5.6-terra
+    model: openai/gpt-5.6-terra
     temperature: 0.7
     max-tokens: 1024
 
