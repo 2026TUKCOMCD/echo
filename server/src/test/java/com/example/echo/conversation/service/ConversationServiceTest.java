@@ -1,7 +1,6 @@
 package com.example.echo.conversation.service;
 
 import com.example.echo.ai.service.AIService;
-import com.example.echo.ai.service.ModelRotationService;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.context.service.ContextService;
@@ -43,9 +42,6 @@ class ConversationServiceTest {
     private AIService aiService;
 
     @Mock
-    private ModelRotationService modelRotationService;
-
-    @Mock
     private ContextService contextService;
 
     @Mock
@@ -73,7 +69,6 @@ class ConversationServiceTest {
                 voiceService,
                 promptService,
                 aiService,
-                modelRotationService,
                 contextService,
                 diaryService,
                 healthDataService,
@@ -82,7 +77,6 @@ class ConversationServiceTest {
                 Runnable::run
         );
         mockContext = createMockContext();
-        lenient().when(modelRotationService.pickModelForSession()).thenReturn("anthropic/claude-sonnet-5");
     }
 
     @Test

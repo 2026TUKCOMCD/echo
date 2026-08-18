@@ -80,7 +80,7 @@ class DiaryServiceTest {
         UserContext context = contextWithUserMessage();
         when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.empty());
         when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
-        when(aiService.generateDiary(eq("일기 프롬프트"), any())).thenReturn("오늘은 산책을 다녀왔다.");
+        when(aiService.generateDiary(eq("일기 프롬프트"))).thenReturn("오늘은 산책을 다녀왔다.");
         when(diaryRepository.save(any(Diary.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
@@ -108,7 +108,7 @@ class DiaryServiceTest {
                 .build();
         when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.of(existing));
         when(promptService.buildDiaryPrompt(eq(context), eq("아침에 쓴 기존 일기"))).thenReturn("증분 프롬프트");
-        when(aiService.generateDiary(eq("증분 프롬프트"), any())).thenReturn("아침 산책과 오후 이야기를 담은 통합 일기");
+        when(aiService.generateDiary(eq("증분 프롬프트"))).thenReturn("아침 산책과 오후 이야기를 담은 통합 일기");
         when(diaryRepository.save(any(Diary.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
@@ -135,7 +135,7 @@ class DiaryServiceTest {
                 .build();
         when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.of(existing));
         when(promptService.buildDiaryPrompt(any(), anyString())).thenReturn("프롬프트");
-        when(aiService.generateDiary(anyString(), any())).thenThrow(new AIException("AI 일기 생성 실패: 401"));
+        when(aiService.generateDiary(anyString())).thenThrow(new AIException("AI 일기 생성 실패: 401"));
         when(diaryRepository.save(any(Diary.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
@@ -155,7 +155,7 @@ class DiaryServiceTest {
         UserContext context = contextWithUserMessage();
         when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.empty());
         when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
-        when(aiService.generateDiary(eq("일기 프롬프트"), any())).thenThrow(new AIException("AI 일기 생성 실패: 500"));
+        when(aiService.generateDiary(eq("일기 프롬프트"))).thenThrow(new AIException("AI 일기 생성 실패: 500"));
         when(diaryRepository.save(any(Diary.class))).thenThrow(new RuntimeException("DB 연결 끊김"));
 
         // when
@@ -207,7 +207,7 @@ class DiaryServiceTest {
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(racedDiary));
         when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
-        when(aiService.generateDiary(eq("일기 프롬프트"), any())).thenReturn("재시도로 저장된 새 내용");
+        when(aiService.generateDiary(eq("일기 프롬프트"))).thenReturn("재시도로 저장된 새 내용");
         when(diaryRepository.save(any(Diary.class)))
                 .thenThrow(new DataIntegrityViolationException("unique constraint violated"))
                 .thenAnswer(inv -> inv.getArgument(0));
@@ -232,7 +232,7 @@ class DiaryServiceTest {
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.empty());
         when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
-        when(aiService.generateDiary(eq("일기 프롬프트"), any())).thenReturn("생성된 내용");
+        when(aiService.generateDiary(eq("일기 프롬프트"))).thenReturn("생성된 내용");
         when(diaryRepository.save(any(Diary.class)))
                 .thenThrow(new DataIntegrityViolationException("unique constraint violated"))
                 .thenAnswer(inv -> inv.getArgument(0));
@@ -245,7 +245,7 @@ class DiaryServiceTest {
         assertThat(result.getStatus()).isEqualTo(DiaryStatus.FAILED);
         assertThat(result.getFailureReason()).contains("unique constraint violated");
         verify(diaryRepository, times(2)).findByUserIdAndDiaryDate(TEST_USER_ID, TODAY);
-        verify(aiService, times(1)).generateDiary(anyString(), any());
+        verify(aiService, times(1)).generateDiary(anyString());
     }
 
     @Test
@@ -255,7 +255,7 @@ class DiaryServiceTest {
         UserContext context = contextWithUserMessage();
         when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.empty());
         when(promptService.buildDiaryPrompt(eq(context), isNull())).thenReturn("일기 프롬프트");
-        when(aiService.generateDiary(eq("일기 프롬프트"), any())).thenThrow(new AIException("AI 일기 생성 실패: 401"));
+        when(aiService.generateDiary(eq("일기 프롬프트"))).thenThrow(new AIException("AI 일기 생성 실패: 401"));
         when(diaryRepository.save(any(Diary.class)))
                 .thenThrow(new DataAccessResourceFailureException("DB connection lost"));
 

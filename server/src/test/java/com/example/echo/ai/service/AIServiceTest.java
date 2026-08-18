@@ -52,6 +52,7 @@ class AIServiceTest {
     @BeforeEach
     void setUp() {
         OpenRouterChatProperties chatProperties = new OpenRouterChatProperties();
+        chatProperties.setModel(TEST_MODEL);
         chatProperties.setTemperature(0.7);
         chatProperties.setMaxTokens(1024);
 
@@ -59,7 +60,6 @@ class AIServiceTest {
 
         context = UserContext.builder()
                 .userId(1L)
-                .sessionModel(TEST_MODEL)
                 .build();
 
         // 로그 레벨을 DEBUG로 격상한 상황(운영 DEBUG 오버라이드 등)을 그대로 재현해서 캡처
@@ -152,7 +152,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
+        String result = aiService.generateResponse(systemPrompt, history, userMessage);
 
         // Then
         assertThat(result).isEqualTo("좋은 질문이네요!");
@@ -160,7 +160,7 @@ class AIServiceTest {
         // 메시지 구조 검증: system(1) + history(user+assistant)(2) + current user(1) = 4
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
         when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
-        aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
+        aiService.generateResponse(systemPrompt, history, userMessage);
 
         ChatCompletionRequest capturedRequest = captor.getValue();
         assertThat(capturedRequest.getMessages()).hasSize(4);
@@ -186,7 +186,7 @@ class AIServiceTest {
         when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
 
         // When
-        aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
+        aiService.generateResponse(systemPrompt, history, userMessage);
 
         // Then: system(1) + current user(1) = 2. 단계 안내용 추가 system 메시지는 붙지 않는다
         assertThat(captor.getValue().getMessages()).hasSize(2);
@@ -211,7 +211,7 @@ class AIServiceTest {
                 .thenThrow(feignException);
 
         // When & Then
-        assertThatThrownBy(() -> aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL))
+        assertThatThrownBy(() -> aiService.generateResponse(systemPrompt, history, userMessage))
                 .isInstanceOf(AIException.class)
                 .hasMessageContaining("AI 응답 생성 실패")
                 .hasCause(feignException);
@@ -255,7 +255,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
+        String result = aiService.generateResponse(systemPrompt, history, userMessage);
 
         // Then
         assertThat(result).isEqualTo(aiResponseContent);
@@ -286,7 +286,7 @@ class AIServiceTest {
                 .thenReturn(nullChoicesResponse);
 
         // When
-        String result1 = aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
+        String result1 = aiService.generateResponse(systemPrompt, history, userMessage);
 
         // Then
         assertThat(result1).isEmpty();
@@ -299,7 +299,7 @@ class AIServiceTest {
                 .thenReturn(emptyChoicesResponse);
 
         // When
-        String result2 = aiService.generateResponse(systemPrompt, history, userMessage, TEST_MODEL);
+        String result2 = aiService.generateResponse(systemPrompt, history, userMessage);
 
         // Then
         assertThat(result2).isEmpty();

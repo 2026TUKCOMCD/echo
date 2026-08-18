@@ -68,7 +68,7 @@ public class DiaryService {
         try {
             String diaryPrompt = promptService.buildDiaryPrompt(
                     context, existing != null ? existing.getContent() : null);
-            String content = aiService.generateDiary(diaryPrompt, context.getSessionModel());
+            String content = aiService.generateDiary(diaryPrompt);
             String weather = extractWeather(context);
 
             Diary saved = upsertSuccess(userId, today, existing, content, weather);

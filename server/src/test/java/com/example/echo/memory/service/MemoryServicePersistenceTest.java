@@ -94,7 +94,7 @@ class MemoryServicePersistenceTest {
     @DisplayName("기억이 없던 사용자에게 추출 결과가 실제로 저장된다")
     void savesExtractedMemories() {
         // given
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "30대에 부산에서 어부로 일했다", "tags": ["부산", "어부"]}]
                 """);
 
@@ -119,7 +119,7 @@ class MemoryServicePersistenceTest {
                 existingMemory("기존 기억 3"),
                 existingMemory("기존 기억 4")
         ));
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "통합된 기억 A", "tags": ["A"]},
                  {"lifePeriod": "중년기", "topic": "가족", "content": "통합된 기억 B", "tags": ["B"]},
                  {"lifePeriod": "최근", "topic": "습관", "content": "통합된 기억 C", "tags": ["C"]}]
@@ -147,7 +147,7 @@ class MemoryServicePersistenceTest {
                 .build();
         memoryRepository.save(otherUsersMemory);
         memoryRepository.save(existingMemory("내 기존 기억"));
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("""
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "내 새 기억", "tags": []}]
                 """);
 
@@ -166,7 +166,7 @@ class MemoryServicePersistenceTest {
     void truncatesOverlongContent() {
         // given
         String longContent = "가".repeat(700);
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn(
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn(
                 "[{\"lifePeriod\": \"청년기\", \"topic\": \"사건\", \"content\": \"" + longContent + "\", \"tags\": []}]");
 
         // when
@@ -183,7 +183,7 @@ class MemoryServicePersistenceTest {
     void keepsStoredMemoriesWhenExtractionFails() {
         // given
         memoryRepository.save(existingMemory("보존되어야 할 기억"));
-        when(aiService.generateMemoryExtraction(anyString(), any())).thenReturn("추출할 수 없습니다");
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("추출할 수 없습니다");
 
         // when
         memoryService.extractAndSaveMemories(contextWithUserMessage());

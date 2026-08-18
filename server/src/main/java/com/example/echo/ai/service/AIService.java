@@ -7,12 +7,11 @@
  *
  * 데이터 흐름:
  *   PromptService에서 조합된 프롬프트(String) 수신
- *   → OpenRouter Chat Completion API 호출 (모델은 대화 세션 시작 시 ModelRotationService가
- *     UserContext.sessionModel에 저장해 세션 내내 재사용)
+ *   → OpenRouter Chat Completion API 호출 (모델은 application.yaml에 고정된 단일 모델)
  *   → 응답 텍스트 반환
  *
  * 설정값 (application.yaml):
- *   - openrouter.chat.models: 사용할 모델 (단일 모델 고정)
+ *   - openrouter.chat.model: 사용할 모델 (단일 모델 고정)
  *   - openrouter.chat.temperature: 창의성 (0.7)
  *   - openrouter.chat.max-tokens: 최대 토큰 (1024)
  */
@@ -52,8 +51,6 @@ public class AIService {
     public String generateGreeting(String systemPrompt, UserContext context) {
         log.debug("Generating greeting for user: {}", context.getUserId());
 
-        String model = context.getSessionModel();
-
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
 
         // 시스템 프롬프트 추가
@@ -69,7 +66,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(model)
+                .model(chatProperties.getModel())
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -101,11 +98,10 @@ public class AIService {
      * @param systemPrompt 시스템 프롬프트 (캐싱된 것 사용)
      * @param history 대화 히스토리 (ConversationTurn 리스트)
      * @param userMessage 현재 사용자 메시지
-     * @param model 이번 세션에 확정된 모델 (UserContext.sessionModel)
      * @return AI가 생성한 응답 메시지
      * @throws AIException API 호출 실패 시
      */
-    public String generateResponse(String systemPrompt, List<ConversationTurn> history, String userMessage, String model) {
+    public String generateResponse(String systemPrompt, List<ConversationTurn> history, String userMessage) {
         log.debug("Generating response - history size: {}, userMessage length: {}",
                 history != null ? history.size() : 0, userMessage != null ? userMessage.length() : 0);
 
@@ -142,7 +138,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(model)
+                .model(chatProperties.getModel())
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -164,11 +160,10 @@ public class AIService {
      * 일기 생성
      *
      * @param diaryPrompt PromptService.buildDiaryPrompt()로 조합된 일기 프롬프트
-     * @param model 이번 세션에 확정된 모델 (UserContext.sessionModel)
      * @return AI가 생성한 일기 본문
      * @throws AIException API 호출 실패 또는 빈 응답 시
      */
-    public String generateDiary(String diaryPrompt, String model) {
+    public String generateDiary(String diaryPrompt) {
         log.debug("Generating diary - prompt length: {}", diaryPrompt != null ? diaryPrompt.length() : 0);
 
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
@@ -184,7 +179,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(model)
+                .model(chatProperties.getModel())
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -214,11 +209,10 @@ public class AIService {
      * 응답은 원문 그대로 반환하며, 파싱은 호출자(MemoryService)가 담당한다.
      *
      * @param memoryPrompt PromptService.buildMemoryPrompt()로 조합된 기억 추출 프롬프트
-     * @param model 이번 세션에 확정된 모델 (UserContext.sessionModel)
      * @return AI가 생성한 JSON 배열 원문
      * @throws AIException API 호출 실패 또는 빈 응답 시
      */
-    public String generateMemoryExtraction(String memoryPrompt, String model) {
+    public String generateMemoryExtraction(String memoryPrompt) {
         log.debug("Extracting memories - prompt length: {}", memoryPrompt != null ? memoryPrompt.length() : 0);
 
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
@@ -234,7 +228,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(model)
+                .model(chatProperties.getModel())
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())

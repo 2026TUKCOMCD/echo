@@ -37,13 +37,6 @@ public class UserContext {
     private String systemPrompt;
 
     /**
-     * 이번 세션에서 사용할 OpenRouter 모델
-     * 대화 시작 시 ModelRotationService.pickModelForSession()으로 1회 확정되어
-     * 대화 종료까지(인사·응답·일기·기억 추출 모두) 재사용된다
-     */
-    private String sessionModel;
-
-    /**
      * STT 결과가 비어있던(무음·너무 짧은 녹음 등) 연속 횟수.
      * 알아들을 수 있는 발화가 들어오면 0으로 리셋된다. 연속 횟수에 따라
      * 재요청 안내 문구를 단계적으로 바꾸는 데 쓰인다([이탈 발화 및 무응답 대응]과 같은 패턴).
