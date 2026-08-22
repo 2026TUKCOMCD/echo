@@ -4,6 +4,7 @@ import com.example.graduation_project.data.model.*
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.PUT
+import retrofit2.http.Query
 
 interface UserApi {
 
@@ -27,6 +28,12 @@ interface UserApi {
 
     @PUT("/api/users/me/preferences/home-location")
     suspend fun updateHomeLocation(@Body request: HomeLocationUpdateRequest): UserPreferences
+
+    @GET("/api/users/me/preferences/home-location/address")
+    suspend fun previewHomeAddress(
+        @Query("latitude") latitude: Double,
+        @Query("longitude") longitude: Double
+    ): HomeAddressPreview
 
     @PUT("/api/users/me/preferences/family-info")
     suspend fun updateFamilyInfo(@Body request: FamilyInfoUpdateRequest): UserPreferences

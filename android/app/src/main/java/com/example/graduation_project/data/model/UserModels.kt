@@ -43,6 +43,10 @@ data class LocationUpdateRequest(val location: String?)
 @Serializable
 data class HomeLocationUpdateRequest(val latitude: Double, val longitude: Double)
 
+/** 집 등록 직후 확인용 - 측정 좌표를 역지오코딩한 결과 (저장은 하지 않음) */
+@Serializable
+data class HomeAddressPreview(val placeName: String? = null, val address: String? = null)
+
 @Serializable
 data class FamilyInfoUpdateRequest(val familyInfo: String?)
 

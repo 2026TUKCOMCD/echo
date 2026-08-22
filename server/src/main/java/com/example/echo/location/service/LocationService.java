@@ -33,8 +33,11 @@ public class LocationService {
      * 거주지(집) 판정 반경 (미터)
      * - 방문 장소의 좌표가 등록된 집 좌표로부터 이 거리 이내이면 "집"으로 분류한다.
      * - 앱의 체류 판정 반경(50m) + GPS 오차/센트로이드 편차를 고려해 넉넉히 잡는다.
+     * - 150m였을 때 실내 GPS 오차(집 등록 시 단발 측정 오차 + StayPoint centroid 표류가 겹치면
+     *   흔히 100~200m대)로 인해 실제로 집에 있었는데도 "외출"로 오분류되는 버그가 있었음 → 250m로 상향.
+     *   너무 크게 잡으면 반대로 아파트 단지 내 짧은 외출까지 "집"으로 삼켜버릴 수 있어 무한정 키우지는 않는다.
      */
-    private static final double HOME_MATCH_RADIUS_METERS = 150.0;
+    private static final double HOME_MATCH_RADIUS_METERS = 250.0;
 
     /**
      * 원시 위치 데이터를 보강된 위치 데이터로 변환 (집 좌표 없이 - 모두 외출로 취급)

@@ -23,7 +23,7 @@ import static org.mockito.Mockito.lenient;
 /**
  * 방문 장소의 집/외출 분류(isHome) 검증.
  *
- * 등록된 집 좌표와 방문 좌표의 Haversine 거리가 판정 반경(150m) 이내이면 집으로 분류된다.
+ * 등록된 집 좌표와 방문 좌표의 Haversine 거리가 판정 반경(250m) 이내이면 집으로 분류된다.
  * 체류 30분 미만으로 잡아 날씨 조회(WeatherClient)를 타지 않게 해 mock을 최소화한다.
  */
 @ExtendWith(MockitoExtension.class)
@@ -81,13 +81,26 @@ class LocationServiceHomeClassificationTest {
     @DisplayName("집 좌표에서 먼 방문(다른 동네) → isHome = false")
     void visitFarFromHome_isHomeFalse() {
         stubGeocoding();
-        // 위도 +0.0035 ≈ 약 390m → 150m 밖
+        // 위도 +0.0035 ≈ 약 390m → 250m 밖
         RawLocationData raw = rawWithVisit(HOME_LAT + 0.0035, HOME_LNG + 0.0100);
 
         LocationData result = locationService.enrichLocationData(raw, HOME_LAT, HOME_LNG);
 
         VisitedPlace place = result.getVisitedPlaces().get(0);
         assertThat(place.isHome()).isFalse();
+    }
+
+    @Test
+    @DisplayName("회귀 방지: 실내 GPS 오차 수준(~200m) 방문 → isHome = true (150m 기준이었다면 외출로 오분류됐음)")
+    void visitWithinIndoorGpsErrorMargin_isHomeTrue() {
+        stubGeocoding();
+        // 위도 +0.0018 ≈ 약 200m → 250m 이내지만 이전 기준(150m)이었다면 외출로 오분류됐을 거리
+        RawLocationData raw = rawWithVisit(HOME_LAT + 0.0018, HOME_LNG);
+
+        LocationData result = locationService.enrichLocationData(raw, HOME_LAT, HOME_LNG);
+
+        VisitedPlace place = result.getVisitedPlaces().get(0);
+        assertThat(place.isHome()).isTrue();
     }
 
     @Test
