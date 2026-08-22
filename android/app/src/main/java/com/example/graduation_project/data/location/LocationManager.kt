@@ -33,7 +33,23 @@ class LocationManager @VisibleForTesting internal constructor(
 
     @SuppressLint("MissingPermission")
     suspend fun getCurrentLocation(): Location? {
-        val location = withTimeoutOrNull(LOCATION_TIMEOUT_MS) {
+        val location = getFreshLocation()
+        if (location == null) {
+            Log.w(TAG, "getCurrentLocation null (타임아웃 ${LOCATION_TIMEOUT_MS}ms 또는 미가용) → lastLocation 폴백")
+        }
+        return location ?: getLastKnownLocation()
+    }
+
+    /**
+     * 캐시(lastLocation) 폴백 없이, 실제 GPS 측정만 시도한다. 실패/타임아웃 시 null.
+     *
+     * [getAveragedCurrentLocation]이 이 함수를 쓰는 이유: 캐시된 lastLocation은 아주 오래된(다른 장소의)
+     * 좌표일 수 있어, 신선한 측정값들과 평균 내면 오차를 줄이려던 목적이 무색해지고 엉뚱한 좌표가 조용히
+     * 섞여 들어갈 수 있다. 평균에는 신선한 측정값만 넣는다.
+     */
+    @SuppressLint("MissingPermission")
+    private suspend fun getFreshLocation(): Location? =
+        withTimeoutOrNull(LOCATION_TIMEOUT_MS) {
             suspendCancellableCoroutine { continuation ->
                 val cancellationToken = CancellationTokenSource()
 
@@ -54,12 +70,6 @@ class LocationManager @VisibleForTesting internal constructor(
             }
         }
 
-        if (location == null) {
-            Log.w(TAG, "getCurrentLocation null (타임아웃 ${LOCATION_TIMEOUT_MS}ms 또는 미가용) → lastLocation 폴백")
-        }
-        return location ?: getLastKnownLocation()
-    }
-
     /**
      * 집 등록 전용: GPS를 여러 번 찍어 평균 낸 위치를 반환한다.
      *
@@ -74,7 +84,7 @@ class LocationManager @VisibleForTesting internal constructor(
     ): Location? {
         val samples = mutableListOf<Location>()
         repeat(sampleCount) { index ->
-            getCurrentLocation()?.let { samples.add(it) }
+            getFreshLocation()?.let { samples.add(it) }
             if (index < sampleCount - 1) {
                 delay(sampleDelayMs)
             }

@@ -1,6 +1,7 @@
 package com.example.graduation_project.data.location
 
 import android.location.Location
+import android.os.Build
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.tasks.CancellationToken
 import com.google.android.gms.tasks.OnFailureListener
@@ -23,10 +24,18 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 
+// averageLocations()가 실제 android.location.Location 인스턴스를 생성/변경하므로(Location("averaged").apply { ... }),
+// 순수 JVM 스텁(android.jar)이 아니라 실동작하는 Robolectric shadow가 필요하다. (프로젝트의 기존 패턴,
+// 예: LocationSchedulerTest, LocationCollectionAlarmReceiverTest)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [Build.VERSION_CODES.S])
 @OptIn(ExperimentalCoroutinesApi::class)
 class LocationManagerTest {
 
@@ -47,7 +56,7 @@ class LocationManagerTest {
     @Test
     fun `getCurrentLocation 성공 시 Location 반환`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            val expected = mockk<Location>()
+            val expected = mockk<Location>(relaxed = true)
             stubCurrentLocation(successResult = expected)
             stubLastLocation(successResult = null)
 
@@ -61,7 +70,7 @@ class LocationManagerTest {
     @Test
     fun `getCurrentLocation null 시 getLastKnownLocation 폴백 호출`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            val fallback = mockk<Location>()
+            val fallback = mockk<Location>(relaxed = true)
             stubCurrentLocation(successResult = null)
             stubLastLocation(successResult = fallback)
 
@@ -87,7 +96,7 @@ class LocationManagerTest {
     @Test
     fun `5초 타임아웃 시 getLastKnownLocation 폴백 호출`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            val fallback = mockk<Location>()
+            val fallback = mockk<Location>(relaxed = true)
             stubCurrentLocationHanging()
             stubLastLocation(successResult = fallback)
 
@@ -141,10 +150,26 @@ class LocationManagerTest {
             assertNull(result)
         }
 
+    @Test
+    fun `getAveragedCurrentLocation 일부 샘플 실패해도 lastLocation 폴백을 쓰지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val sample1 = realLocation(37.5665, 126.9780)
+            val sample3 = realLocation(37.5667, 126.9782)
+            // lastLocation이 완전히 다른 곳(오래된 캐시)을 갖고 있어도 평균에 섞이면 안 된다
+            val staleCachedLocation = realLocation(37.9000, 127.5000)
+            stubCurrentLocationSequence(sample1, null, sample3)
+            stubLastLocation(successResult = staleCachedLocation)
+
+            val result = locationManager.getAveragedCurrentLocation(sampleCount = 3, sampleDelayMs = 1_000L)
+
+            assertEquals(37.5666, result?.latitude ?: 0.0, 0.0001)
+            verify(exactly = 0) { mockFusedClient.lastLocation }
+        }
+
     // ===== 헬퍼 =====
 
     private fun realLocation(lat: Double, lng: Double): Location {
-        val location = mockk<Location>()
+        val location = mockk<Location>(relaxed = true)
         every { location.latitude } returns lat
         every { location.longitude } returns lng
         return location
