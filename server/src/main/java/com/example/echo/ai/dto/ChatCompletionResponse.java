@@ -6,6 +6,7 @@
  */
 package com.example.echo.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -39,6 +40,8 @@ public class ChatCompletionResponse {
     public static class Choice {
         private Integer index;
         private Message message;
+
+        @JsonProperty("finish_reason")
         private String finishReason;  // "stop", "length" 등
     }
 
@@ -50,12 +53,28 @@ public class ChatCompletionResponse {
         private String content;  // AI 생성 텍스트
     }
 
-    /** 토큰 사용량 (비용 추적용) */
+    /** 토큰 사용량 (비용 추적 및 프롬프트 캐싱 적중 여부 확인용) */
     @Getter
     @NoArgsConstructor
     public static class Usage {
+        @JsonProperty("prompt_tokens")
         private Integer promptTokens;      // 입력 토큰
+
+        @JsonProperty("completion_tokens")
         private Integer completionTokens;  // 출력 토큰
+
+        @JsonProperty("total_tokens")
         private Integer totalTokens;       // 총 토큰
+
+        /**
+         * 프롬프트 캐싱으로 재사용된 입력 토큰 수.
+         * 0보다 크면 캐시 적중 - promptTokens 대비 이 값의 비율이 캐싱 절감 효과.
+         */
+        @JsonProperty("cached_tokens")
+        private Integer cachedTokens;
+
+        /** 이번 요청에서 새로 캐시에 기록된 토큰 수 (보통 세션의 첫 요청에서만 관측됨) */
+        @JsonProperty("cache_write_tokens")
+        private Integer cacheWriteTokens;
     }
 }

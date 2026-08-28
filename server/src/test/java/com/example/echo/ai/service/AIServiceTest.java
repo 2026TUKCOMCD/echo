@@ -305,6 +305,55 @@ class AIServiceTest {
         assertThat(result2).isEmpty();
     }
 
+    // ===== 프롬프트 캐싱 로그 테스트 =====
+
+    @Test
+    @DisplayName("generateResponse - 프롬프트 캐싱 적중 시 캐시 정보가 로그로 남는다")
+    void generateResponse_logsCacheHitInfo() {
+        // Given
+        String systemPrompt = "시스템 프롬프트";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "테스트 메시지";
+
+        ChatCompletionResponse.Usage usage = mock(ChatCompletionResponse.Usage.class);
+        when(usage.getPromptTokens()).thenReturn(2000);
+        when(usage.getCachedTokens()).thenReturn(1800);
+
+        ChatCompletionResponse response = createMockResponse("응답");
+        when(response.getUsage()).thenReturn(usage);
+
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        aiService.generateResponse(systemPrompt, history, userMessage);
+
+        // Then
+        List<String> logMessages = capturedLogMessages();
+        assertThat(logMessages).anyMatch(msg -> msg.contains("적중") && msg.contains("90.0%"));
+    }
+
+    @Test
+    @DisplayName("generateResponse - usage가 없거나 캐시 미적중이면 적중 로그를 남기지 않는다")
+    void generateResponse_doesNotLogCacheHit_whenNoCacheOrNoUsage() {
+        // Given
+        String systemPrompt = "시스템 프롬프트";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "테스트 메시지";
+
+        ChatCompletionResponse response = createMockResponse("응답"); // usage 없음(null)
+
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        aiService.generateResponse(systemPrompt, history, userMessage);
+
+        // Then
+        List<String> logMessages = capturedLogMessages();
+        assertThat(logMessages).noneMatch(msg -> msg.contains("적중"));
+    }
+
     /**
      * ChatCompletionResponse 객체를 mock으로 구성
      * (NoArgsConstructor만 있어 setter/builder 없으므로 mock 사용)
