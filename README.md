@@ -19,7 +19,7 @@ echo/
 ## ✨ 주요 기능
 | 기능 | 설명 |
 | :--- | :--- |
-| **AI 음성 대화** | STT(OpenAI Whisper) → AI 응답 생성(GPT-4o-mini) → TTS(Supertone, 실패 시 Azure Speech 폴백) |
+| **AI 음성 대화** | STT(OpenAI Whisper) → AI 응답 생성(GPT-4o-mini) → TTS(ElevenLabs, 실패 시 Azure Speech 폴백) |
 | **맞춤형 회상 질문** | 건강 데이터·방문 장소·날씨·사용자 선호도를 프롬프트에 주입하여 개인화된 대화 생성 |
 | **건강 데이터 수집** | 갤럭시 워치 → Health Connect 연동 (걸음 수, 수면, 운동 거리, 운동 활동명) |
 | **위치 기반 대화** | 백그라운드 GPS 수집 → 체류 지점(Stay Point) 분석 → Kakao API 역지오코딩으로 방문 장소 파악 |
@@ -27,21 +27,24 @@ echo/
 | **회원 관리** | JWT(Access/Refresh Token) 기반 회원가입·로그인 |
 
 ## 🛠️ 개발 환경
-| 구분 | 기술 스택 (Tech Stack) |
-| :--- | :--- |
-| **OS** | Windows |
-| **개발 언어** | Java 17 (서버), Kotlin (Android) |
-| **프레임워크** | Spring Boot 3.5.9, Android Jetpack (Compose) |
-| **DB** | MySQL 8.0 |
-| **주요 라이브러리** | Spring Data JPA, Spring Security(JWT), Spring Cloud OpenFeign, Caffeine Cache / Hilt, Retrofit, Room, Coroutines |
-| **외부 API** | OpenAI (GPT-4o-mini, Whisper STT), Supertone TTS, Azure Speech TTS, Kakao(역지오코딩), OpenWeatherMap |
-| **개발도구** | Android Studio, IntelliJ |
+| 구분 | 서버 | 안드로이드 클라이언트 |
+| :--- | :--- | :--- |
+| **운영체제** | Windows | Windows |
+| **언어** | Java 17 | Kotlin 2.2.10 |
+| **프레임워크** | Spring Boot 3.5.9 | Jetpack Compose |
+| **빌드 도구** | Gradle 8.14.3 | Gradle (AGP 9.0.0) |
+| **DB** | MySQL 8.0 (로컬) / AWS RDS MySQL (운영) | Room 2.8.4 (SQLCipher 암호화) |
+| **주요 라이브러리** | Spring Data JPA, Spring Security(JWT), OpenFeign, Caffeine | Retrofit, Coroutines, Health Connect, Navigation Compose |
+| **외부 API** | OpenAI (GPT-4o-mini, Whisper STT), ElevenLabs TTS, Azure Speech TTS(폴백), Kakao(역지오코딩), OpenWeatherMap | — |
+| **IDE** | IntelliJ IDEA | Android Studio |
+| **운영 환경** | AWS EC2(Amazon Linux 2023) + Docker, Nginx/HTTPS, GitHub Actions CI/CD | — |
 
 ## 🏗️ 운영 환경
 | 구분 | 상세 사양 |
 | :--- | :--- |
 | **클라우드** | AWS (EC2, RDS) |
 | **서버 OS** | Amazon Linux 2023 |
+| **웹 서버** | Nginx (HTTPS 적용) |
 | **배포 방식** | GitHub Actions, Docker(재생성 배포) |
 | **DB 사양** | RDS MySQL |
 
