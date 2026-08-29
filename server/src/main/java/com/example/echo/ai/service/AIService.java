@@ -74,6 +74,7 @@ public class AIService {
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
             String greeting = extractContent(response);
 
             log.debug("Generated greeting - length: {}", greeting.length());
@@ -146,6 +147,7 @@ public class AIService {
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
             String aiResponse = extractContent(response);
 
             log.debug("Generated response - length: {}", aiResponse.length());
@@ -187,6 +189,7 @@ public class AIService {
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
             String diary = extractContent(response);
 
             // 빈 응답이 SUCCESS 일기로 저장되는 것 방지
@@ -236,6 +239,7 @@ public class AIService {
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
             String extracted = extractContent(response);
 
             if (extracted.isBlank()) {
@@ -248,6 +252,33 @@ public class AIService {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 기억 추출 실패: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 프롬프트 캐싱 적중 여부를 로그로 남긴다.
+     *
+     * OpenRouter를 통한 OpenAI 계열 모델 호출은 프롬프트가 1024토큰 이상이고 앞부분이
+     * 이전 요청과 동일하면 별도 설정 없이 자동으로 캐싱된다. Echo는 매 턴마다
+     * [고정 시스템 프롬프트 + 누적 대화 이력]을 그대로 앞에 두고 뒤에만 새 메시지를 추가하는
+     * 구조라 이 조건을 충족하지만, 실제 적중 여부는 응답의 usage.cachedTokens로만 확인 가능하다.
+     */
+    private void logCacheUsage(ChatCompletionResponse response) {
+        ChatCompletionResponse.Usage usage = response != null ? response.getUsage() : null;
+        if (usage == null || usage.getPromptTokens() == null) {
+            return;
+        }
+
+        Integer cached = usage.getCachedTokens();
+        if (cached == null || cached == 0) {
+            log.debug("프롬프트 캐싱 - 미적중 (prompt_tokens: {})", usage.getPromptTokens());
+            return;
+        }
+
+        double hitRatio = usage.getPromptTokens() > 0
+                ? (double) cached / usage.getPromptTokens() * 100
+                : 0;
+        log.info("프롬프트 캐싱 - 적중 (prompt_tokens: {}, cached_tokens: {}, 적중률: {}%)",
+                usage.getPromptTokens(), cached, String.format("%.1f", hitRatio));
     }
 
     /**
