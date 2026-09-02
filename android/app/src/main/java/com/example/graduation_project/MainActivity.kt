@@ -8,6 +8,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -363,6 +364,19 @@ private fun AppNavHost(
     val currentRoute = navBackStackEntry?.destination?.route
     val showTabBar = currentRoute in tabRoutes
 
+    // 탭 화면(홈/일기/설정)이면서 더 이상 뒤로 갈 화면이 없을 때만 "한번 더 눌러 종료" 처리.
+    // 그 외 화면(일기/설정에서 홈으로 돌아가는 경우 포함)은 기본 popBackStack 동작을 그대로 둔다.
+    var lastBackPressTime by remember { mutableStateOf(0L) }
+    BackHandler(enabled = currentRoute in tabRoutes && navController.previousBackStackEntry == null) {
+        val now = System.currentTimeMillis()
+        if (now - lastBackPressTime < 2000L) {
+            (context as? android.app.Activity)?.finish()
+        } else {
+            lastBackPressTime = now
+            Toast.makeText(context, "뒤로가기를 한번 더 누르면 종료됩니다", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     if (startDestination == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = EchoAccentGreen)
@@ -377,7 +391,11 @@ private fun AppNavHost(
                     currentRoute = currentRoute,
                     onTabSelected = { tab ->
                         navController.navigate(tab.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
+                            // 탭 전환 시 그래프의 실제 startDestination(CHECKING/LOGIN)은
+                            // 로그인 확인 후 inclusive popUpTo로 이미 백스택에서 제거된 상태라
+                            // findStartDestination()을 앵커로 쓰면 아무것도 못 지워 탭 이력이
+                            // 무한히 쌓인다. 항상 존재하는 HOME 탭을 앵커로 고정해야 한다.
+                            popUpTo(EchoTab.HOME.route) {
                                 saveState = true
                             }
                             launchSingleTop = true
