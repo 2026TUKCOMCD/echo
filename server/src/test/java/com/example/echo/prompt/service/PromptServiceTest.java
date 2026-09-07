@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.example.echo.memory.entity.Memory;
 
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -311,6 +312,357 @@ class PromptServiceTest {
         assertThat(result).doesNotContain("60");
         assertThat(result).doesNotContain("분");
         assertThat(result).doesNotContain("체류");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 역지오코딩 실패로 placeName이 null인 장소는 목록에서 제외됨 (회귀 방지)")
+    void buildSystemPrompt_excludesPlacesWithNullPlaceName() {
+        // Given: 역지오코딩 실패 장소(placeName null) + 성공 장소가 섞여 있음
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName(null).stayDurationMinutes(50).build(),
+                VisitedPlace.builder().placeName("").stayDurationMinutes(40).build(),
+                VisitedPlace.builder().placeName("이마트").stayDurationMinutes(30).build()
+        );
+
+        LocationData locationData = LocationData.builder()
+                .currentCity("서울")
+                .visitedPlaces(places)
+                .build();
+
+        UserContext contextWithLocation = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .locationData(locationData)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{visitedPlacesText}} / {{todayActivityGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(contextWithLocation);
+
+        // Then: null 장소가 "- null"로 새지 않고, 유효한 장소만 남아 "장소 있음" 지시문으로 이어짐
+        assertThat(result).doesNotContain("null");
+        assertThat(result).contains("이마트");
+        assertThat(result).contains("장소를 언급하며");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 위치 데이터가 아예 없으면 장소 언급 없이 활동만 묻는 지시문이 들어감")
+    void buildSystemPrompt_todayActivityGuide_noLocationData() {
+        // Given: locationData 자체가 null
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{todayActivityGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(context);
+
+        // Then
+        assertThat(result).contains("장소를 절대 언급하지 말고");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 방문 장소는 있지만 전부 역지오코딩 실패면 장소 언급 없이 활동만 묻는 지시문이 들어감")
+    void buildSystemPrompt_todayActivityGuide_allPlacesUnnamed() {
+        // Given: visitedPlaces는 존재하지만 전부 placeName이 없음
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName(null).stayDurationMinutes(20).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+
+        UserContext contextWithLocation = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .locationData(locationData)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{todayActivityGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(contextWithLocation);
+
+        // Then
+        assertThat(result).contains("장소를 절대 언급하지 말고");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 유효한 방문 장소가 있으면 장소를 언급하며 활동을 묻는 지시문이 들어감")
+    void buildSystemPrompt_todayActivityGuide_hasNamedPlace() {
+        // Given
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("신길로 123").stayDurationMinutes(90).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+
+        UserContext contextWithLocation = UserContext.builder()
+                .userId(TEST_USER_ID)
+                .preferences(context.getPreferences())
+                .locationData(locationData)
+                .build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{todayActivityGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(contextWithLocation);
+
+        // Then
+        assertThat(result).contains("장소를 언급하며");
+        assertThat(result).doesNotContain("장소를 절대 언급하지 말고");
+    }
+
+    // ===== 집/외출 분류(isHome) 반영 테스트 =====
+
+    @Test
+    @DisplayName("buildSystemPrompt - 외출 + 집 혼합: [외출한 곳]/[집에서 보낸 시간] 분리, 집 주소 미노출, 외출 우선 가이드")
+    void buildSystemPrompt_outingAndHome_split() {
+        // Given: 외출(이마트) + 낮 집 체류(자택)
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("이마트").isHome(false)
+                        .visitStartTime(LocalTime.of(14, 0)).visitEndTime(LocalTime.of(15, 0))
+                        .stayDurationMinutes(60).build(),
+                VisitedPlace.builder().placeName("자택").isHome(true)
+                        .visitStartTime(LocalTime.of(9, 0)).visitEndTime(LocalTime.of(13, 0))
+                        .stayDurationMinutes(240).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+        UserContext ctx = UserContext.builder()
+                .userId(TEST_USER_ID).preferences(context.getPreferences()).locationData(locationData).build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{visitedPlacesText}} / {{todayActivityGuide}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(ctx);
+
+        // Then: 두 섹션으로 분리되고, 집 장소명(자택)은 노출되지 않으며, 외출 우선 가이드가 들어간다
+        assertThat(result).contains("[외출한 곳]");
+        assertThat(result).contains("이마트");
+        assertThat(result).contains("[집에서 보낸 시간]");
+        assertThat(result).doesNotContain("자택");           // 집 주소는 노출하지 않음
+        assertThat(result).contains("장소를 언급하며");        // 외출 우선 가이드
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 외출 없이 낮 집 체류만: 집에서 어떻게 지냈는지 묻는 가이드")
+    void buildSystemPrompt_daytimeHomeOnly() {
+        // Given: 낮 집 체류만 (외출 없음)
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("자택").isHome(true)
+                        .visitStartTime(LocalTime.of(10, 0)).visitEndTime(LocalTime.of(13, 0))
+                        .stayDurationMinutes(180).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+        UserContext ctx = UserContext.builder()
+                .userId(TEST_USER_ID).preferences(context.getPreferences()).locationData(locationData).build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{visitedPlacesText}} / {{todayActivityGuide}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(ctx);
+
+        // Then: 외출 섹션은 없고, 집에서 어떻게 지냈는지 묻는 가이드가 들어간다
+        assertThat(result).contains("[집에서 보낸 시간]");
+        assertThat(result).doesNotContain("[외출한 곳]");
+        assertThat(result).contains("집에서 어떻게 지내셨는지");
+        assertThat(result).doesNotContain("장소를 언급하며");
+        assertThat(result).doesNotContain("장소를 절대 언급하지 말고");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - 집 체류가 야간뿐이면 활동 대상에서 제외되어 일반 질문 가이드로 폴백")
+    void buildSystemPrompt_nighttimeHomeExcluded() {
+        // Given: 야간 집 체류만 (23:00~23:59) → 낮 체류 아님 → 제외
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().placeName("자택").isHome(true)
+                        .visitStartTime(LocalTime.of(23, 0)).visitEndTime(LocalTime.of(23, 59))
+                        .stayDurationMinutes(59).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+        UserContext ctx = UserContext.builder()
+                .userId(TEST_USER_ID).preferences(context.getPreferences()).locationData(locationData).build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{todayActivityGuide}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(ctx);
+
+        // Then: 낮 집 체류도 외출도 없으므로 장소 언급 없는 일반 질문 가이드
+        assertThat(result).contains("장소를 절대 언급하지 말고");
+    }
+
+    // ===== {{recallGuide}} 치환 테스트 =====
+
+    @Test
+    @DisplayName("buildSystemPrompt - 전달한 recallGuide가 {{recallGuide}} 자리에 치환됨")
+    void buildSystemPrompt_recallGuideSubstituted() {
+        // Given
+        String recallGuide = "[오늘의 회상 주제] 고향\n[발굴 모드] 이 주제로는 아직 들려주신 이야기가 없습니다.";
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("주제: {{recallGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(context, List.of(), recallGuide);
+
+        // Then
+        assertThat(result).contains(recallGuide);
+        assertThat(result).doesNotContain("{{recallGuide}}");
+    }
+
+    @Test
+    @DisplayName("buildSystemPrompt - recallGuide가 null이어도 플레이스홀더가 새지 않고 폴백 문구로 치환됨")
+    void buildSystemPrompt_nullRecallGuide_fallbackText() {
+        // Given
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("주제: {{recallGuide}}")
+                .build();
+
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When: recallGuide 없이 호출하는 오버로드 (buildRecallGuide가 null을 반환한 경우와 동일)
+        String result = promptService.buildSystemPrompt(context, List.of());
+
+        // Then
+        assertThat(result).doesNotContain("{{recallGuide}}");
+        assertThat(result).contains("오늘 지정된 회상 주제가 없습니다");
+    }
+
+    // ===== buildRecallGuide 테스트 =====
+
+    @Test
+    @DisplayName("buildRecallGuide - topic이 null이면 null 반환")
+    void buildRecallGuide_nullTopic() {
+        assertThat(promptService.buildRecallGuide(null, List.of())).isNull();
+    }
+
+    @Test
+    @DisplayName("buildRecallGuide - topic이 blank이면 null 반환")
+    void buildRecallGuide_blankTopic() {
+        assertThat(promptService.buildRecallGuide("   ", List.of())).isNull();
+    }
+
+    @Test
+    @DisplayName("buildRecallGuide - 저장된 기억이 없으면 발굴 모드")
+    void buildRecallGuide_emptyMemories_discoveryMode() {
+        String guide = promptService.buildRecallGuide("고향", List.of());
+
+        assertThat(guide).contains("[오늘의 회상 주제] 고향");
+        assertThat(guide).contains("[발굴 모드]");
+    }
+
+    @Test
+    @DisplayName("buildRecallGuide - 같은 topic의 기억이 없으면(다른 주제만 있음) 발굴 모드")
+    void buildRecallGuide_noMatchingTopic_discoveryMode() {
+        List<Memory> memories = List.of(
+                Memory.builder().userId(TEST_USER_ID).lifePeriod("청년기").topic("일")
+                        .content("30대에 부산에서 어부로 일했다").build());
+
+        String guide = promptService.buildRecallGuide("고향", memories);
+
+        assertThat(guide).contains("[발굴 모드]");
+    }
+
+    @Test
+    @DisplayName("buildRecallGuide - 같은 topic의 기억이 있으면 심화 모드로 그 내용을 포함")
+    void buildRecallGuide_matchingTopic_deepeningMode() {
+        List<Memory> memories = List.of(
+                Memory.builder().userId(TEST_USER_ID).lifePeriod("유년기").topic("고향")
+                        .content("전라도 시골 마을에서 자랐다").build());
+
+        String guide = promptService.buildRecallGuide("고향", memories);
+
+        assertThat(guide).contains("[오늘의 회상 주제] 고향");
+        assertThat(guide).contains("[심화 모드]");
+        assertThat(guide).contains("전라도 시골 마을에서 자랐다");
+    }
+
+    @Test
+    @DisplayName("buildRecallGuide - MEMORY v1 시절의 옛 topic 어휘만 저장돼 있으면 발굴 모드로 폴백")
+    void buildRecallGuide_legacyTopicVocabulary_fallsBackToDiscoveryMode() {
+        // Given: MEMORY v2 이전 어휘(가족/직업/장소/사건/취미/습관/기타)로 저장된 기억
+        // 다음 대화 종료 시 extractAndSaveMemories가 새 어휘로 재분류(self-healing)하기 전 상태
+        List<Memory> legacyMemories = List.of(
+                Memory.builder().userId(TEST_USER_ID).lifePeriod("청년기").topic("직업")
+                        .content("30대에 부산에서 어부로 일했다").build(),
+                Memory.builder().userId(TEST_USER_ID).lifePeriod("중년기").topic("가족")
+                        .content("손주 이름은 민준이다").build());
+
+        // When: 오늘의 회상 주제가 새 카탈로그의 "일"이어도 옛 어휘 "직업"과는 매칭되지 않음
+        String guide = promptService.buildRecallGuide("일", legacyMemories);
+
+        // Then: 예외 없이 발굴 모드로 안전하게 떨어져야 함
+        assertThat(guide).contains("[오늘의 회상 주제] 일");
+        assertThat(guide).contains("[발굴 모드]");
+        assertThat(guide).doesNotContain("[심화 모드]");
+    }
+
+    @Test
+    @DisplayName("buildRecallGuide - 기억 목록이 null이어도 예외 없이 발굴 모드")
+    void buildRecallGuide_nullMemories_discoveryMode() {
+        String guide = promptService.buildRecallGuide("고향", null);
+
+        assertThat(guide).contains("[발굴 모드]");
+    }
+
+    // ===== buildMemoryPrompt 테스트 =====
+
+    @Test
+    @DisplayName("buildMemoryPrompt - {{topicVocabulary}}가 RecallTopicRotationService.TOPICS로 치환됨")
+    void buildMemoryPrompt_topicVocabularySubstituted() {
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.MEMORY)
+                .content("허용 주제: {{topicVocabulary}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.MEMORY))
+                .thenReturn(Optional.of(template));
+
+        String result = promptService.buildMemoryPrompt(context, List.of());
+
+        assertThat(result).contains("고향").contains("나들이");
+        assertThat(result).doesNotContain("{{topicVocabulary}}");
     }
 
 }

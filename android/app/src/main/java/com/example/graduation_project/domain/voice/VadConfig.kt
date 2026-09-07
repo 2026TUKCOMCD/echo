@@ -58,7 +58,23 @@ data class VadConfig(
      * - AGGRESSIVE: 소음이 많은 환경
      * - VERY_AGGRESSIVE: 매우 시끄러운 환경
      */
-    val mode: VadMode = VadMode.NORMAL
+    val mode: VadMode = VadMode.NORMAL,
+
+    /**
+     * 발화 종료 후 무음 꼬리 트리밍 임계값 (dBFS)
+     *
+     * Silero VAD의 isSpeech()는 silenceDurationMs 동안 hangover로 스무딩되어
+     * true를 반환하므로, 실제 발화가 끝난 뒤에도 무음이 버퍼에 함께 쌓임.
+     * WAV로 변환하기 직전 원본 PCM에서 프레임별 에너지를 다시 계산해
+     * 이 값 미만인 뒤쪽 구간을 잘라낸다. (STT 환각 방지)
+     */
+    val silenceTrimThresholdDbfs: Double = DEFAULT_SILENCE_TRIM_THRESHOLD_DBFS,
+
+    /**
+     * 무음 트리밍 시 마지막 유효 프레임 뒤에 남겨둘 여유 시간 (ms)
+     * 어미가 잘리지 않도록 약간의 여유를 둠
+     */
+    val silenceTrimPaddingMs: Int = DEFAULT_SILENCE_TRIM_PADDING_MS
 ) {
     companion object {
         // 샘플 레이트
@@ -88,6 +104,12 @@ data class VadConfig(
 
         /** AI 응답 후 녹음 시작까지의 대기 시간: 1.5초 */
         const val DEFAULT_POST_RESPONSE_DELAY_MS = 1500L
+
+        /** 기본 무음 트리밍 임계값: -40dBFS (일반적인 무음 판정 기준) */
+        const val DEFAULT_SILENCE_TRIM_THRESHOLD_DBFS = -40.0
+
+        /** 기본 무음 트리밍 여유 시간: 300ms (어미 보존) */
+        const val DEFAULT_SILENCE_TRIM_PADDING_MS = 300
     }
 }
 

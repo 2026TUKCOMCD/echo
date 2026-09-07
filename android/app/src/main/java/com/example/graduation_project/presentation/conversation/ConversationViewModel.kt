@@ -245,9 +245,8 @@ class ConversationViewModel(
             }
 
             override fun onPlaybackComplete() {
-                // 재생 완료 → LISTENING + playbackStatus 초기화
+                // 재생 완료 → playbackStatus 초기화 (오디오 자체는 이미 끝났으므로 즉시 반영)
                 isServerRetryInProgress = false
-                transitionTo(ConversationState.Listening)
                 _uiState.update {
                     it.copy(
                         playbackStatus = PlaybackStatus.NONE,
@@ -258,8 +257,16 @@ class ConversationViewModel(
                         isSpeechDetected = false
                     )
                 }
-                // 다음 발화 대기 시작
-                startRecording()
+                // LISTENING 전환 + 다음 발화 대기 시작은 자연스러운 턴 전환 여백을 두고 진행.
+                // 그 사이 endConversation() 등으로 상태가 바뀌었으면(더 이상 Playing이 아니면)
+                // 건너뛴다 - 종료 중인데 뒤늦게 LISTENING으로 되돌리고 마이크를 켜면 안 되므로.
+                viewModelScope.launch {
+                    delay(LISTENING_TRANSITION_DELAY_MS)
+                    if (_uiState.value.conversationState is ConversationState.Playing) {
+                        transitionTo(ConversationState.Listening)
+                        startRecording()
+                    }
+                }
             }
 
             override fun onRetrying(currentAttempt: Int, maxAttempts: Int) {
@@ -436,6 +443,7 @@ class ConversationViewModel(
                     // Sending → Idle
                     transitionTo(ConversationState.Idle)
                     handleApiError(result.exception)
+                    _uiState.update { it.copy(startFailed = true) }
                 }
             }
         }
@@ -731,6 +739,14 @@ class ConversationViewModel(
      */
     fun dismissError() {
         _uiState.update { it.copy(errorMessage = null, currentError = null) }
+    }
+
+    /**
+     * 대화 시작 실패로 인한 홈 복귀 이벤트를 처리 완료로 표시합니다.
+     * - ConversationScreen에서 홈으로 복귀하기 직전 호출
+     */
+    fun consumeStartFailedEvent() {
+        _uiState.update { it.copy(startFailed = false) }
     }
 
     /**
@@ -1035,6 +1051,11 @@ class ConversationViewModel(
 
         // 녹음 오류 자동 복구 전 대기 시간 (즉시 재시도 시 같은 오류 반복 방지)
         private const val RECORDER_RECOVERY_DELAY_MS = 1000L
+
+        // AI 음성 재생 완료 후 다음 발화 대기(마이크 On) 전 대기 시간
+        // - 재생 종료 즉시 듣기 시작하면 자연스러운 대화 턴 전환 여백이 없어 급하게 느껴짐
+        // - 특히 어르신은 "이제 내 차례"를 인지하고 말을 준비하는 데 시간이 더 필요함
+        private const val LISTENING_TRANSITION_DELAY_MS = 800L
 
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")

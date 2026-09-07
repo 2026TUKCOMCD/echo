@@ -31,7 +31,6 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -41,26 +40,23 @@ class AIServiceTest {
     @Mock
     private OpenRouterClient openRouterClient;
 
-    @Mock
-    private ModelRotationService modelRotationService;
-
     private AIService aiService;
 
     private UserContext context;
+
+    private static final String TEST_MODEL = "anthropic/claude-sonnet-5";
 
     private Logger aiServiceLogger;
     private ListAppender<ILoggingEvent> logAppender;
 
     @BeforeEach
     void setUp() {
-        lenient().when(modelRotationService.currentModel()).thenReturn("anthropic/claude-sonnet-5");
-        lenient().when(modelRotationService.currentModelDisplayName()).thenReturn("Claude Sonnet 5");
-
         OpenRouterChatProperties chatProperties = new OpenRouterChatProperties();
+        chatProperties.setModel(TEST_MODEL);
         chatProperties.setTemperature(0.7);
         chatProperties.setMaxTokens(1024);
 
-        aiService = new AIService(openRouterClient, modelRotationService, chatProperties);
+        aiService = new AIService(openRouterClient, chatProperties);
 
         context = UserContext.builder()
                 .userId(1L)
@@ -102,7 +98,7 @@ class AIServiceTest {
         String result = aiService.generateGreeting(systemPrompt, context);
 
         // Then
-        assertThat(result).isEqualTo("오늘은 Claude Sonnet 5 모델과 함께 대화를 나눠요. 안녕하세요! 오늘 하루는 어떠셨어요?");
+        assertThat(result).isEqualTo("안녕하세요! 오늘 하루는 어떠셨어요?");
 
         // 메시지 구조 검증
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
@@ -174,6 +170,29 @@ class AIServiceTest {
         assertThat(capturedRequest.getMessages().get(2).getRole()).isEqualTo("assistant");
         assertThat(capturedRequest.getMessages().get(3).getRole()).isEqualTo("user");
         assertThat(capturedRequest.getMessages().get(3).getContent()).isEqualTo(userMessage);
+    }
+
+    @Test
+    @DisplayName("generateResponse - 시스템 프롬프트는 messages 배열에 단 하나만 들어간다")
+    void generateResponse_onlyOneSystemMessage() {
+        // Given
+        String systemPrompt = "당신은 친근한 대화 상대입니다.";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "오늘 날씨가 좋네요";
+
+        ChatCompletionResponse response = createMockResponse("좋은 질문이네요!");
+
+        ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
+        when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
+
+        // When
+        aiService.generateResponse(systemPrompt, history, userMessage);
+
+        // Then: system(1) + current user(1) = 2. 단계 안내용 추가 system 메시지는 붙지 않는다
+        assertThat(captor.getValue().getMessages()).hasSize(2);
+        assertThat(captor.getValue().getMessages())
+                .filteredOn(message -> "system".equals(message.getRole()))
+                .hasSize(1);
     }
 
     @Test
@@ -284,6 +303,55 @@ class AIServiceTest {
 
         // Then
         assertThat(result2).isEmpty();
+    }
+
+    // ===== 프롬프트 캐싱 로그 테스트 =====
+
+    @Test
+    @DisplayName("generateResponse - 프롬프트 캐싱 적중 시 캐시 정보가 로그로 남는다")
+    void generateResponse_logsCacheHitInfo() {
+        // Given
+        String systemPrompt = "시스템 프롬프트";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "테스트 메시지";
+
+        ChatCompletionResponse.Usage usage = mock(ChatCompletionResponse.Usage.class);
+        when(usage.getPromptTokens()).thenReturn(2000);
+        when(usage.getCachedTokens()).thenReturn(1800);
+
+        ChatCompletionResponse response = createMockResponse("응답");
+        when(response.getUsage()).thenReturn(usage);
+
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        aiService.generateResponse(systemPrompt, history, userMessage);
+
+        // Then
+        List<String> logMessages = capturedLogMessages();
+        assertThat(logMessages).anyMatch(msg -> msg.contains("적중") && msg.contains("90.0%"));
+    }
+
+    @Test
+    @DisplayName("generateResponse - usage가 없거나 캐시 미적중이면 적중 로그를 남기지 않는다")
+    void generateResponse_doesNotLogCacheHit_whenNoCacheOrNoUsage() {
+        // Given
+        String systemPrompt = "시스템 프롬프트";
+        List<ConversationTurn> history = new ArrayList<>();
+        String userMessage = "테스트 메시지";
+
+        ChatCompletionResponse response = createMockResponse("응답"); // usage 없음(null)
+
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        aiService.generateResponse(systemPrompt, history, userMessage);
+
+        // Then
+        List<String> logMessages = capturedLogMessages();
+        assertThat(logMessages).noneMatch(msg -> msg.contains("적중"));
     }
 
     /**

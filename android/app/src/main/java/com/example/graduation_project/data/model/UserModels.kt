@@ -17,6 +17,8 @@ data class UserPreferences(
     val age: Int? = null,
     val birthday: String? = null,
     val location: String? = null,
+    val homeLatitude: Double? = null,
+    val homeLongitude: Double? = null,
     val familyInfo: String? = null,
     val guardianEmail: String? = null,
     val occupation: String? = null,
@@ -37,6 +39,13 @@ data class BirthdayUpdateRequest(val birthday: String?)
 
 @Serializable
 data class LocationUpdateRequest(val location: String?)
+
+@Serializable
+data class HomeLocationUpdateRequest(val latitude: Double, val longitude: Double)
+
+/** 집 등록 직후 확인용 - 측정 좌표를 역지오코딩한 결과 (저장은 하지 않음) */
+@Serializable
+data class HomeAddressPreview(val placeName: String? = null, val address: String? = null)
 
 @Serializable
 data class FamilyInfoUpdateRequest(val familyInfo: String?)

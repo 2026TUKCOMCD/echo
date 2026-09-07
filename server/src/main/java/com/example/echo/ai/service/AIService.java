@@ -2,16 +2,16 @@
  * AI 응답 생성 서비스
  *
  * 역할: OpenRouter API를 호출하여 AI 응답 생성
- * - generateGreeting(): 대화 시작 시 첫 인사 생성 (오늘의 로테이션 모델을 음성으로 안내하는 문장 포함)
+ * - generateGreeting(): 대화 시작 시 첫 인사 생성
  * - generateResponse(): 사용자 메시지에 대한 응답 생성
  *
  * 데이터 흐름:
  *   PromptService에서 조합된 프롬프트(String) 수신
- *   → OpenRouter Chat Completion API 호출 (모델은 ModelRotationService가 매일 자동 선택)
+ *   → OpenRouter Chat Completion API 호출 (모델은 application.yaml에 고정된 단일 모델)
  *   → 응답 텍스트 반환
  *
  * 설정값 (application.yaml):
- *   - openrouter.chat.models: 로테이션 후보 모델 목록
+ *   - openrouter.chat.model: 사용할 모델 (단일 모델 고정)
  *   - openrouter.chat.temperature: 창의성 (0.7)
  *   - openrouter.chat.max-tokens: 최대 토큰 (1024)
  */
@@ -37,10 +37,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AIService {
 
-    private static final String MODEL_ANNOUNCEMENT_FORMAT = "오늘은 %s 모델과 함께 대화를 나눠요. ";
-
     private final OpenRouterClient openRouterClient;
-    private final ModelRotationService modelRotationService;
     private final OpenRouterChatProperties chatProperties;
 
     /**
@@ -69,7 +66,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(modelRotationService.currentModel())
+                .model(chatProperties.getModel())
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -77,11 +74,11 @@ public class AIService {
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
             String greeting = extractContent(response);
-            String announcedGreeting = String.format(MODEL_ANNOUNCEMENT_FORMAT, modelRotationService.currentModelDisplayName()) + greeting;
 
-            log.debug("Generated greeting - length: {}", announcedGreeting.length());
-            return announcedGreeting;
+            log.debug("Generated greeting - length: {}", greeting.length());
+            return greeting;
         } catch (FeignException e) {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 인사 생성 실패: " + e.getMessage(), e);
@@ -95,6 +92,9 @@ public class AIService {
      * - system: 시스템 프롬프트 (AI 페르소나, 규칙)
      * - user/assistant: 대화 히스토리
      * - user: 현재 사용자 메시지
+     *
+     * 대화 단계(1단계 안부 → 2단계 오늘 활동 → 3단계 장기기억 → 마무리)는 시스템 프롬프트에만
+     * 정의되어 있고, 지금이 몇 단계인지는 모델이 여기 담긴 히스토리를 보고 스스로 판단한다.
      *
      * @param systemPrompt 시스템 프롬프트 (캐싱된 것 사용)
      * @param history 대화 히스토리 (ConversationTurn 리스트)
@@ -139,7 +139,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(modelRotationService.currentModel())
+                .model(chatProperties.getModel())
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -147,6 +147,7 @@ public class AIService {
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
             String aiResponse = extractContent(response);
 
             log.debug("Generated response - length: {}", aiResponse.length());
@@ -180,7 +181,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(modelRotationService.currentModel())
+                .model(chatProperties.getModel())
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -188,6 +189,7 @@ public class AIService {
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
             String diary = extractContent(response);
 
             // 빈 응답이 SUCCESS 일기로 저장되는 것 방지
@@ -229,7 +231,7 @@ public class AIService {
                 .build());
 
         ChatCompletionRequest request = ChatCompletionRequest.builder()
-                .model(modelRotationService.currentModel())
+                .model(chatProperties.getModel())
                 .messages(messages)
                 .temperature(chatProperties.getTemperature())
                 .maxTokens(chatProperties.getMaxTokens())
@@ -237,6 +239,7 @@ public class AIService {
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
             String extracted = extractContent(response);
 
             if (extracted.isBlank()) {
@@ -249,6 +252,33 @@ public class AIService {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 기억 추출 실패: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 프롬프트 캐싱 적중 여부를 로그로 남긴다.
+     *
+     * OpenRouter를 통한 OpenAI 계열 모델 호출은 프롬프트가 1024토큰 이상이고 앞부분이
+     * 이전 요청과 동일하면 별도 설정 없이 자동으로 캐싱된다. Echo는 매 턴마다
+     * [고정 시스템 프롬프트 + 누적 대화 이력]을 그대로 앞에 두고 뒤에만 새 메시지를 추가하는
+     * 구조라 이 조건을 충족하지만, 실제 적중 여부는 응답의 usage.cachedTokens로만 확인 가능하다.
+     */
+    private void logCacheUsage(ChatCompletionResponse response) {
+        ChatCompletionResponse.Usage usage = response != null ? response.getUsage() : null;
+        if (usage == null || usage.getPromptTokens() == null) {
+            return;
+        }
+
+        Integer cached = usage.getCachedTokens();
+        if (cached == null || cached == 0) {
+            log.debug("프롬프트 캐싱 - 미적중 (prompt_tokens: {})", usage.getPromptTokens());
+            return;
+        }
+
+        double hitRatio = usage.getPromptTokens() > 0
+                ? (double) cached / usage.getPromptTokens() * 100
+                : 0;
+        log.info("프롬프트 캐싱 - 적중 (prompt_tokens: {}, cached_tokens: {}, 적중률: {}%)",
+                usage.getPromptTokens(), cached, String.format("%.1f", hitRatio));
     }
 
     /**

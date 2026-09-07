@@ -17,7 +17,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.concurrent.TimeUnit;
 
@@ -32,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * 실제 외부 API 호출:
  * - STT: OpenAI Whisper API
- * - TTS: Supertone Play TTS API (WAV 반환)
+ * - TTS: ElevenLabs TTS API (MP3 반환)
  *
  * 주의: 테스트 실행 시 실제 API 비용(크레딧)이 발생합니다.
  */
@@ -89,9 +88,9 @@ class VoiceIntegrationTest {
     class TtsIntegrationTest {
 
         @Test
-        @DisplayName("한국어 텍스트 -> Supertone TTS API -> WAV 음성 데이터")
+        @DisplayName("한국어 텍스트 -> ElevenLabs TTS API -> MP3 음성 데이터")
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
-        void tts_withKoreanText_shouldReturnWavAudio() throws Exception {
+        void tts_withKoreanText_shouldReturnMp3Audio() throws Exception {
             // Given
             TtsRequest request = new TtsRequest(
                     "안녕하세요, 오늘 하루는 어떠셨어요?",
@@ -108,20 +107,20 @@ class VoiceIntegrationTest {
                             .content(objectMapper.writeValueAsString(request)))
                     .andDo(print())
                     .andExpect(status().isOk())
-                    .andExpect(header().string("Content-Type", "audio/wav"))
+                    .andExpect(header().string("Content-Type", "audio/mpeg"))
                     .andReturn();
             long elapsed = System.currentTimeMillis() - start;
 
             // Then
             byte[] audioData = result.getResponse().getContentAsByteArray();
-            assertWavFormat(audioData);
+            assertMp3Format(audioData);
 
-            System.out.printf("=== Supertone TTS 레이턴시: %dms, 크기: %d bytes ===%n",
+            System.out.printf("=== ElevenLabs TTS 레이턴시: %dms, 크기: %d bytes ===%n",
                     elapsed, audioData.length);
         }
 
         @Test
-        @DisplayName("다양한 voiceTone 설정으로 Supertone TTS 변환")
+        @DisplayName("다양한 voiceTone 설정으로 ElevenLabs TTS 변환")
         @Timeout(value = 120, unit = TimeUnit.SECONDS)
         void tts_withDifferentVoiceTones_shouldWork() throws Exception {
             String[] tones = {"warm", "calm", "bright", "gentle"};
@@ -140,19 +139,19 @@ class VoiceIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(request)))
                         .andExpect(status().isOk())
-                        .andExpect(header().string("Content-Type", "audio/wav"))
+                        .andExpect(header().string("Content-Type", "audio/mpeg"))
                         .andReturn();
                 long elapsed = System.currentTimeMillis() - start;
 
                 byte[] audioData = result.getResponse().getContentAsByteArray();
-                assertWavFormat(audioData);
+                assertMp3Format(audioData);
 
                 System.out.printf("voiceTone=%-6s -> %d bytes, %dms%n", tone, audioData.length, elapsed);
             }
         }
 
         @Test
-        @DisplayName("VoiceSettings 없이 기본값으로 Supertone TTS 변환")
+        @DisplayName("VoiceSettings 없이 기본값으로 ElevenLabs TTS 변환")
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
         void tts_withoutVoiceSettings_shouldUseDefaults() throws Exception {
             // Given
@@ -164,22 +163,22 @@ class VoiceIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
-                    .andExpect(header().string("Content-Type", "audio/wav"))
+                    .andExpect(header().string("Content-Type", "audio/mpeg"))
                     .andReturn();
             long elapsed = System.currentTimeMillis() - start;
 
             // Then
             byte[] audioData = result.getResponse().getContentAsByteArray();
-            assertWavFormat(audioData);
+            assertMp3Format(audioData);
 
-            System.out.printf("=== 기본 설정 Supertone TTS: %dms, %d bytes ===%n",
+            System.out.printf("=== 기본 설정 ElevenLabs TTS: %dms, %d bytes ===%n",
                     elapsed, audioData.length);
         }
 
         @Test
-        @DisplayName("다양한 속도 설정으로 Supertone TTS 변환")
+        @DisplayName("voiceSpeed 설정은 무시되지만 오류 없이 처리됨 (ElevenLabs 미지원 파라미터)")
         @Timeout(value = 120, unit = TimeUnit.SECONDS)
-        void tts_withDifferentSpeeds_shouldWork() throws Exception {
+        void tts_withDifferentSpeeds_shouldStillWork() throws Exception {
             double[] speeds = {0.5, 1.0, 1.5, 2.0};
 
             for (double speed : speeds) {
@@ -196,21 +195,24 @@ class VoiceIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(request)))
                         .andExpect(status().isOk())
-                        .andExpect(header().string("Content-Type", "audio/wav"))
+                        .andExpect(header().string("Content-Type", "audio/mpeg"))
                         .andReturn();
                 long elapsed = System.currentTimeMillis() - start;
 
                 byte[] audioData = result.getResponse().getContentAsByteArray();
-                assertWavFormat(audioData);
+                assertMp3Format(audioData);
 
                 System.out.printf("voiceSpeed=%.1f -> %d bytes, %dms%n", speed, audioData.length, elapsed);
             }
         }
     }
 
-    private void assertWavFormat(byte[] audioData) {
-        assertThat(audioData.length).isGreaterThan(44);
-        assertThat(new String(audioData, 0, 4, StandardCharsets.US_ASCII)).isEqualTo("RIFF");
-        assertThat(new String(audioData, 8, 4, StandardCharsets.US_ASCII)).isEqualTo("WAVE");
+    private void assertMp3Format(byte[] audioData) {
+        assertThat(audioData.length).isGreaterThan(4);
+        boolean hasId3Tag = audioData[0] == 'I' && audioData[1] == 'D' && audioData[2] == '3';
+        boolean hasFrameSync = (audioData[0] & 0xFF) == 0xFF && (audioData[1] & 0xE0) == 0xE0;
+        assertThat(hasId3Tag || hasFrameSync)
+                .as("MP3 파일은 ID3 태그 또는 프레임 동기 바이트로 시작해야 합니다.")
+                .isTrue();
     }
 }

@@ -1,6 +1,8 @@
 package com.example.echo.user.controller;
 
 import com.example.echo.common.auth.CurrentUser;
+import com.example.echo.location.dto.GeocodingResult;
+import com.example.echo.location.service.GeocodingService;
 import com.example.echo.user.dto.*;
 import com.example.echo.user.service.UserService;
 import jakarta.validation.Valid;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     private final UserService userService;
+    private final GeocodingService geocodingService;
 
     @GetMapping("/preferences")
     public ResponseEntity<UserPreferences> getPreferences(@CurrentUser Long userId) {
@@ -39,6 +42,26 @@ public class UserController {
             @CurrentUser Long userId,
             @Valid @RequestBody LocationUpdateRequest request) {
         return ResponseEntity.ok(userService.updateLocation(userId, request.getLocation()));
+    }
+
+    @PutMapping("/preferences/home-location")
+    public ResponseEntity<UserPreferences> updateHomeLocation(
+            @CurrentUser Long userId,
+            @Valid @RequestBody HomeLocationUpdateRequest request) {
+        return ResponseEntity.ok(
+                userService.updateHomeLocation(userId, request.getLatitude(), request.getLongitude()));
+    }
+
+    /**
+     * 집 등록 직후 확인용 - 측정된 좌표를 역지오코딩해 사람이 읽을 수 있는 주소로 보여준다.
+     * 저장은 하지 않는다(조회 전용). 실내 GPS 오차로 엉뚱한 곳이 등록됐을 때
+     * 사용자가 바로 알아차릴 수 있게 하기 위함.
+     */
+    @GetMapping("/preferences/home-location/address")
+    public ResponseEntity<GeocodingResult> previewHomeAddress(
+            @RequestParam Double latitude,
+            @RequestParam Double longitude) {
+        return ResponseEntity.ok(geocodingService.reverseGeocode(latitude, longitude));
     }
 
     @PutMapping("/preferences/family-info")

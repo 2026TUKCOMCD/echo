@@ -34,6 +34,8 @@ public class UserService {
                                 : null)
                         .birthday(prefs.getBirthday())
                         .location(prefs.getLocation())
+                        .homeLatitude(prefs.getHomeLatitude())
+                        .homeLongitude(prefs.getHomeLongitude())
                         .familyInfo(prefs.getFamilyInfo())
                         .guardianEmail(prefs.getGuardianEmail())
                         .occupation(prefs.getOccupation())
@@ -111,6 +113,19 @@ public class UserService {
     public UserPreferences updateLocation(Long userId, String location) {
         com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
         entity.updateLocation(location);
+        return getPreferences(userId);
+    }
+
+    /**
+     * 거주지(집) 좌표 저장 - "현재 위치를 집으로 등록"
+     *
+     * 방문 장소를 집/외출로 분류하는 기준이 된다. 온보딩 저장(savePreferences)과 분리해
+     * 별도로 관리한다(사용자가 집에서 한 번 등록하는 액션).
+     */
+    @Transactional
+    public UserPreferences updateHomeLocation(Long userId, Double homeLatitude, Double homeLongitude) {
+        com.example.echo.user.entity.UserPreferences entity = getPreferencesEntity(userId);
+        entity.updateHomeLocation(homeLatitude, homeLongitude);
         return getPreferences(userId);
     }
 

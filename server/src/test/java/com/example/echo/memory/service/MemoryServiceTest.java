@@ -24,6 +24,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -87,7 +88,7 @@ class MemoryServiceTest {
         UserContext context = contextWithUserMessage();
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of());
         when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction("기억 프롬프트")).thenReturn("""
+        when(aiService.generateMemoryExtraction(eq("기억 프롬프트"))).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "30대에 부산에서 어부로 일했다", "tags": ["부산", "어부"]}]
                 """);
 
@@ -284,7 +285,7 @@ class MemoryServiceTest {
         List<Memory> existing = List.of(memory("기존 기억"));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(existing);
         when(promptService.buildMemoryPrompt(context, existing)).thenReturn("기억 프롬프트");
-        when(aiService.generateMemoryExtraction("기억 프롬프트")).thenReturn("""
+        when(aiService.generateMemoryExtraction(eq("기억 프롬프트"))).thenReturn("""
                 [{"lifePeriod": "청년기", "topic": "직업", "content": "30대에 부산에서 어부로 일했다", "tags": ["부산"]}]
                 """);
 
