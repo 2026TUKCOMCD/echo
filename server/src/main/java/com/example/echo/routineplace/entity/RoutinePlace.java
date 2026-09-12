@@ -52,7 +52,7 @@ public class RoutinePlace {
     @Column(name = "category", length = 50)
     private String category;
 
-    /** 루틴 요일, CSV 형식 (예: "MON,WED,FRI") - Memory.tags와 동일한 컨벤션 */
+    /** 루틴 요일, CSV 형식 (예: "MONDAY,WEDNESDAY,FRIDAY") - DayOfWeek.name() 전체 요일명 그대로 저장 */
     @Column(name = "routine_days", length = 30)
     private String routineDays;
 

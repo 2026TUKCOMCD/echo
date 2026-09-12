@@ -105,6 +105,7 @@ fun SettingsScreen(
     var showRoutineConsentDialog by remember { mutableStateOf(false) }
     var showRoutineManageDialog by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
+    var showDemoSeedDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -617,6 +618,21 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            Button(
+                onClick = { showDemoSeedDialog = true },
+                enabled = !uiState.isSaving,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.bgCard, contentColor = colors.accentBlue)
+            ) {
+                Text("데모 대화 데이터 채우기", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, fontFamily = OutfitFontFamily)
+            }
+
+            Spacer(Modifier.height(12.dp))
+
             // 로그아웃 버튼
             Button(
                 onClick = onLogout,
@@ -661,6 +677,37 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
+                    Text("취소", fontSize = 17.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+                }
+            }
+        )
+    }
+
+    if (showDemoSeedDialog) {
+        AlertDialog(
+            onDismissRequest = { showDemoSeedDialog = false },
+            containerColor = colors.bgCard,
+            title = {
+                Text("데모 대화 데이터 채우기", fontFamily = OutfitFontFamily, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+            },
+            text = {
+                Text(
+                    "테스트용 데모 인적정보·루틴 방문 장소·건강 데이터로 현재 계정 정보가 덮어써집니다.",
+                    fontSize = 17.sp,
+                    fontFamily = OutfitFontFamily,
+                    color = colors.textSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDemoSeedDialog = false
+                    viewModel.seedDemoConversationData(onSeeded = { routinePlaceViewModel.refresh() })
+                }) {
+                    Text("채우기", fontSize = 17.sp, fontFamily = OutfitFontFamily, color = colors.accentBlue, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDemoSeedDialog = false }) {
                     Text("취소", fontSize = 17.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
                 }
             }
