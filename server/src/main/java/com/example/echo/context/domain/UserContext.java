@@ -3,6 +3,7 @@ package com.example.echo.context.domain;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.location.dto.LocationData;
+import com.example.echo.routineplace.dto.RoutinePlaceInfo;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -29,6 +30,10 @@ public class UserContext {
     private UserPreferences preferences;
     private WeatherData todayWeather;
     private LocationData locationData;
+
+    /** 사용자가 확정한 루틴 방문 장소 전체 목록 (오늘 방문 여부와 무관, 대화 배경지식용) */
+    @Builder.Default
+    private List<RoutinePlaceInfo> confirmedRoutinePlaces = List.of();
 
     /**
      * 캐싱된 시스템 프롬프트

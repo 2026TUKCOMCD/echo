@@ -62,6 +62,12 @@ class LocationCollectionService : Service() {
         locationCollectionStorage = LocationCollectionStorage(this)
 
         createNotificationChannel()
+
+        // 원본 GPS 좌표를 무기한 보관하지 않도록 정리 - 이 서비스는 매일 아침 새로 시작되므로
+        // onCreate()에 얹는 것만으로 하루 1회 실행이 보장된다(별도 WorkManager 불필요).
+        serviceScope.launch {
+            locationStorageManager.cleanupOldData(daysToKeep = 7)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

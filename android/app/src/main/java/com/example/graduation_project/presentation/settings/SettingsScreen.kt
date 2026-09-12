@@ -93,13 +93,17 @@ private val EMAIL_REGEX = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 fun SettingsScreen(
     onLogout: () -> Unit,
     viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
-    displayViewModel: DisplaySettingsViewModel = viewModel(factory = DisplaySettingsViewModel.Factory)
+    displayViewModel: DisplaySettingsViewModel = viewModel(factory = DisplaySettingsViewModel.Factory),
+    routinePlaceViewModel: RoutinePlaceViewModel = viewModel(factory = RoutinePlaceViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val displaySettings by displayViewModel.settings.collectAsState()
+    val routineUiState by routinePlaceViewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingField by remember { mutableStateOf<String?>(null) }
     var showSamsungBatteryDialog by remember { mutableStateOf(false) }
+    var showRoutineConsentDialog by remember { mutableStateOf(false) }
+    var showRoutineManageDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -165,6 +169,46 @@ fun SettingsScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.dismissError()
         }
+    }
+
+    LaunchedEffect(routineUiState.savedMessage) {
+        routineUiState.savedMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            routinePlaceViewModel.dismissSavedMessage()
+        }
+    }
+
+    LaunchedEffect(routineUiState.errorMessage) {
+        routineUiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            routinePlaceViewModel.dismissError()
+        }
+    }
+
+    if (showRoutineConsentDialog) {
+        RoutinePlaceConsentDialog(
+            onAgree = {
+                showRoutineConsentDialog = false
+                routinePlaceViewModel.grantConsent()
+                showRoutineManageDialog = true
+            },
+            onDismiss = { showRoutineConsentDialog = false }
+        )
+    }
+
+    if (showRoutineManageDialog) {
+        RoutinePlaceManageDialog(
+            uiState = routineUiState,
+            onConfirmCandidate = routinePlaceViewModel::confirmCandidate,
+            onDismissCandidate = routinePlaceViewModel::dismissCandidate,
+            onUpdateCategory = routinePlaceViewModel::updateCategory,
+            onDeletePlace = routinePlaceViewModel::deletePlace,
+            onRevokeConsent = {
+                routinePlaceViewModel.revokeConsent()
+                showRoutineManageDialog = false
+            },
+            onDismiss = { showRoutineManageDialog = false }
+        )
     }
 
     val colors = LocalEchoColors.current
@@ -352,6 +396,21 @@ fun SettingsScreen(
                         isRegistering = uiState.isRegisteringHome,
                         enabled = enabled,
                         onClick = { viewModel.registerCurrentLocationAsHome() }
+                    )
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
+                    RoutinePlaceRow(
+                        consented = routineUiState.consented,
+                        confirmedCount = routineUiState.confirmedPlaces.size,
+                        candidateCount = routineUiState.candidates.size,
+                        enabled = enabled,
+                        onClick = {
+                            if (routineUiState.consented) {
+                                routinePlaceViewModel.refresh()
+                                showRoutineManageDialog = true
+                            } else {
+                                showRoutineConsentDialog = true
+                            }
+                        }
                     )
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("직업", uiState.occupation, enabled = enabled) { editingField = "occupation" }
@@ -727,6 +786,47 @@ private fun HomeLocationRow(
         } else {
             Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = colors.accentBlue)
         }
+    }
+}
+
+/**
+ * 반복 방문 장소(회사/병원 등) 감지 행.
+ *
+ * 미동의 상태면 눌러서 동의 화면으로, 동의된 상태면 후보 확인·확정 장소 관리 화면으로 이동한다.
+ */
+@Composable
+private fun RoutinePlaceRow(
+    consented: Boolean,
+    confirmedCount: Int,
+    candidateCount: Int,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val colors = LocalEchoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("반복 방문 장소", fontSize = 15.sp, fontFamily = OutfitFontFamily, color = colors.textSecondary)
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = when {
+                    !consented -> "미사용 · 눌러서 감지 기능 켜기"
+                    candidateCount > 0 -> "확인할 후보 ${candidateCount}개 있음"
+                    confirmedCount > 0 -> "${confirmedCount}곳 등록됨"
+                    else -> "사용 중 · 반복 방문 패턴을 살펴보고 있어요"
+                },
+                fontSize = 16.sp,
+                fontFamily = OutfitFontFamily,
+                color = if (candidateCount > 0) colors.accentGreen
+                        else if (consented) colors.textPrimary else colors.textTertiary
+            )
+        }
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary)
     }
 }
 

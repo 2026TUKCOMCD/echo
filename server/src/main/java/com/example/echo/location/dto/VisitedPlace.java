@@ -30,6 +30,13 @@ public class VisitedPlace {
     /** 방문 시점 날씨 (Timemachine API) */
     private VisitWeather weather;
 
+    /**
+     * 확정된 루틴 방문 장소와 매칭됐을 때의 카테고리 라벨 (예: "회사", "병원").
+     * 매칭되면 이름을 이미 알고 있으므로 placeName을 위한 역지오코딩을 하지 않는다 -
+     * PromptService가 표시 시 placeName 대신 이 값을 우선 사용한다.
+     */
+    private String routineCategory;
+
     // ===== 원시 데이터 (RawVisitedPlace에서 복사) =====
     private Double latitude;
     private Double longitude;
