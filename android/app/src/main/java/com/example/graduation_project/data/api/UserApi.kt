@@ -4,6 +4,7 @@ import com.example.graduation_project.data.model.*
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Query
 
@@ -65,4 +66,7 @@ interface UserApi {
 
     @DELETE("/api/users/me/conversation-data")
     suspend fun resetConversationData()
+
+    @POST("/api/users/me/demo-seed")
+    suspend fun seedDemoConversationData()
 }

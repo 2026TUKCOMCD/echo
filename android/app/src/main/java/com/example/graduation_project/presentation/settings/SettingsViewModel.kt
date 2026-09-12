@@ -629,6 +629,10 @@ class SettingsViewModel(
                 return SettingsViewModel(application) as T
             }
         }
+
+        /** 서버 ConversationDemoSeedService.ROUTINE_PLACE_LATITUDE/LONGITUDE와 반드시 동일해야 한다. */
+        private const val DEMO_ROUTINE_PLACE_LATITUDE = 37.5415
+        private const val DEMO_ROUTINE_PLACE_LONGITUDE = 127.1352
     }
 
     private fun updateAlarmSchedule(time: String?) {
@@ -657,6 +661,40 @@ class SettingsViewModel(
                 }
                 is ApiResult.Error -> _uiState.update {
                     it.copy(isSaving = false, errorMessage = "초기화에 실패했습니다. 다시 시도해주세요.")
+                }
+            }
+        }
+    }
+
+    /**
+     * 개발/데모용: 경도인지장애 데모 페르소나(사용자 정보·루틴 방문 장소·건강 데이터)를 서버에 심고,
+     * 서버가 관여하지 않는 "오늘의 방문 장소"(Room location_points)는 로컬에서 별도로 시딩한다.
+     * 서버 시딩이 성공한 뒤에만 로컬에 쓴다(resetExperienceData와 동일한 순서 원칙).
+     * 좌표는 서버 ConversationDemoSeedService의 루틴 장소 좌표와 반드시 동일해야 한다.
+     *
+     * @param onSeeded 서버 시딩 성공 후 호출 - 루틴 방문 장소는 별도 ViewModel(RoutinePlaceViewModel)이
+     * 관리해 이 ViewModel에서 직접 새로고침할 수 없으므로, 호출부(SettingsScreen)가 이 콜백으로
+     * routinePlaceViewModel.refresh()를 트리거하게 한다.
+     */
+    fun seedDemoConversationData(onSeeded: () -> Unit = {}) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true) }
+            when (val result = userRepository.seedDemoConversationData()) {
+                is ApiResult.Success -> {
+                    locationStorageManager.seedDemoStayVisit(
+                        latitude = DEMO_ROUTINE_PLACE_LATITUDE,
+                        longitude = DEMO_ROUTINE_PLACE_LONGITUDE
+                    )
+                    // 화면에 표시 중인 사용자 정보(생년월일/가족관계/직업 등)를 새로 심은 값으로 갱신
+                    when (val prefsResult = userRepository.getPreferences()) {
+                        is ApiResult.Success -> _uiState.update { applyPrefs(it, prefsResult.data) }
+                        is ApiResult.Error -> Unit // 시딩 자체는 성공했으므로 미리보기 갱신 실패는 무시
+                    }
+                    _uiState.update { it.copy(isSaving = false, savedMessage = "데모 데이터가 준비되었습니다") }
+                    onSeeded()
+                }
+                is ApiResult.Error -> _uiState.update {
+                    it.copy(isSaving = false, errorMessage = "데모 데이터 준비에 실패했습니다. 다시 시도해주세요.")
                 }
             }
         }

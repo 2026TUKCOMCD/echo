@@ -34,6 +34,16 @@ public class UserPreferences {
     @Column(name = "home_longitude")
     private Double homeLongitude;
 
+    /**
+     * 루틴 방문 장소(반복 방문 패턴 감지·저장) 기능 동의 여부.
+     * false면 VisitOccurrenceRecordingService가 방문 이력을 저장하지 않는다(서버가 직접 게이트).
+     */
+    @Column(name = "routine_place_consent", nullable = false)
+    private boolean routinePlaceConsent = false;
+
+    @Column(name = "routine_place_consent_at")
+    private LocalDateTime routinePlaceConsentAt;
+
     @Column(name = "family_info", length = 500)
     private String familyInfo;
 
@@ -133,6 +143,17 @@ public class UserPreferences {
     public void updateHomeLocation(Double homeLatitude, Double homeLongitude) {
         this.homeLatitude = homeLatitude;
         this.homeLongitude = homeLongitude;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 루틴 방문 장소 기능 동의/철회.
+     * 철회 시(consent=false) 저장된 방문 이력·루틴 장소는 RoutinePlaceService가 별도로 파기한다
+     * (이 메서드는 동의 플래그만 갱신).
+     */
+    public void updateRoutinePlaceConsent(boolean consent) {
+        this.routinePlaceConsent = consent;
+        this.routinePlaceConsentAt = consent ? LocalDateTime.now() : null;
         this.updatedAt = LocalDateTime.now();
     }
 
