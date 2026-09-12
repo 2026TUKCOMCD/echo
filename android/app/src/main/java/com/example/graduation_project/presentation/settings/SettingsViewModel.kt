@@ -17,6 +17,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.alarm.ConversationAlarmScheduler
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
+import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.local.AppDatabase
@@ -637,6 +638,27 @@ class SettingsViewModel(
             ConversationAlarmScheduler.scheduleAlarm(context, time)
         } else {
             ConversationAlarmScheduler.cancelAlarm(context)
+        }
+    }
+
+    /**
+     * 서버 삭제가 성공한 뒤에만 로컬을 지운다 - 반대 순서면 서버에 장기기억이 남은 채 화면만 비는 불일치가 생긴다.
+     */
+    fun resetExperienceData() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true) }
+            when (val result = userRepository.resetConversationData()) {
+                is ApiResult.Success -> {
+                    val database = AppDatabase.getInstance(getApplication<Application>())
+                    database.messageDao().deleteAllMessages(ApiClient.tokenStorage?.getCurrentUserId() ?: -1L)
+                    database.diaryDao().deleteAll()
+                    database.conversationDiaryLinkDao().deleteAll()
+                    _uiState.update { it.copy(isSaving = false, savedMessage = "체험 데이터가 초기화되었습니다") }
+                }
+                is ApiResult.Error -> _uiState.update {
+                    it.copy(isSaving = false, errorMessage = "초기화에 실패했습니다. 다시 시도해주세요.")
+                }
+            }
         }
     }
 
