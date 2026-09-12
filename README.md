@@ -1,7 +1,12 @@
 # echo
 회상 요법을 통한 치매 예방 시스템
 
-## 개요
+![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F52FF?logo=kotlin&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.9-6DB33F?logo=springboot&logoColor=white)
+![Android](https://img.shields.io/badge/Android-Jetpack%20Compose-3DDC84?logo=android&logoColor=white)
+
+## 📖 개요
 본 프로젝트는 경도인지장애를 가진 분들이 일상 속에서 자연스럽게 기억을 회상하고, 긍정적인 감정을 유지할 수 있도록 돕는 AI 음성 대화 시스템입니다.
 사용자의 건강 데이터(갤럭시 워치 → Health Connect), 위치 정보, 날씨, 개인 선호도를 활용하여 맞춤형 회상 대화를 생성하고, 하루의 대화를 일기 형식으로 요약하여 기록합니다.
 
