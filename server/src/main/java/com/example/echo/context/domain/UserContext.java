@@ -22,6 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class UserContext {
     private Long userId;
     private LocalDate date;
+    private LocalDateTime startedAt;
 
     @Builder.Default
     private List<ConversationTurn> conversationHistory = new CopyOnWriteArrayList<>();

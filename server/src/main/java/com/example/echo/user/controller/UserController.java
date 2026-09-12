@@ -1,6 +1,7 @@
 package com.example.echo.user.controller;
 
 import com.example.echo.common.auth.CurrentUser;
+import com.example.echo.conversation.service.ConversationDataResetService;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.service.GeocodingService;
 import com.example.echo.user.dto.*;
@@ -17,6 +18,7 @@ public class UserController {
 
     private final UserService userService;
     private final GeocodingService geocodingService;
+    private final ConversationDataResetService conversationDataResetService;
 
     @GetMapping("/preferences")
     public ResponseEntity<UserPreferences> getPreferences(@CurrentUser Long userId) {
@@ -123,5 +125,11 @@ public class UserController {
     @GetMapping("/onboarding-status")
     public ResponseEntity<OnboardingStatusResponse> getOnboardingStatus(@CurrentUser Long userId) {
         return ResponseEntity.ok(new OnboardingStatusResponse(userService.isOnboardingCompleted(userId)));
+    }
+
+    @DeleteMapping("/conversation-data")
+    public ResponseEntity<Void> resetConversationData(@CurrentUser Long userId) {
+        conversationDataResetService.reset(userId);
+        return ResponseEntity.noContent().build();
     }
 }

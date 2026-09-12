@@ -14,7 +14,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 장기기억 서비스
@@ -47,6 +50,9 @@ public class MemoryService {
     private final PromptService promptService;
     private final AIService aiService;
     private final ObjectMapper objectMapper;
+
+    /** 초기화 이전에 시작된 대화의 추출 결과가 비동기로 뒤늦게 저장되어 기억이 되살아나는 것을 막는 기준 시각 */
+    private final Map<Long, LocalDateTime> resetAtByUser = new ConcurrentHashMap<>();
 
     /**
      * 대화 종료 시 장기기억 추출 및 갱신
@@ -95,6 +101,12 @@ public class MemoryService {
                 .map(item -> toEntity(userId, item))
                 .toList();
 
+        // AI 호출 중에 초기화될 수 있으므로 호출 전이 아니라 쓰기 직전에 확인한다
+        if (startedBeforeReset(context)) {
+            log.info("장기기억 추출 결과 폐기 - 체험 데이터 초기화 이전에 시작된 대화 - userId: {}", userId);
+            return;
+        }
+
         memoryRepository.deleteByUserId(userId);
         memoryRepository.saveAll(replacement);
 
@@ -107,6 +119,24 @@ public class MemoryService {
     @Transactional(readOnly = true)
     public List<Memory> getMemories(Long userId) {
         return memoryRepository.findByUserIdOrderByIdAsc(userId);
+    }
+
+    /**
+     * 체험 데이터 초기화 - 진행 중인 추출이 이 시각을 볼 수 있도록 삭제보다 먼저 기록한다
+     */
+    @Transactional
+    public void deleteAllMemories(Long userId, LocalDateTime resetAt) {
+        resetAtByUser.put(userId, resetAt);
+        memoryRepository.deleteByUserId(userId);
+    }
+
+    private boolean startedBeforeReset(UserContext context) {
+        LocalDateTime resetAt = resetAtByUser.get(context.getUserId());
+        if (resetAt == null) {
+            return false;
+        }
+        LocalDateTime startedAt = context.getStartedAt();
+        return startedAt == null || startedAt.isBefore(resetAt);
     }
 
     private boolean hasUserMessage(List<ConversationTurn> history) {
