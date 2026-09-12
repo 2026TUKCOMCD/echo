@@ -33,4 +33,7 @@ public class RoutinePlaceResponse {
     private String previewAddress;
     private LocalDateTime lastDetectedAt;
     private LocalDateTime confirmedAt;
+
+    /** 요일/시간대를 사용자가 직접 수정했는지 - true면 야간 재계산이 이 값을 덮어쓰지 않는다 */
+    private boolean manualSchedule;
 }

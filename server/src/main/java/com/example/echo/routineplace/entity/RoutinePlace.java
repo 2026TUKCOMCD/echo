@@ -72,6 +72,14 @@ public class RoutinePlace {
     @Column(name = "confirmed_at")
     private LocalDateTime confirmedAt;
 
+    /**
+     * 사용자가 요일/시간대를 직접 수정했는지 여부.
+     * true가 되면 RoutinePlaceDetectionService의 야간 재계산이 이 장소의 요일/시간대를
+     * 더 이상 덮어쓰지 않는다(사용자가 직접 고친 값을 존중).
+     */
+    @Column(name = "manual_schedule", nullable = false)
+    private boolean manualSchedule = false;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -113,15 +121,18 @@ public class RoutinePlace {
 
     /**
      * 감지 스케줄러가 매일 새로 계산한 통계로 갱신.
-     * 이미 CONFIRMED인 장소도 요일/시간대가 최신 패턴을 반영하도록 계속 갱신된다.
+     * 이미 CONFIRMED인 장소도 요일/시간대가 최신 패턴을 반영하도록 계속 갱신되지만,
+     * 사용자가 직접 요일/시간대를 수정한(manualSchedule=true) 장소는 건드리지 않는다.
      */
     public void refreshStats(int occurrenceCount, String routineDays,
                               LocalTime rangeStart, LocalTime rangeEnd, LocalDateTime detectedAt) {
         this.occurrenceCount = occurrenceCount;
-        this.routineDays = routineDays;
-        this.routineTimeRangeStart = rangeStart;
-        this.routineTimeRangeEnd = rangeEnd;
         this.lastDetectedAt = detectedAt;
+        if (!manualSchedule) {
+            this.routineDays = routineDays;
+            this.routineTimeRangeStart = rangeStart;
+            this.routineTimeRangeEnd = rangeEnd;
+        }
     }
 
     /** 후보를 사용자가 확정 - 카테고리 라벨과 함께 상태를 CONFIRMED로 전환 */
@@ -131,9 +142,26 @@ public class RoutinePlace {
         this.confirmedAt = LocalDateTime.now();
     }
 
-    /** 확정된 장소의 라벨만 수정 (요일/시간대는 감지 스케줄러가 계속 갱신) */
+    /** 확정된 장소의 라벨만 수정 */
     public void updateCategory(String category) {
         this.category = category;
+    }
+
+    /**
+     * 사용자가 요일/시간대를 직접 수정 - 이후 감지 스케줄러가 이 값을 덮어쓰지 않는다.
+     * null로 넘긴 필드는 기존 값을 유지한다(요일만 고치고 시간대는 그대로 두는 식의 부분 수정 허용).
+     */
+    public void applyManualSchedule(String routineDays, LocalTime rangeStart, LocalTime rangeEnd) {
+        if (routineDays != null) {
+            this.routineDays = routineDays;
+        }
+        if (rangeStart != null) {
+            this.routineTimeRangeStart = rangeStart;
+        }
+        if (rangeEnd != null) {
+            this.routineTimeRangeEnd = rangeEnd;
+        }
+        this.manualSchedule = true;
     }
 
     /** 후보를 거절 - 같은 좌표는 이후 재제안되지 않는다(RoutinePlaceDetectionService 참고) */

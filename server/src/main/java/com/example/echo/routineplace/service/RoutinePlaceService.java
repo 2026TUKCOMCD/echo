@@ -3,6 +3,7 @@ package com.example.echo.routineplace.service;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.service.GeocodingService;
 import com.example.echo.routineplace.dto.ConsentResponse;
+import com.example.echo.routineplace.dto.RoutinePlaceConfirmRequest;
 import com.example.echo.routineplace.dto.RoutinePlaceInfo;
 import com.example.echo.routineplace.dto.RoutinePlaceResponse;
 import com.example.echo.routineplace.entity.RoutinePlace;
@@ -16,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.DayOfWeek;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -35,6 +37,7 @@ public class RoutinePlaceService {
     private final VisitOccurrenceRepository visitOccurrenceRepository;
     private final UserPreferencesRepository userPreferencesRepository;
     private final GeocodingService geocodingService;
+    private final RoutinePlaceDetectionService routinePlaceDetectionService;
 
     @Transactional(readOnly = true)
     public List<RoutinePlaceResponse> getCandidates(Long userId) {
@@ -71,17 +74,35 @@ public class RoutinePlaceService {
     }
 
     @Transactional
-    public RoutinePlaceResponse confirm(Long userId, Long placeId, String category) {
+    public RoutinePlaceResponse confirm(Long userId, Long placeId, RoutinePlaceConfirmRequest request) {
         RoutinePlace place = getOwnedPlace(userId, placeId);
-        place.confirm(category);
+        place.confirm(request.getCategory());
+        applyScheduleIfPresent(place, request);
         return toResponse(place);
     }
 
     @Transactional
-    public RoutinePlaceResponse updateCategory(Long userId, Long placeId, String category) {
+    public RoutinePlaceResponse update(Long userId, Long placeId, RoutinePlaceConfirmRequest request) {
         RoutinePlace place = getOwnedPlace(userId, placeId);
-        place.updateCategory(category);
+        place.updateCategory(request.getCategory());
+        applyScheduleIfPresent(place, request);
         return toResponse(place);
+    }
+
+    private void applyScheduleIfPresent(RoutinePlace place, RoutinePlaceConfirmRequest request) {
+        applyScheduleIfPresent(place, request.getRoutineDays(), request.getRoutineTimeRangeStart(),
+                request.getRoutineTimeRangeEnd());
+    }
+
+    private void applyScheduleIfPresent(RoutinePlace place, List<DayOfWeek> days,
+                                         java.time.LocalTime start, java.time.LocalTime end) {
+        if (days == null && start == null && end == null) {
+            return;
+        }
+        String daysCsv = days == null || days.isEmpty()
+                ? null
+                : days.stream().map(Enum::name).collect(Collectors.joining(","));
+        place.applyManualSchedule(daysCsv, start, end);
     }
 
     /**
@@ -119,8 +140,9 @@ public class RoutinePlaceService {
     }
 
     /**
-     * 동의/철회. 철회 시(consented=false) 저장된 방문 이력·루틴 장소를 즉시 전량 파기한다
-     * (개인정보보호법상 목적 달성/동의 철회 시 파기 원칙).
+     * 감지 기능 on/off. off(consented=false)로 끄면 새 방문 기록·후보 생성을 멈추고
+     * 감지용 임시 데이터(VisitOccurrence)와 아직 확인 안 한 후보(SUGGESTED)를 정리하지만,
+     * 사용자가 이미 확정한 장소(CONFIRMED)는 남긴다 - 완전 삭제를 원하면 withdrawConsent 사용.
      */
     @Transactional
     public ConsentResponse setConsent(Long userId, boolean consented) {
@@ -131,14 +153,43 @@ public class RoutinePlaceService {
 
         if (!consented) {
             visitOccurrenceRepository.deleteByUserId(userId);
-            routinePlaceRepository.deleteByUserId(userId);
-            log.info("[루틴장소] 동의 철회로 데이터 전량 파기 - userId: {}", userId);
+            routinePlaceRepository.deleteByUserIdAndStatus(userId, RoutinePlaceStatus.SUGGESTED);
+            log.info("[루틴장소] 감지 기능 끔 - 임시 데이터/미확인 후보 정리 (확정 장소는 유지) - userId: {}", userId);
         }
 
         return ConsentResponse.builder()
                 .consented(prefs.isRoutinePlaceConsent())
                 .consentedAt(prefs.getRoutinePlaceConsentAt())
                 .build();
+    }
+
+    /**
+     * 완전 철회 - 확정된 장소를 포함해 저장된 관련 데이터를 전량 즉시 파기한다
+     * (개인정보보호법상 동의 철회 시 파기 원칙에 따른 별도 액션. setConsent(false)와 달리
+     * 확정 장소도 남기지 않는다).
+     */
+    @Transactional
+    public ConsentResponse withdrawConsent(Long userId) {
+        UserPreferences prefs = userPreferencesRepository.findByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("온보딩이 완료되지 않았습니다."));
+
+        prefs.updateRoutinePlaceConsent(false);
+        visitOccurrenceRepository.deleteByUserId(userId);
+        routinePlaceRepository.deleteByUserId(userId);
+        log.info("[루틴장소] 완전 철회로 데이터 전량 파기 - userId: {}", userId);
+
+        return ConsentResponse.builder()
+                .consented(false)
+                .consentedAt(null)
+                .build();
+    }
+
+    /**
+     * 개발/테스트 편의용: 매일 새벽 스케줄러를 기다리지 않고 패턴 감지를 즉시 실행한다.
+     * UserController.resetConversationData와 동일하게 본인 계정에 한해 인증된 사용자만 호출 가능.
+     */
+    public void detectNow(Long userId) {
+        routinePlaceDetectionService.detectForUser(userId);
     }
 
     private RoutinePlace getOwnedPlace(Long userId, Long placeId) {
@@ -157,6 +208,7 @@ public class RoutinePlaceService {
                 .occurrenceCount(place.getOccurrenceCount())
                 .lastDetectedAt(place.getLastDetectedAt())
                 .confirmedAt(place.getConfirmedAt())
+                .manualSchedule(place.isManualSchedule())
                 .build();
     }
 

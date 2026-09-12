@@ -21,9 +21,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 /**
- * 루틴 방문 장소 동의/철회 및 후보 거절·확정 삭제 검증.
+ * 루틴 방문 장소 동의 on/off, 완전 철회, 후보 거절·확정 삭제 검증.
  *
- * 동의 철회 시(개인정보보호법상 파기 원칙) 저장된 방문 이력·루틴 장소가 전량 삭제되는지 확인한다.
+ * - 감지 on/off(setConsent)는 임시 데이터·미확인 후보만 정리하고 확정 장소는 남긴다.
+ * - 완전 철회(withdrawConsent)는 개인정보보호법상 파기 원칙에 따라 확정 장소까지 전량 삭제한다.
  */
 @ExtendWith(MockitoExtension.class)
 class RoutinePlaceServiceTest {
@@ -46,15 +47,17 @@ class RoutinePlaceServiceTest {
     private RoutinePlaceService routinePlaceService;
 
     @Test
-    @DisplayName("동의 철회 시 방문 이력·루틴 장소를 전량 파기한다")
-    void revokingConsent_purgesAllRelatedData() {
+    @DisplayName("감지 끄기(setConsent false) 시 임시 방문 이력·미확인 후보만 정리하고 확정 장소는 남긴다")
+    void turningOffDetection_purgesOnlyTransientDataKeepsConfirmed() {
         UserPreferences prefs = UserPreferences.builder().userId(USER_ID).build();
         when(userPreferencesRepository.findByUserId(USER_ID)).thenReturn(Optional.of(prefs));
 
         ConsentResponse response = routinePlaceService.setConsent(USER_ID, false);
 
         verify(visitOccurrenceRepository, times(1)).deleteByUserId(USER_ID);
-        verify(routinePlaceRepository, times(1)).deleteByUserId(USER_ID);
+        verify(routinePlaceRepository, times(1))
+                .deleteByUserIdAndStatus(USER_ID, RoutinePlaceStatus.SUGGESTED);
+        verify(routinePlaceRepository, never()).deleteByUserId(anyLong());
         assertThat(response.isConsented()).isFalse();
     }
 
@@ -67,7 +70,20 @@ class RoutinePlaceServiceTest {
         routinePlaceService.setConsent(USER_ID, true);
 
         verify(visitOccurrenceRepository, never()).deleteByUserId(anyLong());
-        verify(routinePlaceRepository, never()).deleteByUserId(anyLong());
+        verify(routinePlaceRepository, never()).deleteByUserIdAndStatus(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("완전 철회(withdrawConsent) 시 확정 장소를 포함해 전량 파기한다")
+    void withdrawingConsent_purgesEverythingIncludingConfirmed() {
+        UserPreferences prefs = UserPreferences.builder().userId(USER_ID).build();
+        when(userPreferencesRepository.findByUserId(USER_ID)).thenReturn(Optional.of(prefs));
+
+        ConsentResponse response = routinePlaceService.withdrawConsent(USER_ID);
+
+        verify(visitOccurrenceRepository, times(1)).deleteByUserId(USER_ID);
+        verify(routinePlaceRepository, times(1)).deleteByUserId(USER_ID);
+        assertThat(response.isConsented()).isFalse();
     }
 
     @Test

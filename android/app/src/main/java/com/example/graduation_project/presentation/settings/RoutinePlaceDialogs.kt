@@ -1,5 +1,6 @@
 package com.example.graduation_project.presentation.settings
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,14 +12,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,12 +44,39 @@ private val WEEKDAY_KOREAN = mapOf(
     "FRIDAY" to "금", "SATURDAY" to "토", "SUNDAY" to "일"
 )
 
+// 경도인지장애 어르신 사용성을 고려해 이 다이얼로그들은 앱 전반의 기본값보다 한 단계 큰
+// 글자 크기를 쓴다(설정의 "글씨 크기" 배율이 여기에도 곱해져 추가로 커질 수 있음).
+private val TITLE_SIZE = 24.sp
+private val SECTION_TITLE_SIZE = 19.sp
+private val BODY_SIZE = 17.sp
+private val CAPTION_SIZE = 16.sp
+private val BUTTON_TEXT_SIZE = 17.sp
+
 private fun formatSchedule(place: RoutinePlaceResponse): String {
     val days = place.routineDays.joinToString(",") { WEEKDAY_KOREAN[it] ?: it }
     val time = if (place.routineTimeRangeStart != null && place.routineTimeRangeEnd != null) {
         "${place.routineTimeRangeStart?.take(5)}~${place.routineTimeRangeEnd?.take(5)}"
     } else null
     return listOfNotNull(days.ifBlank { null }, time).joinToString(" · ").ifBlank { "요일·시간대 파악 중" }
+}
+
+/** 요일 다중 선택 칩 - "카드에서 수정할 때 요일/시간도 고칠 수 있으면 좋겠다"는 요청으로 추가 */
+@Composable
+private fun WeekdaySelector(selected: Set<String>, onToggle: (String) -> Unit, enabled: Boolean) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState())
+    ) {
+        WEEKDAY_KOREAN.forEach { (value, label) ->
+            FilterChip(
+                selected = value in selected,
+                onClick = { onToggle(value) },
+                enabled = enabled,
+                label = { Text(label, fontSize = CAPTION_SIZE) },
+                modifier = Modifier.height(44.dp)
+            )
+        }
+    }
 }
 
 /**
@@ -74,13 +105,13 @@ fun RoutinePlaceConsentDialog(
             ) {
                 Text(
                     text = "반복 방문 장소 감지",
-                    fontSize = 22.sp,
+                    fontSize = TITLE_SIZE,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
 
                 ConsentSection(
                     title = "이런 기능이에요",
@@ -88,33 +119,33 @@ fun RoutinePlaceConsentDialog(
                         "자연스럽게 활용해요. 오늘 다녀오신 곳을 여쭤보는 기존 대화 기능과는 " +
                         "별개의 저장 기능이에요."
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 ConsentSection(
                     title = "무엇을 저장하나요",
                     body = "방문 좌표와 방문 요일·시간대만 저장해요. 정확한 상호명·주소는 " +
                         "저장하지 않고, 확인이 필요할 때만 그때그때 조회해요."
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 ConsentSection(
                     title = "얼마나 보관하나요",
                     body = "패턴 분석용 임시 방문 기록은 최근 6주만 보관 후 자동 삭제돼요. " +
                         "직접 확정하신 장소 라벨은 삭제하시기 전까지 보관돼요."
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 ConsentSection(
                     title = "언제든 삭제할 수 있어요",
                     body = "설정 화면에서 개별 장소를 삭제할 수 있고, 동의를 철회하면 저장된 " +
                         "모든 관련 정보가 즉시 삭제돼요."
                 )
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(28.dp))
 
                 Button(
                     onClick = onAgree,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(text = "동의하고 시작", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "동의하고 시작", fontSize = 19.sp, fontWeight = FontWeight.Medium)
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -124,7 +155,7 @@ fun RoutinePlaceConsentDialog(
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(text = "다음에", fontSize = 18.sp)
+                    Text(text = "다음에", fontSize = 19.sp)
                 }
             }
         }
@@ -136,16 +167,16 @@ private fun ConsentSection(title: String, body: String) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = title,
-            fontSize = 15.sp,
+            fontSize = SECTION_TITLE_SIZE,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.height(4.dp))
         Text(
             text = body,
-            fontSize = 14.sp,
+            fontSize = BODY_SIZE,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 20.sp
+            lineHeight = 24.sp
         )
     }
 }
@@ -161,11 +192,14 @@ fun RoutinePlaceManageDialog(
     uiState: RoutinePlaceUiState,
     onConfirmCandidate: (Long, String) -> Unit,
     onDismissCandidate: (Long) -> Unit,
-    onUpdateCategory: (Long, String) -> Unit,
+    onUpdatePlace: (id: Long, category: String, days: List<String>, start: String?, end: String?) -> Unit,
     onDeletePlace: (Long) -> Unit,
-    onRevokeConsent: () -> Unit,
+    onToggleDetection: (Boolean) -> Unit,
+    onWithdrawConsent: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var showWithdrawConfirm by remember { mutableStateOf(false) }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -175,12 +209,12 @@ fun RoutinePlaceManageDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 560.dp)
+                    .heightIn(max = 640.dp)
                     .padding(24.dp)
             ) {
                 Text(
                     text = "반복 방문 장소",
-                    fontSize = 22.sp,
+                    fontSize = TITLE_SIZE,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -195,11 +229,11 @@ fun RoutinePlaceManageDialog(
                     if (uiState.candidates.isNotEmpty()) {
                         Text(
                             text = "이런 곳에 자주 가시는 것 같아요",
-                            fontSize = 15.sp,
+                            fontSize = SECTION_TITLE_SIZE,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(10.dp))
                         uiState.candidates.forEach { candidate ->
                             CandidateRow(
                                 candidate = candidate,
@@ -207,53 +241,112 @@ fun RoutinePlaceManageDialog(
                                 onConfirm = { category -> onConfirmCandidate(candidate.id, category) },
                                 onDismiss = { onDismissCandidate(candidate.id) }
                             )
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(14.dp))
                         }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
                     }
 
                     Text(
                         text = "확정된 장소",
-                        fontSize = 15.sp,
+                        fontSize = SECTION_TITLE_SIZE,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(10.dp))
                     if (uiState.confirmedPlaces.isEmpty()) {
                         Text(
                             text = "아직 확정된 장소가 없어요. 반복해서 방문하시면 며칠 후 후보로 제안해드릴게요.",
-                            fontSize = 14.sp,
+                            fontSize = BODY_SIZE,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 20.sp
+                            lineHeight = 24.sp
                         )
                     } else {
                         uiState.confirmedPlaces.forEach { place ->
                             ConfirmedPlaceRow(
                                 place = place,
                                 isProcessing = uiState.isProcessing,
-                                onUpdateCategory = { category -> onUpdateCategory(place.id, category) },
+                                onUpdate = { category, days, start, end -> onUpdatePlace(place.id, category, days, start, end) },
                                 onDelete = { onDeletePlace(place.id) }
                             )
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(10.dp))
                         }
                     }
                 }
 
                 Spacer(Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(10.dp))
 
-                TextButton(onClick = onRevokeConsent, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = "감지 기능 끄고 저장된 정보 삭제", color = MaterialTheme.colorScheme.error)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "반복 방문 장소 감지",
+                            fontSize = SECTION_TITLE_SIZE,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (uiState.consented) "켜짐 · 새 패턴을 계속 찾아요" else "꺼짐 · 확정해둔 장소는 그대로 남아있어요",
+                            fontSize = CAPTION_SIZE,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = uiState.consented,
+                        onCheckedChange = onToggleDetection,
+                        enabled = !uiState.isProcessing
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                TextButton(onClick = { showWithdrawConfirm = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "동의 완전 철회 (확정 장소 포함 모든 정보 삭제)",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = CAPTION_SIZE
+                    )
                 }
 
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(text = "닫기", fontSize = 16.sp)
+                    Text(text = "닫기", fontSize = BUTTON_TEXT_SIZE)
                 }
             }
         }
+    }
+
+    if (showWithdrawConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWithdrawConfirm = false },
+            title = { Text("정말 철회하시겠어요?", fontSize = SECTION_TITLE_SIZE, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "확정해두신 장소를 포함해 저장된 모든 정보가 즉시 삭제되며 되돌릴 수 없어요.",
+                    fontSize = BODY_SIZE,
+                    lineHeight = 24.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWithdrawConfirm = false
+                    onWithdrawConsent()
+                }) {
+                    Text("철회 및 삭제", color = MaterialTheme.colorScheme.error, fontSize = BUTTON_TEXT_SIZE)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWithdrawConfirm = false }) {
+                    Text("취소", fontSize = BUTTON_TEXT_SIZE)
+                }
+            }
+        )
     }
 }
 
@@ -269,20 +362,21 @@ private fun CandidateRow(
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = candidate.previewAddress ?: "장소 확인 중",
-            fontSize = 14.sp,
+            fontSize = BODY_SIZE,
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = formatSchedule(candidate),
-            fontSize = 13.sp,
+            fontSize = CAPTION_SIZE,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = label,
                 onValueChange = { label = it },
-                placeholder = { Text("예: 회사, 병원") },
+                placeholder = { Text("예: 회사, 병원", fontSize = BODY_SIZE) },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = BODY_SIZE),
                 singleLine = true,
                 enabled = !isProcessing,
                 modifier = Modifier.weight(1f)
@@ -291,11 +385,11 @@ private fun CandidateRow(
                 onClick = { onConfirm(label) },
                 enabled = !isProcessing && label.isNotBlank()
             ) {
-                Text("확정")
+                Text("확정", fontSize = BUTTON_TEXT_SIZE)
             }
         }
         TextButton(onClick = onDismiss, enabled = !isProcessing) {
-            Text("아니에요", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("아니에요", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = BUTTON_TEXT_SIZE)
         }
     }
 }
@@ -304,43 +398,83 @@ private fun CandidateRow(
 private fun ConfirmedPlaceRow(
     place: RoutinePlaceResponse,
     isProcessing: Boolean,
-    onUpdateCategory: (String) -> Unit,
+    onUpdate: (category: String, days: List<String>, start: String?, end: String?) -> Unit,
     onDelete: () -> Unit
 ) {
     var editing by remember(place.id) { mutableStateOf(false) }
     var label by remember(place.id) { mutableStateOf(place.category.orEmpty()) }
+    var selectedDays by remember(place.id) { mutableStateOf(place.routineDays.toSet()) }
+    var startTime by remember(place.id) { mutableStateOf(place.routineTimeRangeStart?.take(5).orEmpty()) }
+    var endTime by remember(place.id) { mutableStateOf(place.routineTimeRangeEnd?.take(5).orEmpty()) }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                if (editing) {
+                    OutlinedTextField(
+                        value = label,
+                        onValueChange = { label = it },
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = BODY_SIZE),
+                        singleLine = true,
+                        enabled = !isProcessing,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text(text = place.category ?: "(라벨 없음)", fontSize = SECTION_TITLE_SIZE, color = MaterialTheme.colorScheme.onSurface)
+                    Text(text = formatSchedule(place), fontSize = CAPTION_SIZE, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (editing) {
+                TextButton(
+                    onClick = {
+                        editing = false
+                        onUpdate(label, selectedDays.toList(), startTime.trim().ifBlank { null }, endTime.trim().ifBlank { null })
+                    },
+                    enabled = !isProcessing && label.isNotBlank()
+                ) { Text("저장", fontSize = BUTTON_TEXT_SIZE) }
+            } else {
+                TextButton(onClick = { editing = true }, enabled = !isProcessing) { Text("수정", fontSize = BUTTON_TEXT_SIZE) }
+            }
+            TextButton(onClick = onDelete, enabled = !isProcessing) {
+                Text("삭제", color = MaterialTheme.colorScheme.error, fontSize = BUTTON_TEXT_SIZE)
+            }
+        }
+
+        if (editing) {
+            Spacer(Modifier.height(8.dp))
+            Text("요일", fontSize = CAPTION_SIZE, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            WeekdaySelector(
+                selected = selectedDays,
+                onToggle = { day -> selectedDays = if (day in selectedDays) selectedDays - day else selectedDays + day },
+                enabled = !isProcessing
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it },
+                    value = startTime,
+                    onValueChange = { startTime = it },
+                    label = { Text("시작 (HH:mm)", fontSize = CAPTION_SIZE) },
+                    placeholder = { Text("09:00", fontSize = BODY_SIZE) },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = BODY_SIZE),
                     singleLine = true,
                     enabled = !isProcessing,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.weight(1f)
                 )
-            } else {
-                Text(text = place.category ?: "(라벨 없음)", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                OutlinedTextField(
+                    value = endTime,
+                    onValueChange = { endTime = it },
+                    label = { Text("종료 (HH:mm)", fontSize = CAPTION_SIZE) },
+                    placeholder = { Text("18:00", fontSize = BODY_SIZE) },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = BODY_SIZE),
+                    singleLine = true,
+                    enabled = !isProcessing,
+                    modifier = Modifier.weight(1f)
+                )
             }
-            Text(text = formatSchedule(place), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (editing) {
-            TextButton(
-                onClick = {
-                    editing = false
-                    onUpdateCategory(label)
-                },
-                enabled = !isProcessing && label.isNotBlank()
-            ) { Text("저장") }
-        } else {
-            TextButton(onClick = { editing = true }, enabled = !isProcessing) { Text("수정") }
-        }
-        TextButton(onClick = onDelete, enabled = !isProcessing) {
-            Text("삭제", color = MaterialTheme.colorScheme.error)
         }
     }
 }

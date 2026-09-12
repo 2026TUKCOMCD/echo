@@ -202,10 +202,15 @@ fun SettingsScreen(
             uiState = routineUiState,
             onConfirmCandidate = routinePlaceViewModel::confirmCandidate,
             onDismissCandidate = routinePlaceViewModel::dismissCandidate,
-            onUpdateCategory = routinePlaceViewModel::updateCategory,
+            onUpdatePlace = { id, category, days, start, end ->
+                routinePlaceViewModel.updatePlace(id, category, days, start, end)
+            },
             onDeletePlace = routinePlaceViewModel::deletePlace,
-            onRevokeConsent = {
-                routinePlaceViewModel.revokeConsent()
+            onToggleDetection = { turnOn ->
+                if (turnOn) routinePlaceViewModel.grantConsent() else routinePlaceViewModel.turnOffDetection()
+            },
+            onWithdrawConsent = {
+                routinePlaceViewModel.withdrawConsent()
                 showRoutineManageDialog = false
             },
             onDismiss = { showRoutineManageDialog = false }
@@ -862,8 +867,9 @@ private fun RoutinePlaceRow(
             Spacer(Modifier.height(3.dp))
             Text(
                 text = when {
-                    !consented -> "미사용 · 눌러서 감지 기능 켜기"
                     candidateCount > 0 -> "확인할 후보 ${candidateCount}개 있음"
+                    !consented && confirmedCount > 0 -> "감지 꺼짐 · ${confirmedCount}곳 등록됨"
+                    !consented -> "미사용 · 눌러서 감지 기능 켜기"
                     confirmedCount > 0 -> "${confirmedCount}곳 등록됨"
                     else -> "사용 중 · 반복 방문 패턴을 살펴보고 있어요"
                 },

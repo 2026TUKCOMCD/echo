@@ -45,21 +45,20 @@ class RoutinePlaceViewModel(
             _uiState.update { it.copy(isLoading = true) }
             when (val consentResult = repository.getConsent()) {
                 is ApiResult.Success -> {
-                    if (consentResult.data.consented) {
-                        val confirmed = (repository.getConfirmedPlaces() as? ApiResult.Success)?.data.orEmpty()
-                        val candidates = (repository.getCandidates() as? ApiResult.Success)?.data.orEmpty()
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                consented = true,
-                                confirmedPlaces = confirmed,
-                                candidates = candidates
-                            )
-                        }
+                    // 확정 장소는 동의 여부와 무관하게 항상 보여준다(감지를 꺼도 확정 장소는 유지되므로).
+                    val confirmed = (repository.getConfirmedPlaces() as? ApiResult.Success)?.data.orEmpty()
+                    val candidates = if (consentResult.data.consented) {
+                        (repository.getCandidates() as? ApiResult.Success)?.data.orEmpty()
                     } else {
-                        _uiState.update {
-                            it.copy(isLoading = false, consented = false, confirmedPlaces = emptyList(), candidates = emptyList())
-                        }
+                        emptyList()
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            consented = consentResult.data.consented,
+                            confirmedPlaces = confirmed,
+                            candidates = candidates
+                        )
                     }
                 }
                 is ApiResult.Error -> _uiState.update {
@@ -86,8 +85,11 @@ class RoutinePlaceViewModel(
         }
     }
 
-    /** 동의 철회 - 서버가 저장된 방문 이력·루틴 장소를 즉시 전량 삭제한다 */
-    fun revokeConsent() {
+    /**
+     * 감지 기능 끄기(일시 중지) - 서버가 임시 방문 이력·미확인 후보만 정리하고,
+     * 이미 확정한 장소는 남긴다. 완전히 다 지우고 싶으면 withdrawConsent() 사용.
+     */
+    fun turnOffDetection() {
         viewModelScope.launch {
             _uiState.update { it.copy(isProcessing = true) }
             when (repository.setConsent(false)) {
@@ -95,9 +97,32 @@ class RoutinePlaceViewModel(
                     it.copy(
                         isProcessing = false,
                         consented = false,
+                        candidates = emptyList(),
+                        savedMessage = "감지를 껐어요. 확정해둔 장소는 그대로 남아있어요"
+                    )
+                }
+                is ApiResult.Error -> _uiState.update {
+                    it.copy(isProcessing = false, errorMessage = "처리에 실패했습니다. 다시 시도해주세요.")
+                }
+            }
+        }
+    }
+
+    /**
+     * 완전 철회 - 확정된 장소를 포함해 저장된 모든 관련 데이터를 즉시 삭제한다
+     * (개인정보보호법상 동의 철회 시 파기 원칙).
+     */
+    fun withdrawConsent() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isProcessing = true) }
+            when (repository.withdrawConsent()) {
+                is ApiResult.Success -> _uiState.update {
+                    it.copy(
+                        isProcessing = false,
+                        consented = false,
                         confirmedPlaces = emptyList(),
                         candidates = emptyList(),
-                        savedMessage = "감지를 중지하고 저장된 정보를 삭제했어요"
+                        savedMessage = "동의를 철회하고 저장된 모든 정보를 삭제했어요"
                     )
                 }
                 is ApiResult.Error -> _uiState.update {
@@ -145,12 +170,18 @@ class RoutinePlaceViewModel(
         }
     }
 
-    /** 확정된 장소의 라벨 수정 */
-    fun updateCategory(id: Long, category: String) {
+    /** 확정된 장소의 라벨과 요일/시간대 수정 - 요일/시간대를 보내면 이후 자동 재계산이 덮어쓰지 않는다 */
+    fun updatePlace(
+        id: Long,
+        category: String,
+        routineDays: List<String>? = null,
+        routineTimeRangeStart: String? = null,
+        routineTimeRangeEnd: String? = null
+    ) {
         if (category.isBlank()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isProcessing = true) }
-            when (val result = repository.updateCategory(id, category.trim())) {
+            when (val result = repository.update(id, category.trim(), routineDays, routineTimeRangeStart, routineTimeRangeEnd)) {
                 is ApiResult.Success -> _uiState.update {
                     it.copy(
                         isProcessing = false,

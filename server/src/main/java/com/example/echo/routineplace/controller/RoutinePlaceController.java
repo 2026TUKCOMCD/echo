@@ -35,6 +35,15 @@ public class RoutinePlaceController {
         return ResponseEntity.ok(routinePlaceService.setConsent(userId, request.getConsented()));
     }
 
+    /**
+     * 완전 철회 - 확정된 장소를 포함해 저장된 모든 관련 데이터를 즉시 삭제한다.
+     * 감지 기능만 잠시 끄고 확정 장소는 남기고 싶으면 PUT /consent {consented:false}를 대신 사용.
+     */
+    @DeleteMapping("/consent")
+    public ResponseEntity<ConsentResponse> withdrawConsent(@CurrentUser Long userId) {
+        return ResponseEntity.ok(routinePlaceService.withdrawConsent(userId));
+    }
+
     @GetMapping("/candidates")
     public ResponseEntity<List<RoutinePlaceResponse>> getCandidates(@CurrentUser Long userId) {
         return ResponseEntity.ok(routinePlaceService.getCandidates(userId));
@@ -50,20 +59,29 @@ public class RoutinePlaceController {
             @CurrentUser Long userId,
             @PathVariable Long id,
             @Valid @RequestBody RoutinePlaceConfirmRequest request) {
-        return ResponseEntity.ok(routinePlaceService.confirm(userId, id, request.getCategory()));
+        return ResponseEntity.ok(routinePlaceService.confirm(userId, id, request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<RoutinePlaceResponse> updateCategory(
+    public ResponseEntity<RoutinePlaceResponse> update(
             @CurrentUser Long userId,
             @PathVariable Long id,
             @Valid @RequestBody RoutinePlaceConfirmRequest request) {
-        return ResponseEntity.ok(routinePlaceService.updateCategory(userId, id, request.getCategory()));
+        return ResponseEntity.ok(routinePlaceService.update(userId, id, request));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@CurrentUser Long userId, @PathVariable Long id) {
         routinePlaceService.delete(userId, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 개발/테스트 편의용: 매일 새벽 스케줄러를 기다리지 않고 본인 계정의 패턴 감지를 즉시 실행.
+     */
+    @PostMapping("/detect-now")
+    public ResponseEntity<Void> detectNow(@CurrentUser Long userId) {
+        routinePlaceService.detectNow(userId);
         return ResponseEntity.noContent().build();
     }
 }

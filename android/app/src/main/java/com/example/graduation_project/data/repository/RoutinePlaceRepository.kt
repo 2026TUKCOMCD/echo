@@ -19,6 +19,10 @@ class RoutinePlaceRepository(
     suspend fun setConsent(consented: Boolean): ApiResult<ConsentResponse> =
         safeApiCall { routinePlaceApi.updateConsent(ConsentUpdateRequest(consented)) }
 
+    /** 완전 철회 - 확정된 장소를 포함해 저장된 모든 관련 데이터를 즉시 삭제 */
+    suspend fun withdrawConsent(): ApiResult<ConsentResponse> =
+        safeApiCall { routinePlaceApi.withdrawConsent() }
+
     suspend fun getCandidates(): ApiResult<List<RoutinePlaceResponse>> =
         safeApiCall { routinePlaceApi.getCandidates() }
 
@@ -28,8 +32,16 @@ class RoutinePlaceRepository(
     suspend fun confirm(id: Long, category: String): ApiResult<RoutinePlaceResponse> =
         safeApiCall { routinePlaceApi.confirm(id, RoutinePlaceConfirmRequest(category)) }
 
-    suspend fun updateCategory(id: Long, category: String): ApiResult<RoutinePlaceResponse> =
-        safeApiCall { routinePlaceApi.updateCategory(id, RoutinePlaceConfirmRequest(category)) }
+    suspend fun update(
+        id: Long,
+        category: String,
+        routineDays: List<String>? = null,
+        routineTimeRangeStart: String? = null,
+        routineTimeRangeEnd: String? = null
+    ): ApiResult<RoutinePlaceResponse> =
+        safeApiCall {
+            routinePlaceApi.update(id, RoutinePlaceConfirmRequest(category, routineDays, routineTimeRangeStart, routineTimeRangeEnd))
+        }
 
     suspend fun delete(id: Long): ApiResult<Unit> =
         safeApiCall { routinePlaceApi.delete(id) }

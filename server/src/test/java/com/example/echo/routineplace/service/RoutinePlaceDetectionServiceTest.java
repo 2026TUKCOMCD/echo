@@ -166,4 +166,34 @@ class RoutinePlaceDetectionServiceTest {
         assertThat(confirmed.getCategory()).isEqualTo("회사"); // 라벨은 그대로 유지
         assertThat(confirmed.getOccurrenceCount()).isEqualTo(3); // 통계만 갱신
     }
+
+    @Test
+    @DisplayName("사용자가 요일/시간대를 직접 수정한 장소는 재계산이 덮어쓰지 않는다")
+    void manuallyEditedSchedule_notOverwrittenByDetection() {
+        LocalDate base = LocalDate.of(2026, 6, 1);
+        List<VisitOccurrence> occurrences = List.of(
+                occurrenceOn(base),
+                occurrenceOn(base.plusWeeks(1)),
+                occurrenceOn(base.plusWeeks(2))
+        );
+        when(visitOccurrenceRepository.findByUserIdAndVisitDateAfter(eq(USER_ID), any())).thenReturn(occurrences);
+
+        RoutinePlace confirmed = RoutinePlace.builder()
+                .userId(USER_ID)
+                .latitude(LAT)
+                .longitude(LNG)
+                .status(RoutinePlaceStatus.CONFIRMED)
+                .category("회사")
+                .build();
+        confirmed.applyManualSchedule("MONDAY,WEDNESDAY", LocalTime.of(9, 0), LocalTime.of(18, 0));
+        when(routinePlaceRepository.findByUserId(USER_ID)).thenReturn(new java.util.ArrayList<>(List.of(confirmed)));
+
+        detectionService.detectForUser(USER_ID);
+
+        // 감지된 패턴(SATURDAY, 14~16시)이 아니라 사용자가 직접 넣은 값이 그대로 남아야 함
+        assertThat(confirmed.getRoutineDays()).isEqualTo("MONDAY,WEDNESDAY");
+        assertThat(confirmed.getRoutineTimeRangeStart()).isEqualTo(LocalTime.of(9, 0));
+        assertThat(confirmed.getRoutineTimeRangeEnd()).isEqualTo(LocalTime.of(18, 0));
+        assertThat(confirmed.getOccurrenceCount()).isEqualTo(3); // 통계(횟수)는 계속 갱신됨
+    }
 }
