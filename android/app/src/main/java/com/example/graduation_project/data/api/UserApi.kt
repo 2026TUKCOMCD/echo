@@ -2,6 +2,7 @@ package com.example.graduation_project.data.api
 
 import com.example.graduation_project.data.model.*
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PUT
 import retrofit2.http.Query
@@ -61,4 +62,7 @@ interface UserApi {
 
     @GET("/api/users/me/onboarding-status")
     suspend fun getOnboardingStatus(): OnboardingStatusResponse
+
+    @DELETE("/api/users/me/conversation-data")
+    suspend fun resetConversationData()
 }

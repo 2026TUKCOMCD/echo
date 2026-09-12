@@ -511,6 +511,7 @@ class ConversationServiceTest2 {
         @DisplayName("성공: 장기기억 추출은 컨텍스트 정리 전에 백그라운드로 제출되고, 원본과 분리된 스냅샷이 전달된다")
         void success_submitsMemoryExtractionBeforeContextIsFinalizedWithSnapshot() {
             // given
+            mockContext.setStartedAt(LocalDateTime.of(2026, 9, 12, 10, 0));
             mockContext.getConversationHistory().add(
                     ConversationTurn.builder()
                             .userMessage("테스트")
@@ -541,6 +542,7 @@ class ConversationServiceTest2 {
             assertThat(snapshot).isNotSameAs(mockContext);
             assertThat(snapshot.getUserId()).isEqualTo(mockContext.getUserId());
             assertThat(snapshot.getConversationHistory()).isEqualTo(mockContext.getConversationHistory());
+            assertThat(snapshot.getStartedAt()).isEqualTo(mockContext.getStartedAt());
         }
 
         @Test
