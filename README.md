@@ -6,9 +6,32 @@
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.9-6DB33F?logo=springboot&logoColor=white)
 ![Android](https://img.shields.io/badge/Android-Jetpack%20Compose-3DDC84?logo=android&logoColor=white)
 
+### 목차
+- [📖 개요](#-개요)
+- [🚀 빠른 시작](#-빠른-시작)
+- [📁 시스템 구성도](#-시스템-구성도)
+- [📂 프로젝트 구조](#-프로젝트-구조)
+- [✨ 주요 기능](#-주요-기능)
+- [🛠️ 개발 환경](#️-개발-환경)
+- [🏗️ 운영 환경](#️-운영-환경)
+- [🔍 데모 환경](#-데모-환경)
+- [📚 문서](#-문서)
+
 ## 📖 개요
 본 프로젝트는 경도인지장애를 가진 분들이 일상 속에서 자연스럽게 기억을 회상하고, 긍정적인 감정을 유지할 수 있도록 돕는 AI 음성 대화 시스템입니다.
 사용자의 건강 데이터(갤럭시 워치 → Health Connect), 위치 정보, 날씨, 개인 선호도를 활용하여 맞춤형 회상 대화를 생성하고, 하루의 대화를 일기 형식으로 요약하여 기록합니다.
+
+## 🚀 빠른 시작
+```bash
+# 서버 (server/)
+./gradlew build      # 빌드
+./gradlew test       # 테스트
+./gradlew bootRun    # 실행 (Swagger UI: http://localhost:8080/swagger-ui.html)
+
+# Android (android/)
+./gradlew assembleDebug   # 디버그 APK 빌드
+./gradlew installDebug    # 기기 설치
+```
 
 ## 📁 시스템 구성도
 ![제목 없음](https://github.com/user-attachments/assets/f75526ae-6124-46e2-906b-58ff658536e6)
@@ -52,18 +75,6 @@ echo/
 | **웹 서버** | Nginx (HTTPS 적용) |
 | **배포 방식** | GitHub Actions, Docker(재생성 배포) |
 | **DB 사양** | RDS MySQL |
-
-## 🚀 빌드 및 실행
-```bash
-# 서버 (server/)
-./gradlew build      # 빌드
-./gradlew test       # 테스트
-./gradlew bootRun    # 실행 (Swagger UI: http://localhost:8080/swagger-ui.html)
-
-# Android (android/)
-./gradlew assembleDebug   # 디버그 APK 빌드
-./gradlew installDebug    # 기기 설치
-```
 
 ## 🔍 데모 환경
 | 구분 | 상세 사양 | 비고 |
