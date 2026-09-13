@@ -143,6 +143,18 @@ class ElevenLabsTtsProviderTest {
     }
 
     @Test
+    @DisplayName("요청에 language_code=ko가 항상 포함됨 (문장 내 외국어 단어로 인한 언어 전환 방지)")
+    void request_alwaysIncludesKoreanLanguageCode() {
+        when(elevenLabsClient.synthesize(any(), any())).thenReturn("audio".getBytes());
+
+        provider.synthesize("테스트", null);
+
+        verify(elevenLabsClient).synthesize(eq("sf8Bpb1IU97NI9BHSMRf"), argThat(req ->
+            "ko".equals(req.getLanguageCode())
+        ));
+    }
+
+    @Test
     @DisplayName("voiceTone이 없으면 DEFAULT_VOICE_PARAMS(stability=0.7)가 사용됨")
     void noVoiceTone_usesDefaultVoiceParams() {
         when(elevenLabsClient.synthesize(any(), any())).thenReturn("audio".getBytes());

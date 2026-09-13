@@ -40,7 +40,11 @@ public class KakaoGeocodingResponse {
     }
 
     /**
-     * 빌딩명 > 도로명주소 > 지번주소 순으로 가장 의미 있는 장소명 반환
+     * 빌딩명 > 도로명주소 > 지번주소 순으로 가장 의미 있는 장소명 반환.
+     *
+     * 빌딩명은 건물주가 임의로 등록한 값이라 영어/외국어 표기인 경우가 있다.
+     * TTS가 이를 그대로 읽으면 문장 중간에 다른 언어 발음으로 전환되는 문제가 있어,
+     * 한글이 하나도 없는 빌딩명은 건너뛰고 도로명주소로 대체한다.
      */
     public String getBestPlaceName() {
         if (documents == null || documents.isEmpty()) return null;
@@ -49,7 +53,8 @@ public class KakaoGeocodingResponse {
 
         if (doc.getRoadAddress() != null
                 && doc.getRoadAddress().getBuildingName() != null
-                && !doc.getRoadAddress().getBuildingName().isBlank()) {
+                && !doc.getRoadAddress().getBuildingName().isBlank()
+                && containsHangul(doc.getRoadAddress().getBuildingName())) {
             return doc.getRoadAddress().getBuildingName();
         }
         if (doc.getRoadAddress() != null
@@ -60,5 +65,9 @@ public class KakaoGeocodingResponse {
             return doc.getAddress().getAddressName();
         }
         return null;
+    }
+
+    private static boolean containsHangul(String text) {
+        return text.chars().anyMatch(c -> c >= 0xAC00 && c <= 0xD7A3);
     }
 }
