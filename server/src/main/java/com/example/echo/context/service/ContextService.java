@@ -10,6 +10,9 @@ import com.example.echo.health.service.HealthDataService;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.RawLocationData;
 import com.example.echo.location.service.LocationService;
+import com.example.echo.routineplace.dto.RoutinePlaceInfo;
+import com.example.echo.routineplace.service.RoutinePlaceService;
+import com.example.echo.routineplace.service.VisitOccurrenceRecordingService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -41,6 +45,8 @@ public class ContextService {
     private final HealthDataService healthDataService;
     private final WeatherClient weatherClient;
     private final LocationService locationService;
+    private final VisitOccurrenceRecordingService visitOccurrenceRecordingService;
+    private final RoutinePlaceService routinePlaceService;
     private final Clock clock;
 
     /**
@@ -80,8 +86,18 @@ public class ContextService {
         //    등록된 집 좌표를 함께 넘겨 방문 장소를 집/외출로 분류(isHome)한다.
         Double homeLatitude = preferences != null ? preferences.getHomeLatitude() : null;
         Double homeLongitude = preferences != null ? preferences.getHomeLongitude() : null;
+
+        // 4-1. 루틴 방문 장소: 동의한 사용자만 오늘 방문 이력을 기록(패턴 감지 원재료).
+        //      서버가 직접 동의 여부를 확인한다(클라이언트가 보낸 값을 신뢰하지 않음).
+        if (rawLocationData != null && routinePlaceService.hasConsent(userId)) {
+            visitOccurrenceRecordingService.recordOccurrences(
+                    userId, rawLocationData, homeLatitude, homeLongitude, LocalDate.now(clock));
+        }
+        // 동의를 철회하면 확정 장소가 이미 전량 삭제되므로 여기서 별도 동의 체크 없이 조회해도 안전
+        List<RoutinePlaceInfo> confirmedRoutinePlaces = routinePlaceService.getConfirmedPlaceInfos(userId);
+
         LocationData locationData = locationService.enrichLocationData(
-                rawLocationData, homeLatitude, homeLongitude);
+                rawLocationData, homeLatitude, homeLongitude, confirmedRoutinePlaces);
 
         // 5. 컨텍스트 생성 및 저장
         WeatherData weather = weatherClient.getCachedUserWeather(userId);
@@ -102,6 +118,7 @@ public class ContextService {
                 .preferences(preferences)
                 .todayWeather(weather)
                 .locationData(locationData)
+                .confirmedRoutinePlaces(confirmedRoutinePlaces)
                 .lastAccessTime(LocalDateTime.now(clock))
                 .isActive(true)
                 .build();

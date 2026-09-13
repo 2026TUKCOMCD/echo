@@ -20,6 +20,7 @@ import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
+import com.example.echo.routineplace.dto.RoutinePlaceInfo;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -172,6 +173,11 @@ public class PromptService {
         variables.put("visitedPlacesText", buildVisitedPlacesText(outings, daytimeHomeStays));
         variables.put("todayActivityGuide", buildTodayActivityGuide(outings, daytimeHomeStays));
 
+        // 4-7-1. 확정된 루틴 방문 장소 (v17~) - 오늘 방문 여부와 무관하게, 사용자가 미리 확정해둔
+        // 반복 방문 장소(회사/병원 등)를 배경지식으로 제공. 오늘 실제로 다녀온 곳 판단은
+        // 위 outings/daytimeHomeStays(=[오늘의 위치·활동])를 따르도록 프롬프트에서 안내한다.
+        variables.put("routinePlacesText", buildRoutinePlacesText(context.getConfirmedRoutinePlaces()));
+
         if (namedPlaces.isEmpty()) {
             log.info("[프롬프트] 위치 데이터 없음 - locationData 존재: {}", locationData != null);
         } else {
@@ -262,16 +268,17 @@ public class PromptService {
     }
 
     /**
-     * 역지오코딩에 성공해 장소명이 있는 방문 장소만 추림
+     * 역지오코딩에 성공해 장소명이 있거나, 루틴 방문 장소로 매칭돼 카테고리를 아는 방문 장소만 추림
      *
-     * placeName이 없으면(역지오코딩 실패) "오늘 활동" 판단·표시 대상에서 제외한다.
+     * 둘 다 없으면(역지오코딩 실패이고 루틴 매칭도 안 됨) "오늘 활동" 판단·표시 대상에서 제외한다.
      */
     private List<VisitedPlace> extractNamedPlaces(LocationData locationData) {
         if (locationData == null || locationData.getVisitedPlaces() == null) {
             return List.of();
         }
         return locationData.getVisitedPlaces().stream()
-                .filter(place -> place.getPlaceName() != null && !place.getPlaceName().isBlank())
+                .filter(place -> (place.getPlaceName() != null && !place.getPlaceName().isBlank())
+                        || place.getRoutineCategory() != null)
                 .toList();
     }
 
@@ -491,11 +498,56 @@ public class PromptService {
         return sb.toString().trim();
     }
 
+    private static final String NO_ROUTINE_PLACES_TEXT = "등록된 반복 방문 장소가 없습니다.";
+
+    private static final Map<String, String> WEEKDAY_KOREAN = Map.of(
+            "MONDAY", "월", "TUESDAY", "화", "WEDNESDAY", "수", "THURSDAY", "목",
+            "FRIDAY", "금", "SATURDAY", "토", "SUNDAY", "일");
+
+    /**
+     * 확정된 루틴 방문 장소 목록을 프롬프트용 텍스트로 변환.
+     * "- 회사 (월,화,수,목,금 / 오전 9시~오후 6시경)" 형식. 오늘 실제 방문 여부와는 무관한
+     * 배경지식이므로, 오늘 언급 여부 판단은 buildTodayActivityGuide(외출/집 체류)를 따르게 한다.
+     */
+    private String buildRoutinePlacesText(List<RoutinePlaceInfo> routinePlaces) {
+        if (routinePlaces == null || routinePlaces.isEmpty()) {
+            return NO_ROUTINE_PLACES_TEXT;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (RoutinePlaceInfo place : routinePlaces) {
+            sb.append(String.format("- %s", place.getCategory()));
+
+            String days = place.getRoutineDays() == null ? "" : place.getRoutineDays().stream()
+                    .map(day -> WEEKDAY_KOREAN.getOrDefault(day, day))
+                    .collect(java.util.stream.Collectors.joining(","));
+            boolean hasTimeRange = place.getRoutineTimeRangeStart() != null && place.getRoutineTimeRangeEnd() != null;
+
+            if (!days.isBlank() || hasTimeRange) {
+                sb.append(" (").append(days);
+                if (hasTimeRange) {
+                    if (!days.isBlank()) sb.append(" / ");
+                    sb.append(formatTime(place.getRoutineTimeRangeStart()))
+                            .append("~")
+                            .append(formatTime(place.getRoutineTimeRangeEnd()))
+                            .append("경");
+                }
+                sb.append(")");
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
     /**
      * 외출 장소 한 줄 포맷: "- 장소명 (시간~시간, N분 체류) (날씨: ...)"
+     *
+     * 루틴 방문 장소로 매칭된 곳은 역지오코딩된 상호명 대신 사용자가 붙인 카테고리 라벨을
+     * 우선 표시한다(예: "스타벅스 강남점" 대신 "회사").
      */
     private void appendOutingLine(StringBuilder sb, VisitedPlace place) {
-        sb.append(String.format("- %s", place.getPlaceName()));
+        String displayName = place.getRoutineCategory() != null ? place.getRoutineCategory() : place.getPlaceName();
+        sb.append(String.format("- %s", displayName));
 
         if (place.getVisitStartTime() != null && place.getVisitEndTime() != null) {
             sb.append(String.format(" (%s~%s",

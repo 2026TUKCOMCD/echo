@@ -60,4 +60,7 @@ class UserRepository(
 
     suspend fun resetConversationData(): ApiResult<Unit> =
         safeApiCall { userApi.resetConversationData() }
+
+    suspend fun seedDemoConversationData(): ApiResult<Unit> =
+        safeApiCall { userApi.seedDemoConversationData() }
 }
