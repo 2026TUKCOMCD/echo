@@ -227,7 +227,7 @@ class LocationCollectionService : Service() {
             if (location != null) {
                 locationStorageManager.saveLocation(location.latitude, location.longitude)
                 locationCollectionStorage.saveLastCollectionTime(System.currentTimeMillis())
-                Log.d(TAG, "✅ 위치 수집 완료: lat=${location.latitude}, lon=${location.longitude}")
+                Log.d(TAG, "✅ 위치 수집 완료")
             } else {
                 // 위치가 null인 경우 상세 원인 분석
                 logLocationNullReason()
