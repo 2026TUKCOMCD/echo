@@ -394,6 +394,8 @@ fun SettingsScreen(
                         title = "내 정보",
                         iconTint = colors.accentBlue
                     )
+                    PreferenceRow("이름", uiState.userName, enabled = enabled) { editingField = "name" }
+                    HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("생년월일", uiState.birthday, enabled = enabled) { editingField = "birthday" }
                     HorizontalDivider(color = colors.borderSubtle, modifier = Modifier.padding(horizontal = 20.dp))
                     PreferenceRow("거주 지역", uiState.location, enabled = enabled) { editingField = "location" }
@@ -718,6 +720,20 @@ fun SettingsScreen(
     fun dismiss() { editingField = null }
 
     when (editingField) {
+        "name" -> TextFieldDialog(
+            title = "이름",
+            hint = "예) 김순자",
+            initialValue = uiState.userName,
+            validate = { v ->
+                when {
+                    v.isBlank() -> "이름을 입력해주세요"
+                    v.trim().length > 50 -> "이름은 50자 이하로 입력해주세요"
+                    else -> null
+                }
+            },
+            onConfirm = { viewModel.updateName(it.trim()); dismiss() },
+            onDismiss = { dismiss() }
+        )
         "birthday" -> DatePickerFieldDialog(
             current = uiState.birthday,
             onSelected = { viewModel.updateBirthday(it.ifBlank { null }); dismiss() },
