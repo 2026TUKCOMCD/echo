@@ -136,7 +136,7 @@ class ConversationDemoSeedServiceTest {
     }
 
     @Test
-    @DisplayName("시딩하면 사용자 정보(직업/가족/취미/루틴 장소)와 어긋나지 않는 장기기억이 저장된다")
+    @DisplayName("시딩하면 가족·루틴 두 화제로만 구성된 장기기억이 저장된다 (관람자 즉흥 응답 부담을 줄이기 위해 직업/취미/학창시절 등은 제외)")
     void seed_populatesMemoriesConsistentWithPersona() {
         UserPreferences prefs = UserPreferences.builder().userId(USER_ID).build();
         when(userPreferencesRepository.findByUserId(USER_ID)).thenReturn(Optional.of(prefs));
@@ -148,9 +148,8 @@ class ConversationDemoSeedServiceTest {
         verify(memoryRepository).saveAll(memoryCaptor.capture());
 
         List<Memory> savedMemories = memoryCaptor.getValue();
-        assertThat(savedMemories).isNotEmpty();
         assertThat(savedMemories).allMatch(memory -> memory.getContent() != null && !memory.getContent().isBlank());
-        assertThat(savedMemories).extracting(Memory::getTopic).contains("직업", "가족", "취미");
+        assertThat(savedMemories).extracting(Memory::getTopic).containsExactlyInAnyOrder("가족", "습관");
     }
 
     @Test

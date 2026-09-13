@@ -59,9 +59,7 @@ public class ConversationDemoSeedService {
     private static final double HOME_LATITUDE = 37.5301;
     private static final double HOME_LONGITUDE = 127.1238;
     private static final String FAMILY_INFO = "딸 한 명과 매주 통화, 명절에 방문";
-    private static final String OCCUPATION = "은퇴 (전직 초등학교 교사)";
-    private static final String HOBBIES = "화초 가꾸기, 텔레비전 트로트 프로그램 시청";
-    private static final String PREFERRED_TOPICS = "손녀 이야기, 옛날 학교 이야기, 날씨";
+    private static final String PREFERRED_TOPICS = "손녀 이야기, 복지관 모임 이야기, 날씨";
     private static final int PREFERRED_SLEEP_HOURS = 7;
     private static final LocalTime CONVERSATION_TIME = LocalTime.of(10, 0);
 
@@ -100,8 +98,6 @@ public class ConversationDemoSeedService {
                 .birthday(BIRTHDAY)
                 .location(LOCATION)
                 .familyInfo(FAMILY_INFO)
-                .occupation(OCCUPATION)
-                .hobbies(HOBBIES)
                 .preferredTopics(PREFERRED_TOPICS)
                 .voiceSettings(VoiceSettings.builder().build())
                 .conversationTime(CONVERSATION_TIME)
@@ -141,13 +137,13 @@ public class ConversationDemoSeedService {
         LocalDate today = LocalDate.now(clock);
 
         saveDiary(userId, today.minusDays(3),
-                "화초에 물을 주고 저녁에는 좋아하는 트로트 프로그램을 봤다. 딸이 전화를 걸어와 손녀 이야기를 한참 들었다.",
+                "딸이 전화를 걸어와 손녀 이야기를 한참 들었다. 다음 주에 놀러 오겠다는 말에 기분이 좋았다.",
                 "포근함", "맑음");
         saveDiary(userId, today.minusDays(2),
-                "동네 복지관에 다녀왔다. 아는 사람들과 이야기를 나누다 보니 시간 가는 줄 몰랐다.",
+                "화요일이라 동네 복지관에 다녀왔다. 아는 사람들과 이야기를 나누다 보니 시간 가는 줄 몰랐다.",
                 "즐거움", "흐림");
         saveDiary(userId, today.minusDays(1),
-                "옛날 학교에서 아이들을 가르치던 시절이 떠올라 오래된 졸업 사진을 꺼내 보았다. 손녀가 그때 내 나이와 비슷하다는 생각이 들었다.",
+                "손녀가 사진을 보내줘서 한참을 들여다봤다. 목소리도 듣고 싶어 딸에게 전화를 걸었다.",
                 "그리움", "맑음");
     }
 
@@ -165,27 +161,20 @@ public class ConversationDemoSeedService {
     }
 
     /**
-     * 장기기억을 심는다. 위 시딩 필드(직업/가족/취미/루틴 장소)와 어긋나지 않는 내용으로 구성해
-     * 회상 대화 중 프롬프트에 함께 주입되는 사용자 선호도·루틴 장소와 모순이 생기지 않도록 한다.
+     * 장기기억을 심는다. 관람자가 즉흥적으로도 답하기 쉽도록 가족·루틴 두 화제로만 구성한다
+     * (직업/취미/학창시절처럼 구체적인 과거사를 "기억해서 답변"해야 하는 화제는 제외) -
+     * 위 시딩 필드(가족·루틴 장소)와 어긋나지 않는 내용으로 구성해 회상 대화 중 프롬프트에 함께
+     * 주입되는 사용자 선호도·루틴 장소와 모순이 생기지 않도록 한다.
      */
     private void seedMemories(Long userId) {
         memoryRepository.deleteByUserId(userId);
         memoryRepository.saveAll(List.of(
-                Memory.builder().userId(userId).lifePeriod("중년기").topic("직업")
-                        .content("정년까지 초등학교에서 아이들을 가르쳤다. 반 아이들과 찍은 졸업 사진을 아직도 간직하고 있다.")
-                        .tags("학교,교사,졸업사진").build(),
                 Memory.builder().userId(userId).lifePeriod("최근").topic("가족")
                         .content("딸이 매주 전화를 걸어 안부를 묻고, 명절마다 손녀를 데리고 집에 방문한다.")
                         .tags("딸,손녀,전화,명절").build(),
-                Memory.builder().userId(userId).lifePeriod("노년기").topic("취미")
-                        .content("베란다에서 화초를 가꾸는 것을 낙으로 삼고 있으며, 저녁마다 트로트 프로그램을 즐겨 본다.")
-                        .tags("화초,트로트,텔레비전").build(),
                 Memory.builder().userId(userId).lifePeriod("최근").topic("습관")
                         .content("화요일과 목요일 오후에는 동네 복지관에 나가 사람들과 시간을 보낸다.")
-                        .tags("복지관,루틴,사교").build(),
-                Memory.builder().userId(userId).lifePeriod("학창시절").topic("사건")
-                        .content("초등학생 시절 담임 선생님께 칭찬을 받았던 일을 아직도 또렷하게 기억한다.")
-                        .tags("학창시절,담임선생님,추억").build()
+                        .tags("복지관,루틴,사교").build()
         ));
     }
 }
