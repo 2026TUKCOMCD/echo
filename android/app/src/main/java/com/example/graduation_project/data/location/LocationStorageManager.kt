@@ -103,6 +103,8 @@ class LocationStorageManager(
      * saveLocation()과 달리 타임스탬프를 직접 지정해 과거 시간대의 체류를 흉내낸다.
      * 기본값(5개, 10분 간격, 5분 전 종료)은 StayPointDetectorImpl의
      * MIN_STAY_DURATION(10분)을 넉넉히 넘겨 확실히 StayPoint로 인식되게 한다.
+     * 서버 쪽 데모 시딩(선호도/루틴 장소)과 동일하게 덮어쓰기로 동작하도록,
+     * 삽입 전에 오늘 기존 위치 데이터를 먼저 지운다.
      */
     suspend fun seedDemoStayVisit(
         latitude: Double,
@@ -113,6 +115,8 @@ class LocationStorageManager(
     ) {
         val now = Instant.now()
         val today = LocalDate.now().format(dateFormatter)
+
+        locationPointDao.deleteByDate(today)
 
         for (i in 0 until pointCount) {
             val minutesAgo = endMinutesAgo + (pointCount - 1 - i) * intervalMinutes
