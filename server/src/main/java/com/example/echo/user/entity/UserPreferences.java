@@ -1,5 +1,6 @@
 package com.example.echo.user.entity;
 
+import com.example.echo.common.crypto.EncryptedStringConverter;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -23,7 +24,8 @@ public class UserPreferences {
     @Column(name = "birthday")
     private LocalDate birthday;
 
-    @Column(name = "location", length = 100)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "location", columnDefinition = "TEXT")
     private String location;
 
     /** 거주지(집) 위도 - "현재 위치를 집으로 등록"으로 저장. 방문 장소를 집/외출로 분류하는 기준 */
@@ -44,19 +46,24 @@ public class UserPreferences {
     @Column(name = "routine_place_consent_at")
     private LocalDateTime routinePlaceConsentAt;
 
-    @Column(name = "family_info", length = 500)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "family_info", columnDefinition = "TEXT")
     private String familyInfo;
 
-    @Column(name = "guardian_email", length = 255)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "guardian_email", columnDefinition = "TEXT")
     private String guardianEmail;
 
-    @Column(name = "occupation", length = 100)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "occupation", columnDefinition = "TEXT")
     private String occupation;
 
-    @Column(name = "hobbies", length = 500)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "hobbies", columnDefinition = "TEXT")
     private String hobbies;
 
-    @Column(name = "preferred_topics", length = 500)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "preferred_topics", columnDefinition = "TEXT")
     private String preferredTopics;
 
     @Column(name = "voice_speed")
