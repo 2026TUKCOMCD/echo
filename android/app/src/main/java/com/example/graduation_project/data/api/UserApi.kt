@@ -22,6 +22,9 @@ interface UserApi {
     @PUT("/api/users/me/preferences")
     suspend fun updatePreferences(@Body preferences: UserPreferences): UserPreferences
 
+    @PUT("/api/users/me/preferences/name")
+    suspend fun updateName(@Body request: NameUpdateRequest): UserPreferences
+
     @PUT("/api/users/me/preferences/birthday")
     suspend fun updateBirthday(@Body request: BirthdayUpdateRequest): UserPreferences
 

@@ -117,6 +117,17 @@ public class UserService {
     }
 
     /**
+     * 이름은 users 테이블에 있어 온보딩 완료 여부와 무관하게 바꿀 수 있다 (getPreferencesEntity를 거치지 않음)
+     */
+    @Transactional
+    public UserPreferences updateName(Long userId, String name) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UnauthorizedException("사용자를 찾을 수 없습니다."));
+        user.updateName(name.trim());
+        return getPreferences(userId);
+    }
+
+    /**
      * 거주지(집) 좌표 저장 - "현재 위치를 집으로 등록"
      *
      * 방문 장소를 집/외출로 분류하는 기준이 된다. 온보딩 저장(savePreferences)과 분리해

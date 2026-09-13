@@ -408,6 +408,7 @@ class SettingsViewModel(
         _uiState.update { it.copy(savedMessage = "위치 수집 시간이 설정되었습니다") }
     }
 
+    fun updateName(name: String) = updateField { userRepository.updateName(name) }
     fun updateBirthday(birthday: String?) = updateField { userRepository.updateBirthday(birthday) }
     fun updateLocation(location: String?) = updateField { userRepository.updateLocation(location) }
 
