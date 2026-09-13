@@ -43,6 +43,13 @@ class VoiceRecordingManager(
     private val audioBuffer = ByteArrayOutputStream()
     private var isSpeechActive = false
 
+    // Pre-roll 순환 버퍼: 음성 시작 판정 전 프레임들을 담아뒀다가 발화 시작 시 앞에 이어붙인다
+    private val preRollBuffer = ArrayDeque<ShortArray>()
+    private val preRollFrameCount: Int by lazy {
+        val frameDurationMs = config.frameSize * 1000 / config.sampleRate
+        (config.preRollMs / frameDurationMs).coerceAtLeast(1)
+    }
+
     /**
      * VAD 리스너 설정
      */
@@ -131,6 +138,7 @@ class VoiceRecordingManager(
         }
 
         audioBuffer.reset()
+        preRollBuffer.clear()
         isSpeechActive = false
         _vadState.value = VadState.Stopped
 
@@ -155,6 +163,7 @@ class VoiceRecordingManager(
                 Log.d(TAG, "Speech START detected")
                 isSpeechActive = true
                 audioBuffer.reset()
+                flushPreRollBuffer()
                 appendToBuffer(audioFrame)
                 _vadState.value = VadState.SpeechDetected
                 listener?.onSpeechStart()
@@ -169,11 +178,27 @@ class VoiceRecordingManager(
                 // Silero VAD의 silenceDurationMs가 충족되면 isSpeech가 false로 전환됨
                 finalizeSpeech()
             }
-            // 무음 상태 유지
+            // 무음 상태 유지 - 다음 발화의 pre-roll에 쓰일 최근 프레임을 순환 버퍼에 보관
             else -> {
-                // Listening 상태 유지
+                bufferPreRoll(audioFrame)
             }
         }
+    }
+
+    /**
+     * Listening 상태에서 최근 preRollFrameCount개의 프레임만 유지하는 순환 버퍼.
+     * 음성 시작이 감지되면 [flushPreRollBuffer]가 이 내용을 오디오 버퍼 앞에 이어붙인다.
+     */
+    private fun bufferPreRoll(audioFrame: ShortArray) {
+        preRollBuffer.addLast(audioFrame)
+        while (preRollBuffer.size > preRollFrameCount) {
+            preRollBuffer.removeFirst()
+        }
+    }
+
+    private fun flushPreRollBuffer() {
+        preRollBuffer.forEach { appendToBuffer(it) }
+        preRollBuffer.clear()
     }
 
     private fun finalizeSpeech() {
