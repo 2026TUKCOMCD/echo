@@ -1,5 +1,6 @@
 package com.example.echo.user.entity;
 
+import com.example.echo.common.crypto.EncryptedLocalDateConverter;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -20,7 +21,8 @@ public class UserPreferences {
     @Column(name = "user_id")
     private Long userId;
 
-    @Column(name = "birthday")
+    @Convert(converter = EncryptedLocalDateConverter.class)
+    @Column(name = "birthday", columnDefinition = "TEXT")
     private LocalDate birthday;
 
     @Column(name = "location", length = 100)
