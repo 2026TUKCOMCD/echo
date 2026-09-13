@@ -1,5 +1,6 @@
 package com.example.echo.conversation.service;
 
+import com.example.echo.context.service.ContextService;
 import com.example.echo.diary.entity.Diary;
 import com.example.echo.diary.entity.DiaryStatus;
 import com.example.echo.diary.repository.DiaryRepository;
@@ -43,6 +44,10 @@ import java.util.List;
  * "오늘의 방문 장소"(Room location_points)는 서버가 관여하지 않는 클라이언트 로컬 데이터라
  * 안드로이드 쪽에서 별도로 시딩한다 - ROUTINE_PLACE_LATITUDE/LONGITUDE와 반드시 동일한 좌표를 써야
  * 대화 중 루틴 장소로 인식된다.
+ *
+ * 진행 중인 대화 세션도 함께 종료한다(ContextService.finalizeContext) - 전시에서 관람자마다
+ * 새 세션을 보장하기 위함이다. 이전 관람자가 대화를 끝까지 마치지 않고 자리를 떠 서버에 세션이
+ * 남아있어도, 다음 관람자를 위해 이 버튼만 누르면 항상 깨끗한 상태에서 새 대화가 시작된다.
  */
 @Slf4j
 @Service
@@ -77,10 +82,12 @@ public class ConversationDemoSeedService {
     private final RoutinePlaceRepository routinePlaceRepository;
     private final DiaryRepository diaryRepository;
     private final MemoryRepository memoryRepository;
+    private final ContextService contextService;
     private final Clock clock;
 
     @Transactional
     public void seed(Long userId) {
+        contextService.finalizeContext(userId);
         seedPreferences(userId);
         seedRoutinePlace(userId);
         seedDiaries(userId);

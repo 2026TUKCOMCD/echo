@@ -1,5 +1,6 @@
 package com.example.echo.conversation.service;
 
+import com.example.echo.context.service.ContextService;
 import com.example.echo.diary.entity.Diary;
 import com.example.echo.diary.entity.DiaryStatus;
 import com.example.echo.diary.repository.DiaryRepository;
@@ -35,6 +36,7 @@ import static org.mockito.Mockito.*;
  * - 사용자 정보/집 좌표/루틴 방문 장소 동의/확정 루틴 장소가 기대값대로 저장되는지 확인
  * - 최근 3일(D-3~D-1) 일기와 장기기억이 심어지고, 오늘 날짜 일기는 심지 않는지 확인
  * - 재실행해도 루틴 장소/일기/장기기억이 중복 생성되지 않는지(delete-then-insert로 idempotent) 확인
+ * - 진행 중인 대화 세션도 함께 종료되는지(ContextService.finalizeContext) 확인
  *
  * 건강 데이터는 시딩하지 않는다 - 대화 시작마다 실제 Health Connect 값으로 즉시 덮어써져 효과가 없다
  * (ConversationDemoSeedService 클래스 주석 참고).
@@ -60,6 +62,9 @@ class ConversationDemoSeedServiceTest {
     @Mock
     private MemoryRepository memoryRepository;
 
+    @Mock
+    private ContextService contextService;
+
     private ConversationDemoSeedService seedService;
 
     @BeforeEach
@@ -68,7 +73,7 @@ class ConversationDemoSeedServiceTest {
                 FIXED_TODAY.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant(), ZoneId.of("Asia/Seoul"));
         seedService = new ConversationDemoSeedService(
                 userService, userPreferencesRepository, routinePlaceRepository,
-                diaryRepository, memoryRepository, clock);
+                diaryRepository, memoryRepository, contextService, clock);
     }
 
     @Test
@@ -161,5 +166,16 @@ class ConversationDemoSeedServiceTest {
         verify(diaryRepository, times(6)).save(any(Diary.class));
         verify(memoryRepository, times(2)).deleteByUserId(USER_ID);
         verify(memoryRepository, times(2)).saveAll(any(List.class));
+    }
+
+    @Test
+    @DisplayName("시딩하면 이전 관람자의 진행 중인 대화 세션이 종료된다")
+    void seed_finalizesInProgressConversationSession() {
+        UserPreferences prefs = UserPreferences.builder().userId(USER_ID).build();
+        when(userPreferencesRepository.findByUserId(USER_ID)).thenReturn(Optional.of(prefs));
+
+        seedService.seed(USER_ID);
+
+        verify(contextService).finalizeContext(USER_ID);
     }
 }
