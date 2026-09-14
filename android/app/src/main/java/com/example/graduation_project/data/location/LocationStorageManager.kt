@@ -37,7 +37,7 @@ class LocationStorageManager(
         )
 
         locationPointDao.insert(entity)
-        Log.d(TAG, "위치 저장: lat=$latitude, lon=$longitude, date=$today")
+        Log.d(TAG, "위치 저장 완료: date=$today")
     }
 
     /**
@@ -129,7 +129,7 @@ class LocationStorageManager(
             )
             locationPointDao.insert(entity)
         }
-        Log.d(TAG, "데모 방문 시딩 완료: lat=$latitude, lon=$longitude, ${pointCount}개")
+        Log.d(TAG, "데모 방문 시딩 완료: ${pointCount}개")
     }
 
     companion object {
