@@ -452,7 +452,7 @@ class SettingsViewModel(
                 }
                 return@launch
             }
-            android.util.Log.d("SettingsVM", "집 등록: 위치 획득 (${location.latitude}, ${location.longitude}) → 서버 저장")
+            android.util.Log.d("SettingsVM", "집 등록: 위치 획득 → 서버 저장")
             when (val result = userRepository.updateHomeLocation(location.latitude, location.longitude)) {
                 is ApiResult.Success -> {
                     // 등록된 주소를 보여줘서 실내 GPS 오차로 엉뚱한 곳이 등록됐는지 바로 확인할 수 있게 함
