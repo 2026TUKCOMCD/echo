@@ -88,3 +88,9 @@ elevenlabs:
   voice-id: zmh5xhBvMzqR4ZlXgcgL
   model: eleven_v3
   # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)
+
+# 민감정보 컬럼 암호화 (EncryptedStringConverter)
+# - Spring 프로퍼티가 아니라 System.getenv("ENCRYPTION_KEY")로 직접 읽음 (JPA 메타데이터 부트스트랩과
+#   무관하게 실제 암호화/복호화 시점에만 키를 검증하기 위함 - 상세 이유는 컨버터 클래스 주석 참고)
+# - 로컬 개발 시 OS 환경변수로 ENCRYPTION_KEY(Base64 인코딩된 32바이트 AES-256 키)를 설정할 것
+# - 생성 예시: openssl rand -base64 32
