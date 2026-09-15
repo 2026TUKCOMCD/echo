@@ -206,6 +206,7 @@ public class ConversationService {
     private UserContext snapshotForMemoryExtraction(UserContext context) {
         return UserContext.builder()
                 .userId(context.getUserId())
+                .startedAt(context.getStartedAt())
                 .preferences(context.getPreferences())
                 .conversationHistory(List.copyOf(context.getConversationHistory()))
                 .build();

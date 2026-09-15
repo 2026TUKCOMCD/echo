@@ -37,7 +37,7 @@ class LocationStorageManager(
         )
 
         locationPointDao.insert(entity)
-        Log.d(TAG, "위치 저장: lat=$latitude, lon=$longitude, date=$today")
+        Log.d(TAG, "위치 저장 완료: date=$today")
     }
 
     /**
@@ -95,6 +95,41 @@ class LocationStorageManager(
     suspend fun clearAllData() {
         locationPointDao.deleteAll()
         Log.d(TAG, "모든 위치 데이터 삭제 완료")
+    }
+
+    /**
+     * 데모/테스트용: 오늘 특정 좌표에서 체류한 것처럼 위치 포인트를 소급 시딩.
+     *
+     * saveLocation()과 달리 타임스탬프를 직접 지정해 과거 시간대의 체류를 흉내낸다.
+     * 기본값(5개, 10분 간격, 5분 전 종료)은 StayPointDetectorImpl의
+     * MIN_STAY_DURATION(10분)을 넉넉히 넘겨 확실히 StayPoint로 인식되게 한다.
+     * 서버 쪽 데모 시딩(선호도/루틴 장소)과 동일하게 덮어쓰기로 동작하도록,
+     * 삽입 전에 오늘 기존 위치 데이터를 먼저 지운다.
+     */
+    suspend fun seedDemoStayVisit(
+        latitude: Double,
+        longitude: Double,
+        endMinutesAgo: Long = 5,
+        pointCount: Int = 5,
+        intervalMinutes: Long = 10
+    ) {
+        val now = Instant.now()
+        val today = LocalDate.now().format(dateFormatter)
+
+        locationPointDao.deleteByDate(today)
+
+        for (i in 0 until pointCount) {
+            val minutesAgo = endMinutesAgo + (pointCount - 1 - i) * intervalMinutes
+            val jitter = (Math.random() - 0.5) * 0.0002
+            val entity = LocationPointEntity(
+                latitude = latitude + jitter,
+                longitude = longitude + jitter,
+                timestamp = now.minusSeconds(minutesAgo * 60).toEpochMilli(),
+                date = today
+            )
+            locationPointDao.insert(entity)
+        }
+        Log.d(TAG, "데모 방문 시딩 완료: ${pointCount}개")
     }
 
     companion object {

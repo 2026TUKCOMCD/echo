@@ -18,6 +18,9 @@ class UserRepository(
         return safeApiCall { userApi.updatePreferences(preferences) }
     }
 
+    suspend fun updateName(name: String): ApiResult<UserPreferences> =
+        safeApiCall { userApi.updateName(NameUpdateRequest(name)) }
+
     suspend fun updateBirthday(birthday: String?): ApiResult<UserPreferences> =
         safeApiCall { userApi.updateBirthday(BirthdayUpdateRequest(birthday)) }
 
@@ -57,4 +60,10 @@ class UserRepository(
     suspend fun getOnboardingStatus(): ApiResult<OnboardingStatusResponse> {
         return safeApiCall { userApi.getOnboardingStatus() }
     }
+
+    suspend fun resetConversationData(): ApiResult<Unit> =
+        safeApiCall { userApi.resetConversationData() }
+
+    suspend fun seedDemoConversationData(): ApiResult<Unit> =
+        safeApiCall { userApi.seedDemoConversationData() }
 }

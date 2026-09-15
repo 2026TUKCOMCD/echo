@@ -15,4 +15,6 @@ public interface DiaryRepository extends JpaRepository<Diary, Long> {
             Long userId, LocalDate startDate, LocalDate endDate);
 
     Optional<Diary> findByIdAndUserId(Long id, Long userId);
+
+    void deleteByUserId(Long userId);
 }

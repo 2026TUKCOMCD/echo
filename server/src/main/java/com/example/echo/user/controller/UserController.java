@@ -1,6 +1,8 @@
 package com.example.echo.user.controller;
 
 import com.example.echo.common.auth.CurrentUser;
+import com.example.echo.conversation.service.ConversationDataResetService;
+import com.example.echo.conversation.service.ConversationDemoSeedService;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.service.GeocodingService;
 import com.example.echo.user.dto.*;
@@ -17,6 +19,8 @@ public class UserController {
 
     private final UserService userService;
     private final GeocodingService geocodingService;
+    private final ConversationDataResetService conversationDataResetService;
+    private final ConversationDemoSeedService conversationDemoSeedService;
 
     @GetMapping("/preferences")
     public ResponseEntity<UserPreferences> getPreferences(@CurrentUser Long userId) {
@@ -42,6 +46,13 @@ public class UserController {
             @CurrentUser Long userId,
             @Valid @RequestBody LocationUpdateRequest request) {
         return ResponseEntity.ok(userService.updateLocation(userId, request.getLocation()));
+    }
+
+    @PutMapping("/preferences/name")
+    public ResponseEntity<UserPreferences> updateName(
+            @CurrentUser Long userId,
+            @Valid @RequestBody NameUpdateRequest request) {
+        return ResponseEntity.ok(userService.updateName(userId, request.getName()));
     }
 
     @PutMapping("/preferences/home-location")
@@ -123,5 +134,21 @@ public class UserController {
     @GetMapping("/onboarding-status")
     public ResponseEntity<OnboardingStatusResponse> getOnboardingStatus(@CurrentUser Long userId) {
         return ResponseEntity.ok(new OnboardingStatusResponse(userService.isOnboardingCompleted(userId)));
+    }
+
+    @DeleteMapping("/conversation-data")
+    public ResponseEntity<Void> resetConversationData(@CurrentUser Long userId) {
+        conversationDataResetService.reset(userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 개발/데모 편의용: 경도인지장애 데모 페르소나(사용자 정보·루틴 방문 장소·오늘 건강 데이터)를
+     * 한 번에 시딩한다. resetConversationData와 반대 방향이며 동일하게 본인 계정에 한해 동작한다.
+     */
+    @PostMapping("/demo-seed")
+    public ResponseEntity<Void> seedDemoConversationData(@CurrentUser Long userId) {
+        conversationDemoSeedService.seed(userId);
+        return ResponseEntity.noContent().build();
     }
 }

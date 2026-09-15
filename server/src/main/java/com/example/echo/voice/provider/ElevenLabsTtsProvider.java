@@ -60,6 +60,7 @@ public class ElevenLabsTtsProvider implements TtsProvider {
         ElevenLabsTtsRequest request = ElevenLabsTtsRequest.builder()
             .text(text)
             .modelId(model)
+            .languageCode("ko")
             .voiceSettings(voiceParams)
             .build();
 
