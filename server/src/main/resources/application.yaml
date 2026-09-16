@@ -32,6 +32,15 @@ spring:
         await-termination: true
         await-termination-period: 30s
 
+# 지연 측정용 - echo.conversation.stage(STT/LLM/TTS 구간별), feign.client.requests/http.client.requests
+# (Feign 클라이언트별 순수 네트워크 구간, feign-micrometer가 이미 자동 계측 중)를 /actuator/metrics 로 조회.
+# health 외엔 SecurityConfig에서 permitAll이 아니므로 기존 인증 그대로 필요함 (별도 공개 아님)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+
 openai:
   api:
     url: https://api.openai.com/v1
