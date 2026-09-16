@@ -134,6 +134,10 @@ public class ConversationDemoSeedService {
      */
     private void seedDiaries(Long userId) {
         diaryRepository.deleteByUserId(userId);
+        // deleteByUserId는 파생 삭제라 flush 전까지 DELETE가 지연되는데, Hibernate는 같은 flush 안에서
+        // INSERT를 DELETE보다 먼저 실행한다. flush 없이 바로 아래에서 새 일기를 저장하면 오늘 이전에
+        // 실제로 쌓인 일기와 날짜가 겹칠 때 uq_diaries_user_date 유니크 제약을 위반한다(운영에서 확인된 버그).
+        diaryRepository.flush();
         LocalDate today = LocalDate.now(clock);
 
         saveDiary(userId, today.minusDays(3),
