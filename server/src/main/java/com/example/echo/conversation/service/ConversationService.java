@@ -20,6 +20,8 @@ import com.example.echo.memory.service.MemoryService;
 import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.voice.service.VoiceService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -30,6 +32,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -65,8 +69,41 @@ public class ConversationService {
     // application.yaml의 spring.task.execution 설정을 받는 쪽을 명시적으로 지정한다.
     @Qualifier("applicationTaskExecutor")
     private final TaskExecutor taskExecutor;
+    private final MeterRegistry meterRegistry;
+
+    /**
+     * STT/LLM/TTS 등 파이프라인 구간의 소요 시간을 측정해 Micrometer 타이머(echo.conversation.stage,
+     * tag: stage)로 기록하고 로그에도 남긴다. /actuator/metrics/echo.conversation.stage 로 조회 가능.
+     *
+     * 지연 개선(perf/reduce-conversation-latency) 작업의 baseline 측정용 - 이 값 없이는 이후 튜닝의
+     * 효과를 증명할 수 없어 가장 먼저 추가함.
+     */
+    private <T> T timed(String stage, Long userId, Supplier<T> action) {
+        long start = System.currentTimeMillis();
+        T result = action.get();
+        long elapsedMs = System.currentTimeMillis() - start;
+        Timer.builder("echo.conversation.stage")
+                .description("대화 파이프라인 구간별 소요 시간")
+                .tag("stage", stage)
+                .register(meterRegistry)
+                .record(elapsedMs, TimeUnit.MILLISECONDS);
+        log.info("[지연측정] stage={}, userId={}, elapsedMs={}", stage, userId, elapsedMs);
+        return result;
+    }
+
+    /** timed()와 같은 타이머에 구간 전체 합산치(예: start_total)를 기록한다. */
+    private void recordTotal(String stage, Long userId, long startedAtMs) {
+        long elapsedMs = System.currentTimeMillis() - startedAtMs;
+        Timer.builder("echo.conversation.stage")
+                .description("대화 파이프라인 구간별 소요 시간")
+                .tag("stage", stage)
+                .register(meterRegistry)
+                .record(elapsedMs, TimeUnit.MILLISECONDS);
+        log.info("[지연측정] stage={}, userId={}, elapsedMs={}", stage, userId, elapsedMs);
+    }
 
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
+        long turnStart = System.currentTimeMillis();
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
         if (healthData != null) {
             healthDataService.saveHealthData(userId, healthData);
@@ -90,13 +127,17 @@ public class ConversationService {
         context.setSystemPrompt(systemPrompt);
 
         // 4. 첫 인사 생성
-        String firstMessage = aiService.generateGreeting(systemPrompt, context);
+        String firstMessage = timed("llm_greeting", userId,
+                () -> aiService.generateGreeting(systemPrompt, context));
 
         // 5. TTS 변환
-        byte[] audioData = voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings());
+        byte[] audioData = timed("tts", userId,
+                () -> voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings()));
 
         // 6. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
         contextService.addConversationTurn(userId, null, firstMessage);
+
+        recordTotal("start_total", userId, turnStart);
 
         return ConversationStartResponse.builder()
                 .message(firstMessage)
@@ -106,11 +147,12 @@ public class ConversationService {
     }
 
     public ConversationResponse processUserMessage(Long userId, MultipartFile audioFile) {
+        long turnStart = System.currentTimeMillis();
         // 1. 컨텍스트 조회
         UserContext context = contextService.getContext(userId);
 
         // 2. STT 변환
-        String userMessage = voiceService.speechToText(audioFile);
+        String userMessage = timed("stt", userId, () -> voiceService.speechToText(audioFile));
         boolean sttEmpty = userMessage.isBlank();
 
         // 3. AI 응답 생성 (OpenAI 권장 방식: messages 배열)
@@ -126,16 +168,20 @@ public class ConversationService {
             context.setConsecutiveEmptySttCount(0);
             String systemPrompt = context.getSystemPrompt();
             List<ConversationTurn> history = context.getConversationHistory();
-            aiResponse = aiService.generateResponse(systemPrompt, history, userMessage);
+            aiResponse = timed("llm", userId,
+                    () -> aiService.generateResponse(systemPrompt, history, userMessage));
         }
 
         // 4. TTS 변환
-        byte[] audioData = voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings());
+        byte[] audioData = timed("tts", userId,
+                () -> voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings()));
 
         // 5. 히스토리 업데이트 (동기)
         //    빈 user 메시지는 기록하지 않는다(null이면 첫 인사 턴처럼 AI 발화만 기록됨) -
         //    이후 턴에서 이 히스토리가 다시 messages 배열에 실릴 때 빈 user 메시지가 섞이지 않도록.
         contextService.addConversationTurn(userId, sttEmpty ? null : userMessage, aiResponse);
+
+        recordTotal("message_total", userId, turnStart);
 
         return ConversationResponse.builder()
                 .userMessage(userMessage)
@@ -221,7 +267,8 @@ public class ConversationService {
         }
 
         String lastAiResponse = history.get(history.size() - 1).getAiResponse();
-        byte[] audioData = voiceService.textToSpeech(lastAiResponse, context.getPreferences().getVoiceSettings());
+        byte[] audioData = timed("tts_retry", userId,
+                () -> voiceService.textToSpeech(lastAiResponse, context.getPreferences().getVoiceSettings()));
 
         return TtsRetryResponse.builder()
                 .audioData(audioData)
