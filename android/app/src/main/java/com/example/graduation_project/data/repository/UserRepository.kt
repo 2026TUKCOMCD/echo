@@ -60,10 +60,4 @@ class UserRepository(
     suspend fun getOnboardingStatus(): ApiResult<OnboardingStatusResponse> {
         return safeApiCall { userApi.getOnboardingStatus() }
     }
-
-    suspend fun resetConversationData(): ApiResult<Unit> =
-        safeApiCall { userApi.resetConversationData() }
-
-    suspend fun seedDemoConversationData(): ApiResult<Unit> =
-        safeApiCall { userApi.seedDemoConversationData() }
 }
