@@ -55,6 +55,9 @@ dependencies {
 	// OpenFeign
 	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
 	implementation 'io.github.openfeign:feign-micrometer'
+	// Feign 커넥션 풀링 - 클래스패스에 있으면 Spring Cloud OpenFeign이 기본 미풀링 클라이언트 대신
+	// PoolingHttpClientConnectionManager 기반 클라이언트로 자동 전환 (STT/LLM/TTS 세 Feign 클라이언트 공통 적용)
+	implementation 'org.apache.httpcomponents.client5:httpclient5'
 
 	// Spring Retry (RetryTemplate — AOP 불필요)
 	implementation 'org.springframework.retry:spring-retry'
