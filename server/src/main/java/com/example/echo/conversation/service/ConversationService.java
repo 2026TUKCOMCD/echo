@@ -77,8 +77,12 @@ public class ConversationService {
      *
      * 지연 개선(perf/reduce-conversation-latency) 작업의 baseline 측정용 - 이 값 없이는 이후 튜닝의
      * 효과를 증명할 수 없어 가장 먼저 추가함.
+     *
+     * historyTurns는 "히스토리가 길어질수록 llm 구간이 느려지는지" 실측 데이터를 쌓기 위한 필드다.
+     * Micrometer 태그로는 넣지 않는다 - 턴 수만큼 카디널리티가 늘어나 지표 폭증으로 이어질 수 있어서,
+     * 로그로만 남기고 상관관계 분석은 로그를 모아서 별도로 한다.
      */
-    private <T> T timed(String stage, Long userId, Supplier<T> action) {
+    private <T> T timed(String stage, Long userId, int historyTurns, Supplier<T> action) {
         long start = System.currentTimeMillis();
         T result = action.get();
         long elapsedMs = System.currentTimeMillis() - start;
@@ -87,19 +91,19 @@ public class ConversationService {
                 .tag("stage", stage)
                 .register(meterRegistry)
                 .record(elapsedMs, TimeUnit.MILLISECONDS);
-        log.info("[지연측정] stage={}, userId={}, elapsedMs={}", stage, userId, elapsedMs);
+        log.info("[지연측정] stage={}, userId={}, elapsedMs={}, historyTurns={}", stage, userId, elapsedMs, historyTurns);
         return result;
     }
 
     /** timed()와 같은 타이머에 구간 전체 합산치(예: start_total)를 기록한다. */
-    private void recordTotal(String stage, Long userId, long startedAtMs) {
+    private void recordTotal(String stage, Long userId, long startedAtMs, int historyTurns) {
         long elapsedMs = System.currentTimeMillis() - startedAtMs;
         Timer.builder("echo.conversation.stage")
                 .description("대화 파이프라인 구간별 소요 시간")
                 .tag("stage", stage)
                 .register(meterRegistry)
                 .record(elapsedMs, TimeUnit.MILLISECONDS);
-        log.info("[지연측정] stage={}, userId={}, elapsedMs={}", stage, userId, elapsedMs);
+        log.info("[지연측정] stage={}, userId={}, elapsedMs={}, historyTurns={}", stage, userId, elapsedMs, historyTurns);
     }
 
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
@@ -127,17 +131,17 @@ public class ConversationService {
         context.setSystemPrompt(systemPrompt);
 
         // 4. 첫 인사 생성
-        String firstMessage = timed("llm_greeting", userId,
+        String firstMessage = timed("llm_greeting", userId, context.getConversationHistory().size(),
                 () -> aiService.generateGreeting(systemPrompt, context));
 
         // 5. TTS 변환
-        byte[] audioData = timed("tts", userId,
+        byte[] audioData = timed("tts", userId, context.getConversationHistory().size(),
                 () -> voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings()));
 
         // 6. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
         contextService.addConversationTurn(userId, null, firstMessage);
 
-        recordTotal("start_total", userId, turnStart);
+        recordTotal("start_total", userId, turnStart, context.getConversationHistory().size());
 
         return ConversationStartResponse.builder()
                 .message(firstMessage)
@@ -152,7 +156,8 @@ public class ConversationService {
         UserContext context = contextService.getContext(userId);
 
         // 2. STT 변환
-        String userMessage = timed("stt", userId, () -> voiceService.speechToText(audioFile));
+        String userMessage = timed("stt", userId, context.getConversationHistory().size(),
+                () -> voiceService.speechToText(audioFile));
         boolean sttEmpty = userMessage.isBlank();
 
         // 3. AI 응답 생성 (OpenAI 권장 방식: messages 배열)
@@ -168,12 +173,12 @@ public class ConversationService {
             context.setConsecutiveEmptySttCount(0);
             String systemPrompt = context.getSystemPrompt();
             List<ConversationTurn> history = context.getConversationHistory();
-            aiResponse = timed("llm", userId,
+            aiResponse = timed("llm", userId, history.size(),
                     () -> aiService.generateResponse(systemPrompt, history, userMessage));
         }
 
         // 4. TTS 변환
-        byte[] audioData = timed("tts", userId,
+        byte[] audioData = timed("tts", userId, context.getConversationHistory().size(),
                 () -> voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings()));
 
         // 5. 히스토리 업데이트 (동기)
@@ -181,7 +186,7 @@ public class ConversationService {
         //    이후 턴에서 이 히스토리가 다시 messages 배열에 실릴 때 빈 user 메시지가 섞이지 않도록.
         contextService.addConversationTurn(userId, sttEmpty ? null : userMessage, aiResponse);
 
-        recordTotal("message_total", userId, turnStart);
+        recordTotal("message_total", userId, turnStart, context.getConversationHistory().size());
 
         return ConversationResponse.builder()
                 .userMessage(userMessage)
@@ -267,7 +272,7 @@ public class ConversationService {
         }
 
         String lastAiResponse = history.get(history.size() - 1).getAiResponse();
-        byte[] audioData = timed("tts_retry", userId,
+        byte[] audioData = timed("tts_retry", userId, history.size(),
                 () -> voiceService.textToSpeech(lastAiResponse, context.getPreferences().getVoiceSettings()));
 
         return TtsRetryResponse.builder()
