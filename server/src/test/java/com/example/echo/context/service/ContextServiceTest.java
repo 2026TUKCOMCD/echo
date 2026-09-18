@@ -7,6 +7,8 @@ import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.location.service.LocationService;
+import com.example.echo.routineplace.service.RoutinePlaceService;
+import com.example.echo.routineplace.service.VisitOccurrenceRecordingService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.user.service.UserService;
@@ -33,6 +35,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.BDDMockito.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ContextService 테스트")
@@ -52,6 +55,12 @@ class ContextServiceTest {
     @Mock
     private LocationService locationService;
 
+    @Mock
+    private VisitOccurrenceRecordingService visitOccurrenceRecordingService;
+
+    @Mock
+    private RoutinePlaceService routinePlaceService;
+
     private Clock clock;
 
     private Long userId;
@@ -63,9 +72,11 @@ class ContextServiceTest {
     @BeforeEach
     void setUp() {
         clock = Clock.fixed(Instant.parse("2026-07-18T10:00:00Z"), ZoneId.of("Asia/Seoul"));
-        contextService = new ContextService(userService, healthDataService, weatherClient, locationService, clock);
+        contextService = new ContextService(userService, healthDataService, weatherClient, locationService,
+                visitOccurrenceRecordingService, routinePlaceService, clock);
 
         userId = 1L;
+        lenient().when(routinePlaceService.getConfirmedPlaceInfos(userId)).thenReturn(List.of());
 
         mockPreferences = UserPreferences.builder()
                 .userId(userId)

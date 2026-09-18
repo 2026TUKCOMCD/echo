@@ -305,6 +305,50 @@ class AIServiceTest {
         assertThat(result2).isEmpty();
     }
 
+    // ===== 응답 내 깨진 유니코드 시퀀스 치환 테스트 =====
+
+    @Test
+    @DisplayName("generateResponse - 깨진 유니코드가 섞인 응답은 해당 구간만 '거기'로 치환된다")
+    void generateResponse_sanitizesGarbledUnicode() {
+        // Given - 실제 관측된 패턴: 한글 문장 중간에 아르메니아/IPA 확장 문자가 섞여 나옴
+        String garbledContent = "오늘 서둔동 쪽에 오래 계셨네요, wjbntɦԱ서 무엇을 하셨어요?";
+        ChatCompletionResponse response = createMockResponse(garbledContent);
+
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        String result = aiService.generateResponse("시스템 프롬프트", new ArrayList<>(), "테스트");
+
+        // Then - 공백으로 구분된 토큰 단위 치환이라 토큰에 붙어있던 "서"까지 "거기"에 흡수된다
+        // ("거기 무엇을 하셨어요?"도 구어체로는 자연스러움 - 드문 안전망 케이스라 문법적 완전성보다
+        // 회복탄력성을 우선)
+        assertThat(result).isEqualTo("오늘 서둔동 쪽에 오래 계셨네요, 거기 무엇을 하셨어요?");
+
+        // 감지 로그는 남기되, 깨진 원문 자체는 로그에 노출하지 않는다
+        List<String> logMessages = capturedLogMessages();
+        assertThat(logMessages).anyMatch(msg -> msg.contains("비정상 유니코드"));
+        assertThat(logMessages).noneMatch(msg -> msg.contains("wjbnt"));
+    }
+
+    @Test
+    @DisplayName("generateResponse - 정상적인 한글/영문/숫자/°C 응답은 그대로 반환된다 (오탐 방지)")
+    void generateResponse_normalTextUnaffected() {
+        // Given - 온도(°C), 영어 단어, 숫자, 기본 문장부호가 섞인 정상 응답
+        String normalContent = "오늘 낮 기온은 23°C였고, Starbucks에서 30분 정도 계셨네요 - 뭐 하셨어요?";
+        ChatCompletionResponse response = createMockResponse(normalContent);
+
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        String result = aiService.generateResponse("시스템 프롬프트", new ArrayList<>(), "테스트");
+
+        // Then
+        assertThat(result).isEqualTo(normalContent);
+        assertThat(capturedLogMessages()).noneMatch(msg -> msg.contains("비정상 유니코드"));
+    }
+
     // ===== 프롬프트 캐싱 로그 테스트 =====
 
     @Test

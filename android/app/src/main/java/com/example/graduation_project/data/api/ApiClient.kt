@@ -21,6 +21,7 @@ object ApiClient {
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
         else HttpLoggingInterceptor.Level.NONE
+        redactHeader("Authorization")
     }
 
     private val authRetrofit = Retrofit.Builder()
@@ -46,6 +47,8 @@ object ApiClient {
         private set
     lateinit var weatherApi: WeatherApi
         private set
+    lateinit var routinePlaceApi: RoutinePlaceApi
+        private set
     var tokenStorage: TokenStorage? = null
         private set
 
@@ -70,5 +73,6 @@ object ApiClient {
         diaryApi = authenticatedRetrofit.create(DiaryApi::class.java)
         userApi = authenticatedRetrofit.create(UserApi::class.java)
         weatherApi = authenticatedRetrofit.create(WeatherApi::class.java)
+        routinePlaceApi = authenticatedRetrofit.create(RoutinePlaceApi::class.java)
     }
 }
