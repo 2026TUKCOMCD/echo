@@ -20,6 +20,7 @@ import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.ConversationDiaryLinkEntity
 import com.example.graduation_project.data.local.entity.MessageEntity
+import com.example.graduation_project.data.model.MessageReply
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.repository.DiaryRepository
 import com.example.graduation_project.domain.usecase.GetHealthDataUseCase
@@ -51,6 +52,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewmodel.CreationExtras
 import java.io.File
+import java.io.InputStream
 import java.util.UUID
 
 /**
@@ -307,6 +309,16 @@ class ConversationViewModel(
     }
 
     /**
+     * 스트리밍으로 도착 중인 AI 응답 음성을 재생합니다 (재생 전 녹음 중지는 playAiAudio와 동일).
+     * 스트림 소유권은 AudioPlayerManager로 넘어가며, 재생 종료/중지 시 그쪽에서 닫습니다.
+     */
+    private fun playAiAudioStream(audio: InputStream) {
+        stopRecording()
+        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
+        audioPlayerManager.playStream(audio)
+    }
+
+    /**
      * 서버에 TTS 재생성을 요청합니다.
      * - 로컬 재시도 소진 또는 DecodeError 발생 시 호출
      * - 서버의 마지막 AI 응답 텍스트를 TTS로 재생성하여 반환
@@ -481,16 +493,17 @@ class ConversationViewModel(
             val requestBody = wavData.toRequestBody("audio/wav".toMediaType())
             val audioPart = MultipartBody.Part.createFormData("audio", "recording.wav", requestBody)
 
-            val result = repository.sendMessage(audioPart)
+            // 스트리밍 우선 (서버에 스트리밍 엔드포인트가 없으면 저장소가 /message로 폴백)
+            val result = repository.sendMessageStreaming(audioPart)
 
             // PROCESSING 타이머 중지
             stopProcessingTimer()
 
             when (result) {
                 is ApiResult.Success -> {
-                    val response = result.data
-                    val userMessage = createUserMessage(response.userMessage ?: "")
-                    val aiMessage = createAiMessage(response.aiResponse ?: "")
+                    val reply = result.data
+                    val userMessage = createUserMessage(reply.userMessage ?: "")
+                    val aiMessage = createAiMessage(reply.aiResponse ?: "")
 
                     // 발화 인식 성공 → 실패 카운트 초기화
                     onSpeechRecognized()
@@ -505,15 +518,18 @@ class ConversationViewModel(
                     }
 
                     // AI 응답 음성 재생 (재생 전 녹음 중지 포함)
-                    response.audioData?.let { audioData ->
-                        playAiAudio(audioData)
-                    } ?: run {
-                        // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
-                        transitionTo(ConversationState.Listening)
-                        _uiState.update {
-                            it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
+                    when {
+                        reply is MessageReply.Streaming -> playAiAudioStream(reply.audio)
+                        reply is MessageReply.Buffered && reply.audioData != null ->
+                            playAiAudio(reply.audioData)
+                        else -> {
+                            // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
+                            transitionTo(ConversationState.Listening)
+                            _uiState.update {
+                                it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
+                            }
+                            startRecording()
                         }
-                        startRecording()
                     }
 
                     // 사용자 메시지 + AI 응답 메시지 Room DB 저장

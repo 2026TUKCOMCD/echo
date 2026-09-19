@@ -19,6 +19,13 @@ data class ConversationMessageResponse(
     val timestamp: String? = null
 )
 
+// /api/conversations/message-stream 응답의 META 프레임(JSON) - 오디오보다 먼저 도착
+@Serializable
+data class StreamMeta(
+    val userMessage: String? = null,
+    val aiResponse: String? = null
+)
+
 // /api/conversations/end 응답 Model(DTO)
 @Serializable
 data class ConversationEndResponse(
