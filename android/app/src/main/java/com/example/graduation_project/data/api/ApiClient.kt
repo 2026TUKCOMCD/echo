@@ -3,6 +3,7 @@ package com.example.graduation_project.data.api
 import com.example.graduation_project.BuildConfig
 import com.example.graduation_project.data.local.TokenStorage
 import kotlinx.serialization.json.Json
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -18,10 +19,20 @@ object ApiClient {
         encodeDefaults = true
     }
 
-    private val loggingInterceptor = HttpLoggingInterceptor().apply {
+    private val httpLoggingInterceptor = HttpLoggingInterceptor().apply {
         level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
         else HttpLoggingInterceptor.Level.NONE
         redactHeader("Authorization")
+    }
+
+    // BODY 레벨 로깅은 응답 본문을 끝까지 읽어 버퍼링한 뒤에 넘겨주므로 스트리밍 응답을 무력화한다
+    // (디버그 빌드에서 첫 소리가 전체 합성 완료 후에야 나옴). 스트리밍 요청은 로깅을 건너뛴다.
+    private val loggingInterceptor = Interceptor { chain ->
+        if (chain.request().url.encodedPath == ConversationApi.MESSAGE_STREAM_PATH) {
+            chain.proceed(chain.request())
+        } else {
+            httpLoggingInterceptor.intercept(chain)
+        }
     }
 
     private val authRetrofit = Retrofit.Builder()

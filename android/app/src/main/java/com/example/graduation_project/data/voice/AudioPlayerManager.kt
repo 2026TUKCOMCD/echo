@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.IOException
+import java.io.InputStream
 
 /**
  * [T2.3-1] AudioPlayerManager
@@ -30,6 +32,12 @@ import kotlinx.coroutines.launch
  *   → ByteArrayMediaDataSource(bytes)
  *   → MediaPlayer.setDataSource(dataSource) → prepare() → start()
  *   → onCompletion → Completed
+ *
+ * 스트리밍 흐름 (/message-stream):
+ * playStream(audioStream)
+ *   → IO 코루틴이 스트림을 읽어 GrowingAudioBuffer에 계속 추가
+ *   → StreamingMediaDataSource(길이 미정) → prepareAsync() → onPrepared에서 start()
+ *   → onCompletion: 스트림이 끝까지 왔으면 Completed, 잘렸으면 에러(→ 서버 tts-retry 폴백)
  */
 class AudioPlayerManager {
 
@@ -45,6 +53,10 @@ class AudioPlayerManager {
     private var retryCount: Int = 0                  // 현재 재시도 횟수
     private val maxRetries: Int = 3                  // 최대 재시도 횟수
     private val retryDelays = listOf(100L, 300L, 900L)  // Exponential backoff (ms)
+
+    // 스트리밍 재생 중인 리소스 (Base64 재생 시에는 null)
+    private var streamingBuffer: GrowingAudioBuffer? = null
+    private var streamingInput: InputStream? = null
 
     // [TEST ONLY] true로 설정하면 play() 호출 시 강제로 DecodeError 발생 → 서버 TTS 재요청 흐름 테스트
     var forceDecodeErrorForTest = false
@@ -119,6 +131,121 @@ class AudioPlayerManager {
                     handlePlaybackError(exception, isRetry = false)
                 }
             }
+        }
+    }
+
+    /**
+     * 서버에서 생성되는 대로 도착하는 MP3 스트림을 받으면서 재생한다 (첫 소리를 전체 수신 전에 낸다).
+     *
+     * 소유권: [audioStream]은 이 메서드가 넘겨받아 재생 종료/중지 시 닫는다.
+     *
+     * 로컬 재시도 없음: 스트림은 한 번만 읽을 수 있어 같은 데이터로 다시 재생할 수 없다.
+     * 실패하면 바로 Error(isFallbackNeeded=true)가 되어 ViewModel이 서버 tts-retry(Base64)로 폴백한다.
+     */
+    fun playStream(audioStream: InputStream) {
+        if (_state.value is AudioPlayState.Preparing ||
+            _state.value is AudioPlayState.Playing
+        ) {
+            stop()
+        }
+
+        retryCount = 0
+        cachedAudioBytes = null
+
+        val newScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        scope = newScope
+        _state.value = AudioPlayState.Preparing
+
+        // [TEST ONLY] 강제 DecodeError 발생 → 서버 TTS 재요청 흐름 테스트 (Base64 재생과 동일한 동작)
+        if (forceDecodeErrorForTest) {
+            closeQuietly(audioStream)
+            handlePlaybackError(
+                AudioPlayException.DecodeError(message = "[테스트] 강제 DecodeError 발생"),
+                isRetry = false
+            )
+            return
+        }
+
+        val buffer = GrowingAudioBuffer()
+        streamingBuffer = buffer
+        streamingInput = audioStream
+
+        // 네트워크 수신: 블로킹 I/O이므로 IO 스레드에서. stop()이 스트림을 닫으면 read가 예외로 풀린다.
+        newScope.launch(Dispatchers.IO) {
+            try {
+                audioStream.use { input ->
+                    val chunk = ByteArray(STREAM_CHUNK_BYTES)
+                    while (true) {
+                        val n = input.read(chunk)
+                        if (n == -1) break
+                        buffer.append(chunk, 0, n)
+                    }
+                }
+                buffer.complete()
+            } catch (e: IOException) {
+                // 잘림(END 없음)·네트워크 끊김·stop()에 의한 닫힘 모두 여기로 온다
+                buffer.fail(e)
+            }
+        }
+
+        startStreamingPlayback(buffer)
+    }
+
+    private fun startStreamingPlayback(buffer: GrowingAudioBuffer) {
+        try {
+            val player = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                setDataSource(StreamingMediaDataSource(buffer))
+
+                // prepare()는 첫 데이터가 올 때까지 호출 스레드(Main)를 막을 수 있어 prepareAsync()를 쓴다
+                setOnPreparedListener { preparedPlayer ->
+                    if (mediaPlayer !== preparedPlayer) return@setOnPreparedListener  // 이미 중지됨
+                    preparedPlayer.start()
+                    _state.value = AudioPlayState.Playing
+                    listener?.onPlaybackStart()
+                }
+
+                setOnCompletionListener {
+                    val truncation = buffer.failure
+                    releaseMediaPlayer()
+                    if (truncation != null) {
+                        // 받은 데이터까지만 재생되고 끝남 = 문장이 잘림 → 서버 재요청으로 처음부터 다시 듣게 함
+                        handlePlaybackError(
+                            AudioPlayException.PlaybackError(
+                                message = "음성 스트림이 중간에 끊겼습니다",
+                                cause = truncation
+                            ),
+                            isRetry = false
+                        )
+                    } else {
+                        retryCount = 0
+                        _state.value = AudioPlayState.Completed
+                        listener?.onPlaybackComplete()
+                    }
+                }
+
+                setOnErrorListener { _, what, extra ->
+                    releaseMediaPlayer()
+                    handlePlaybackError(
+                        AudioPlayException.PlaybackError(
+                            message = "MediaPlayer 스트리밍 에러 (what=$what, extra=$extra)"
+                        ),
+                        isRetry = false
+                    )
+                    true
+                }
+            }
+
+            mediaPlayer = player
+            player.prepareAsync()
+        } catch (e: Exception) {
+            releaseMediaPlayer()
+            handlePlaybackError(AudioPlayException.PlaybackError(cause = e), isRetry = false)
         }
     }
 
@@ -252,6 +379,12 @@ class AudioPlayerManager {
     }
 
     private fun releaseMediaPlayer() {
+        // 스트리밍 리소스를 먼저 정리: 버퍼를 닫아 블로킹된 readAt을 풀어야 release()가 멈추지 않는다
+        streamingBuffer?.close()
+        streamingBuffer = null
+        streamingInput?.let { closeQuietly(it) }
+        streamingInput = null
+
         mediaPlayer?.apply {
             try {
                 if (isPlaying) stop()
@@ -301,7 +434,33 @@ class AudioPlayerManager {
         }
     }
 
+    private fun closeQuietly(stream: InputStream) {
+        try {
+            stream.close()
+        } catch (_: IOException) {
+            // 정리 중이므로 무시
+        }
+    }
+
     // ---- Private: MediaDataSource ----
+
+    /**
+     * 수신 중인 [GrowingAudioBuffer]를 MediaPlayer에 연결하는 데이터 소스.
+     * 전체 길이를 모르므로 getSize()는 -1(미정)이고, 아직 도착하지 않은 위치는 readAt에서 대기한다.
+     */
+    private class StreamingMediaDataSource(
+        private val buffer: GrowingAudioBuffer
+    ) : MediaDataSource() {
+
+        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int =
+            this.buffer.readAt(position, buffer, offset, size)
+
+        override fun getSize(): Long = -1
+
+        override fun close() {
+            buffer.close()
+        }
+    }
 
     /**
      * ByteArray를 MediaDataSource로 감싸는 구현체
@@ -325,5 +484,9 @@ class AudioPlayerManager {
         override fun close() {
             // ByteArray는 GC가 처리하므로 별도 해제 불필요
         }
+    }
+
+    private companion object {
+        const val STREAM_CHUNK_BYTES = 8 * 1024
     }
 }
