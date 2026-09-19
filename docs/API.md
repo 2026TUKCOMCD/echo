@@ -113,6 +113,37 @@ http://localhost:8080
 
 ---
 
+### 2-1. 메시지 전송 (스트리밍 응답)
+
+`/message`와 같은 처리(STT → AI → TTS)를 하되, TTS 전체 합성이 끝나기를 기다리지 않고 **오디오를 생성되는 대로 내려보냅니다.** 첫 소리가 나오기까지의 대기 시간을 줄이기 위한 엔드포인트이며, 기존 `/message`는 그대로 유지됩니다.
+
+- **URL:** `/api/conversations/message-stream`
+- **Method:** `POST`
+- **Content-Type (요청):** `multipart/form-data` (`audio` 필드는 `/message`와 동일)
+- **Content-Type (응답):** `application/x-echo-stream`
+
+#### 응답 본문 (프레임 스트림)
+
+본문은 프레임의 연속입니다. 프레임 = `[1바이트 type][4바이트 big-endian payload 길이][payload]`
+
+| 순서 | type | 이름 | payload |
+|------|------|------|---------|
+| 1 (정확히 1개) | `0x01` | META | UTF-8 JSON `{"userMessage": "...", "aiResponse": "..."}` |
+| 2 (0개 이상) | `0x02` | AUDIO | mp3 바이트 조각 (이어 붙이면 완전한 mp3) |
+| 3 (마지막 1개) | `0x00` | END | 없음 (길이 0) — **정상 종료 표시** |
+
+- 대화 내용(텍스트)은 민감정보라서 **HTTP 헤더가 아니라 본문(META)으로만** 전달합니다.
+- **END 프레임 없이 스트림이 끝나면 잘린 것으로 간주**하고 `/tts-retry`로 폴백해야 합니다. (nginx→서버 구간이 HTTP/1.0이면 "정상 종료"와 "끊김"을 연결 종료만으로 구분할 수 없어 END로 명시합니다.)
+- 스트림이 시작되기 전(STT/LLM 처리 실패, TTS 첫 바이트 도착 실패)의 오류는 `/message`와 같은 JSON 오류 응답(HTTP 4xx/5xx)입니다. 이 경우 대화 히스토리는 저장되지 않습니다.
+- 스트림이 시작된 뒤에는 히스토리가 이미 저장된 상태이므로, 중간에 끊겨도 `/tts-retry`가 마지막 AI 응답을 정상적으로 찾습니다.
+- 응답에 `X-Accel-Buffering: no`가 포함되어 nginx가 청크를 버퍼링하지 않습니다.
+
+#### 지연 측정 로그
+
+`[지연측정]` 로그에 `tts_first_byte`(첫 오디오 바이트까지), `message_first_audio`(요청~첫 오디오), `tts_stream_total`(스트림 전송 완료까지) 구간이 남습니다.
+
+---
+
 ### 3. 대화 종료
 
 대화 세션을 종료하고 일기를 생성합니다.

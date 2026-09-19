@@ -7,6 +7,7 @@ import com.example.echo.context.service.ContextService;
 import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
+import com.example.echo.conversation.dto.StreamedConversation;
 import com.example.echo.diary.entity.Diary;
 import com.example.echo.diary.entity.DiaryStatus;
 import com.example.echo.diary.service.DiaryOutcome;
@@ -18,6 +19,7 @@ import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
+import com.example.echo.voice.exception.VoiceProcessingException;
 import com.example.echo.voice.service.VoiceService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -35,6 +37,8 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -400,6 +404,164 @@ class ConversationServiceTest2 {
 
             // then: 리셋되었으므로 2단계가 아니라 다시 1단계 문구여야 함
             assertThat(result.getAiResponse()).contains("다시 한 번 말씀해");
+        }
+    }
+
+    @Nested
+    @DisplayName("processUserMessageStream 메서드")
+    class ProcessUserMessageStream {
+
+        /** close() 호출 여부를 기록하는 스트림 */
+        private static class CloseTrackingStream extends ByteArrayInputStream {
+            boolean closed = false;
+
+            CloseTrackingStream(byte[] data) {
+                super(data);
+            }
+
+            @Override
+            public void close() throws IOException {
+                closed = true;
+                super.close();
+            }
+        }
+
+        private MultipartFile audioFile() {
+            return new MockMultipartFile("audio", "test.wav", "audio/wav", "audio".getBytes());
+        }
+
+        @Test
+        @DisplayName("성공: 텍스트와 TTS 스트림을 반환하고, 일괄 TTS(textToSpeech)는 호출하지 않는다")
+        void success_returnsTextsAndStream_withoutBatchTts() {
+            // given
+            MultipartFile audioFile = audioFile();
+            String userMessage = "오늘 산책했어요";
+            String aiResponse = "산책하셨군요! 어디를 다녀오셨나요?";
+            CloseTrackingStream audioStream = new CloseTrackingStream("audio".getBytes());
+            mockContext.setSystemPrompt("시스템 프롬프트");
+
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn(userMessage);
+            given(aiService.generateResponse(eq("시스템 프롬프트"), any(), eq(userMessage))).willReturn(aiResponse);
+            given(voiceService.textToSpeechStream(aiResponse, mockVoiceSettings)).willReturn(audioStream);
+
+            // when
+            StreamedConversation result = conversationService.processUserMessageStream(userId, audioFile);
+
+            // then
+            assertThat(result.userMessage()).isEqualTo(userMessage);
+            assertThat(result.aiResponse()).isEqualTo(aiResponse);
+            assertThat(result.audioStream()).isSameAs(audioStream);
+            assertThat(audioStream.closed).as("성공 시 스트림은 호출자가 닫을 때까지 열려 있어야 함").isFalse();
+            then(voiceService).should(never()).textToSpeech(any(), any());
+        }
+
+        @Test
+        @DisplayName("성공: STT → AI → TTS 스트림 열기 → 히스토리 저장 순서로 처리된다")
+        void success_processesInCorrectOrder_historySavedAfterStreamOpened() {
+            // given
+            MultipartFile audioFile = audioFile();
+            mockContext.setSystemPrompt("시스템 프롬프트");
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn("안녕하세요");
+            given(aiService.generateResponse(eq("시스템 프롬프트"), any(), eq("안녕하세요"))).willReturn("반가워요");
+            given(voiceService.textToSpeechStream("반가워요", mockVoiceSettings))
+                    .willReturn(new ByteArrayInputStream("a".getBytes()));
+
+            // when
+            conversationService.processUserMessageStream(userId, audioFile);
+
+            // then
+            var inOrder = inOrder(contextService, voiceService, aiService);
+            inOrder.verify(contextService).getContext(userId);
+            inOrder.verify(voiceService).speechToText(audioFile);
+            inOrder.verify(aiService).generateResponse(eq("시스템 프롬프트"), any(), eq("안녕하세요"));
+            inOrder.verify(voiceService).textToSpeechStream("반가워요", mockVoiceSettings);
+            inOrder.verify(contextService).addConversationTurn(userId, "안녕하세요", "반가워요");
+        }
+
+        @Test
+        @DisplayName("실패: TTS 스트림을 열지 못하면 예외가 전파되고 히스토리는 저장되지 않는다 (기존 /message와 동일)")
+        void fail_ttsOpenFails_historyNotSaved() {
+            // given
+            MultipartFile audioFile = audioFile();
+            mockContext.setSystemPrompt("시스템 프롬프트");
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn("안녕하세요");
+            given(aiService.generateResponse(any(), any(), any())).willReturn("반가워요");
+            given(voiceService.textToSpeechStream(any(), any()))
+                    .willThrow(new VoiceProcessingException("TTS 실패"));
+
+            // when & then
+            assertThatThrownBy(() -> conversationService.processUserMessageStream(userId, audioFile))
+                    .isInstanceOf(VoiceProcessingException.class);
+            then(contextService).should(never()).addConversationTurn(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("실패: 히스토리 저장이 실패하면 이미 열어 둔 TTS 스트림을 닫고 예외를 전파한다 (연결 누수 방지)")
+        void fail_historySaveFails_closesOpenedStream() {
+            // given
+            MultipartFile audioFile = audioFile();
+            CloseTrackingStream audioStream = new CloseTrackingStream("audio".getBytes());
+            mockContext.setSystemPrompt("시스템 프롬프트");
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn("안녕하세요");
+            given(aiService.generateResponse(any(), any(), any())).willReturn("반가워요");
+            given(voiceService.textToSpeechStream(any(), any())).willReturn(audioStream);
+            willThrow(new RuntimeException("저장 실패"))
+                    .given(contextService).addConversationTurn(eq(userId), any(), any());
+
+            // when & then
+            assertThatThrownBy(() -> conversationService.processUserMessageStream(userId, audioFile))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("저장 실패");
+            assertThat(audioStream.closed).isTrue();
+        }
+
+        @Test
+        @DisplayName("성공: STT가 비어있으면 AI를 호출하지 않고 재요청 안내를 스트리밍하며, 히스토리에는 null user 메시지가 기록된다")
+        void success_emptyStt_streamsRetryGuidance() {
+            // given
+            MultipartFile audioFile = audioFile();
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn("");
+            given(voiceService.textToSpeechStream(anyString(), eq(mockVoiceSettings)))
+                    .willReturn(new ByteArrayInputStream("a".getBytes()));
+
+            // when
+            StreamedConversation result = conversationService.processUserMessageStream(userId, audioFile);
+
+            // then
+            then(aiService).shouldHaveNoInteractions();
+            assertThat(result.userMessage()).isEmpty();
+            assertThat(result.aiResponse()).contains("다시 한 번 말씀해");
+            then(contextService).should().addConversationTurn(eq(userId), isNull(), anyString());
+        }
+
+        @Test
+        @DisplayName("성공: 스트림 전송 완료 콜백을 실행하면 tts_stream_total 지연 측정이 기록된다")
+        void success_onStreamCompleted_recordsStreamTotalTimer() {
+            // given
+            MultipartFile audioFile = audioFile();
+            mockContext.setSystemPrompt("시스템 프롬프트");
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.speechToText(audioFile)).willReturn("안녕하세요");
+            given(aiService.generateResponse(any(), any(), any())).willReturn("반가워요");
+            given(voiceService.textToSpeechStream(any(), any()))
+                    .willReturn(new ByteArrayInputStream("a".getBytes()));
+            StreamedConversation result = conversationService.processUserMessageStream(userId, audioFile);
+            assertThat(meterRegistry.find("echo.conversation.stage").tag("stage", "tts_stream_total").timer())
+                    .as("전송이 끝나기 전에는 기록되지 않음").isNull();
+
+            // when
+            result.onStreamCompleted().run();
+
+            // then
+            assertThat(meterRegistry.find("echo.conversation.stage").tag("stage", "tts_stream_total").timer())
+                    .isNotNull();
+            assertThat(meterRegistry.find("echo.conversation.stage").tag("stage", "tts_first_byte").timer())
+                    .isNotNull();
         }
     }
 

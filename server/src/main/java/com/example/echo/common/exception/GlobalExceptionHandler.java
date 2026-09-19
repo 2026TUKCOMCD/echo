@@ -1,6 +1,8 @@
 package com.example.echo.common.exception;
 
+import com.example.echo.conversation.exception.StreamAbortedException;
 import com.example.echo.voice.exception.VoiceProcessingException;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -45,6 +47,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "BAD_REQUEST", message));
+    }
+
+    /**
+     * 스트리밍 응답이 이미 시작된 뒤의 실패. 오디오 스트림 뒤에 JSON 오류 본문을 덧붙이면 스트림이 오염되므로
+     * 아무것도 쓰지 않고 종료한다(END 프레임이 없어 클라이언트가 잘린 스트림으로 판단해 폴백한다).
+     * HttpServletResponse 인자는 사용하지 않지만, 이 인자가 있어야 Spring이 응답을 처리 완료로 보고
+     * 뷰 렌더링을 시도하지 않는다.
+     */
+    @ExceptionHandler(StreamAbortedException.class)
+    public void handleStreamAborted(StreamAbortedException e, HttpServletResponse response) {
+        log.error("스트리밍 응답 도중 실패 - 오류 본문 없이 종료: {}", e.getMessage(), e);
     }
 
     @ExceptionHandler(Exception.class)
