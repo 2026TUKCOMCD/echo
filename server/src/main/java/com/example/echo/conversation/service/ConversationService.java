@@ -6,6 +6,7 @@ import com.example.echo.context.service.ContextService;
 import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartResponse;
+import com.example.echo.conversation.dto.StreamedConversation;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
@@ -29,6 +30,8 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -150,8 +153,69 @@ public class ConversationService {
                 .build();
     }
 
+    /** STT + AI 응답까지 끝낸 한 턴의 텍스트 결과. TTS는 호출 방식(일괄/스트리밍)에 따라 이후 단계에서 처리한다. */
+    private record ResolvedTurn(UserContext context, String userMessage, String aiResponse, boolean sttEmpty) {
+    }
+
     public ConversationResponse processUserMessage(Long userId, MultipartFile audioFile) {
         long turnStart = System.currentTimeMillis();
+        ResolvedTurn turn = resolveTurn(userId, audioFile);
+        UserContext context = turn.context();
+
+        // 4. TTS 변환
+        byte[] audioData = timed("tts", userId, context.getConversationHistory().size(),
+                () -> voiceService.textToSpeech(turn.aiResponse(), context.getPreferences().getVoiceSettings()));
+
+        // 5. 히스토리 업데이트 (동기)
+        addTurnToHistory(userId, turn);
+
+        recordTotal("message_total", userId, turnStart, context.getConversationHistory().size());
+
+        return ConversationResponse.builder()
+                .userMessage(turn.userMessage())
+                .aiResponse(turn.aiResponse())
+                .audioData(audioData)
+                .timestamp(LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * processUserMessage의 스트리밍 버전 - TTS 전체 합성을 기다리지 않고, 첫 오디오 바이트가 도착하면
+     * 텍스트와 함께 스트림을 반환한다. 히스토리는 스트림이 열린 뒤에 저장하므로 TTS를 열지 못한 턴은
+     * 기존 /message와 같이 기록되지 않고 예외로 끝난다. 이후 스트림이 중간에 끊겨도 히스토리는
+     * 저장돼 있어 tts-retry가 마지막 응답을 정상적으로 찾을 수 있다.
+     */
+    public StreamedConversation processUserMessageStream(Long userId, MultipartFile audioFile) {
+        long turnStart = System.currentTimeMillis();
+        ResolvedTurn turn = resolveTurn(userId, audioFile);
+        UserContext context = turn.context();
+        int historyTurns = context.getConversationHistory().size();
+        long ttsStart = System.currentTimeMillis();
+
+        // 4. TTS 스트림 열기 - 첫 오디오 바이트가 도착할 때까지 대기한다 (tts_first_byte = 체감 지연)
+        InputStream audioStream = timed("tts_first_byte", userId, historyTurns,
+                () -> voiceService.textToSpeechStream(turn.aiResponse(), context.getPreferences().getVoiceSettings()));
+
+        // 5. 히스토리 업데이트 (동기) - 실패하면 열어 둔 TTS 연결을 반드시 닫는다
+        try {
+            addTurnToHistory(userId, turn);
+        } catch (RuntimeException e) {
+            closeQuietly(audioStream);
+            throw e;
+        }
+
+        recordTotal("message_first_audio", userId, turnStart, context.getConversationHistory().size());
+
+        return new StreamedConversation(
+                turn.userMessage(),
+                turn.aiResponse(),
+                audioStream,
+                () -> recordTotal("tts_stream_total", userId, ttsStart, historyTurns)
+        );
+    }
+
+    /** 컨텍스트 조회 → STT → AI 응답 생성 (일괄/스트리밍 공통 구간) */
+    private ResolvedTurn resolveTurn(Long userId, MultipartFile audioFile) {
         // 1. 컨텍스트 조회
         UserContext context = contextService.getContext(userId);
 
@@ -177,23 +241,25 @@ public class ConversationService {
                     () -> aiService.generateResponse(systemPrompt, history, userMessage));
         }
 
-        // 4. TTS 변환
-        byte[] audioData = timed("tts", userId, context.getConversationHistory().size(),
-                () -> voiceService.textToSpeech(aiResponse, context.getPreferences().getVoiceSettings()));
+        return new ResolvedTurn(context, userMessage, aiResponse, sttEmpty);
+    }
 
-        // 5. 히스토리 업데이트 (동기)
-        //    빈 user 메시지는 기록하지 않는다(null이면 첫 인사 턴처럼 AI 발화만 기록됨) -
-        //    이후 턴에서 이 히스토리가 다시 messages 배열에 실릴 때 빈 user 메시지가 섞이지 않도록.
-        contextService.addConversationTurn(userId, sttEmpty ? null : userMessage, aiResponse);
+    /**
+     * 히스토리 업데이트.
+     * 빈 user 메시지는 기록하지 않는다(null이면 첫 인사 턴처럼 AI 발화만 기록됨) -
+     * 이후 턴에서 이 히스토리가 다시 messages 배열에 실릴 때 빈 user 메시지가 섞이지 않도록.
+     */
+    private void addTurnToHistory(Long userId, ResolvedTurn turn) {
+        contextService.addConversationTurn(
+                userId, turn.sttEmpty() ? null : turn.userMessage(), turn.aiResponse());
+    }
 
-        recordTotal("message_total", userId, turnStart, context.getConversationHistory().size());
-
-        return ConversationResponse.builder()
-                .userMessage(userMessage)
-                .aiResponse(aiResponse)
-                .audioData(audioData)
-                .timestamp(LocalDateTime.now())
-                .build();
+    private static void closeQuietly(InputStream stream) {
+        try {
+            stream.close();
+        } catch (IOException ignored) {
+            // 이미 실패 경로에서 정리 중이므로 무시
+        }
     }
 
     /**
