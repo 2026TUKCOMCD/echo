@@ -55,9 +55,13 @@ dependencies {
 	// OpenFeign
 	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
 	implementation 'io.github.openfeign:feign-micrometer'
-	// Feign 커넥션 풀링 - 클래스패스에 있으면 Spring Cloud OpenFeign이 기본 미풀링 클라이언트 대신
-	// PoolingHttpClientConnectionManager 기반 클라이언트로 자동 전환 (STT/LLM/TTS 세 Feign 클라이언트 공통 적용)
+	// Feign 커넥션 풀링 - 두 의존성이 모두 있어야 Spring Cloud OpenFeign이 기본 미풀링 클라이언트
+	// (JDK HttpURLConnection) 대신 PoolingHttpClientConnectionManager 기반 ApacheHttp5Client로 전환한다.
+	// 자동 설정 조건이 @ConditionalOnClass(feign.hc5.ApacheHttp5Client)라서 httpclient5만으로는 적용되지 않음.
+	// 기본 클라이언트도 keep-alive 재사용은 하지만 유휴 약 5초 후 연결을 버려서, 대화 턴 사이마다 새 TLS 연결을 맺었다.
+	// 모든 Feign 클라이언트(STT/LLM/TTS/날씨/지오코딩)에 공통 적용되며, 클라이언트별 readTimeout은 그대로 유지됨.
 	implementation 'org.apache.httpcomponents.client5:httpclient5'
+	implementation 'io.github.openfeign:feign-hc5'
 
 	// Spring Retry (RetryTemplate — AOP 불필요)
 	implementation 'org.springframework.retry:spring-retry'
