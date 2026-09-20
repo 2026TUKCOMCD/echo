@@ -9,13 +9,15 @@ import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationDataManager
 import com.example.graduation_project.data.model.ConversationEndResponse
-import com.example.graduation_project.data.model.ConversationMessageResponse
+import com.example.graduation_project.data.model.MessageReply
+import com.example.graduation_project.data.model.TtsRetryResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.voice.AudioPlayerManager
 import com.example.graduation_project.data.voice.AudioRecordManager
 import com.example.graduation_project.domain.health.HealthConnectAvailability
 import com.example.graduation_project.domain.health.IHealthRepository
+import com.example.graduation_project.domain.voice.AudioPlayException
 import com.example.graduation_project.domain.voice.AudioPlayListener
 import com.example.graduation_project.domain.voice.AudioRecordException
 import com.example.graduation_project.domain.voice.AudioRecordListener
@@ -56,6 +58,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
+import java.io.ByteArrayInputStream
 
 /**
  * ConversationViewModel 단위 테스트
@@ -155,9 +158,9 @@ class ConversationViewModelTest {
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
 
-            coEvery { mockRepository.sendMessage(any()) } coAnswers {
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
                 delay(1_000)
-                ApiResult.Success(ConversationMessageResponse())
+                ApiResult.Success(MessageReply.Buffered(null, null, null))
             }
 
             val wavData = ByteArray(0)
@@ -165,7 +168,7 @@ class ConversationViewModelTest {
             viewModel.sendMessage(wavData)  // Sending → Sending 전이 실패 → return@launch
             advanceUntilIdle()
 
-            coVerify(exactly = 1) { mockRepository.sendMessage(any()) }
+            coVerify(exactly = 1) { mockRepository.sendMessageStreaming(any()) }
         }
 
     @Test
@@ -228,7 +231,7 @@ class ConversationViewModelTest {
     fun `sendMessage 실패 시에는 startFailed가 true로 바뀌지 않는다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
-            coEvery { mockRepository.sendMessage(any()) } returns
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
                 ApiResult.Error(ApiException.NetworkError())
 
             viewModel.sendMessage(ByteArray(0))
@@ -241,7 +244,7 @@ class ConversationViewModelTest {
     fun `sendMessage 실패 시 Listening으로 복구된다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
-            coEvery { mockRepository.sendMessage(any()) } returns
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
                 ApiResult.Error(ApiException.NetworkError())
 
             viewModel.sendMessage(ByteArray(0))
@@ -387,8 +390,8 @@ class ConversationViewModelTest {
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
 
-            coEvery { mockRepository.sendMessage(any()) } returns
-                ApiResult.Success(ConversationMessageResponse(audioData = "dummy-audio"))
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Buffered(null, null, audioData = "dummy-audio"))
 
             // Listening → Recording → sendMessage
             viewModel.updateConversationState(ConversationState.Recording)
@@ -401,6 +404,55 @@ class ConversationViewModelTest {
                 mockAudioRecordManager.stop()
                 mockAudioPlayerManager.play("dummy-audio")
             }
+        }
+
+    // ===== 스트리밍 응답 테스트 =====
+
+    @Test
+    fun `스트리밍 응답이면 말풍선을 추가하고 녹음 중지 후 스트림을 재생한다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            val audio = ByteArrayInputStream(byteArrayOf(1, 2, 3))
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Streaming("오늘 산책했어요", "산책하셨군요!", audio))
+
+            viewModel.updateConversationState(ConversationState.Recording)
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            // 오디오가 다 오기 전에도 텍스트는 바로 표시되고, 재생 중(Playing) 상태가 됨
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+            val texts = viewModel.uiState.value.messages.map { it.text }
+            assertTrue(texts.containsAll(listOf("오늘 산책했어요", "산책하셨군요!")))
+            verifyOrder {
+                mockAudioRecordManager.stop()
+                mockAudioPlayerManager.playStream(audio)
+            }
+            verify(exactly = 0) { mockAudioPlayerManager.play(any()) }
+        }
+
+    @Test
+    fun `스트리밍 재생이 실패하면 서버 TTS 재요청으로 폴백한다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Streaming("안녕", "반가워요", ByteArrayInputStream(byteArrayOf(1))))
+            coEvery { mockRepository.retryTts() } returns
+                ApiResult.Success(TtsRetryResponse(audioData = "retry-audio"))
+
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            // when: 스트림이 중간에 끊겨 AudioPlayerManager가 최종 에러를 알림
+            audioPlayListenerSlot.captured.onError(
+                AudioPlayException.PlaybackError(message = "음성 스트림이 중간에 끊겼습니다"),
+                isFallbackNeeded = true
+            )
+            advanceUntilIdle()
+
+            // then: 기존 tts-retry 경로(Base64)로 처음부터 다시 재생
+            coVerify(exactly = 1) { mockRepository.retryTts() }
+            verify { mockAudioPlayerManager.play("retry-audio") }
         }
 
     // ===== 백그라운드 전환 테스트 =====
