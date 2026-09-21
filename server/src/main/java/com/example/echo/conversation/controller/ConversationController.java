@@ -61,23 +61,7 @@ public class ConversationController {
             @Parameter(hidden = true) @CurrentUser Long userId,
             @RequestBody(required = false) ConversationStartRequest request
     ) {
-        // 입력 데이터 상세 로그
-        log.info("=== 대화 시작 요청 - userId: {} ===", userId);
-        if (request != null && request.getLocationData() != null) {
-            var loc = request.getLocationData();
-            log.debug("[입력] 현재좌표: ({}, {}), 총이동거리: {}km",
-                    loc.getCurrentLatitude(), loc.getCurrentLongitude(), loc.getTotalDistanceKm());
-            if (loc.getVisitedPlaces() != null) {
-                log.info("[입력] 방문장소 수: {}", loc.getVisitedPlaces().size());
-                loc.getVisitedPlaces().forEach(place ->
-                    log.debug("[입력] 방문장소 - 좌표: ({}, {}), 시작: {}, 종료: {}, 체류: {}분",
-                            place.getLatitude(), place.getLongitude(),
-                            place.getVisitStartTime(), place.getVisitEndTime(),
-                            place.getStayDurationMinutes()));
-            }
-        } else {
-            log.info("[입력] 위치 데이터 없음");
-        }
+        logStartRequest(userId, request, "대화 시작 요청");
 
         ConversationStartResponse response = conversationService.startConversation(
                 userId,
@@ -85,6 +69,33 @@ public class ConversationController {
                 request != null ? request.getLocationData() : null
         );
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "대화 시작 (스트리밍 응답)",
+            description = "/start와 같은 처리(컨텍스트 초기화 → 첫 인사 생성 → TTS)를 하되, TTS 전체 합성을 기다리지 않고 "
+                    + "오디오를 생성되는 대로 내려보냅니다. 응답 규격은 /message-stream과 같은 application/x-echo-stream "
+                    + "프레임 스트림이며, 첫 인사에는 사용자 발화가 없으므로 META의 userMessage는 항상 null입니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "스트리밍 시작 (본문은 프레임 스트림)"),
+            @ApiResponse(responseCode = "500", description = "AI 응답 생성 실패 또는 TTS 시작 전 처리 실패")
+    })
+    @PostMapping("/start-stream")
+    public void startConversationStream(
+            @Parameter(hidden = true) @CurrentUser Long userId,
+            @RequestBody(required = false) ConversationStartRequest request,
+            HttpServletResponse response
+    ) throws IOException {
+        logStartRequest(userId, request, "대화 시작 요청 (스트리밍)");
+
+        // 컨텍스트 초기화/첫 인사 생성/TTS 첫 바이트 확인까지는 응답을 건드리지 않는다 - 여기서 실패하면 기존과 같은 JSON 오류 응답이 나간다.
+        StreamedConversation result = conversationService.startConversationStream(
+                userId,
+                request != null ? request.getHealthData() : null,
+                request != null ? request.getLocationData() : null
+        );
+        writeStream(result, userId, response);
     }
 
     @Operation(
@@ -131,8 +142,35 @@ public class ConversationController {
     ) throws IOException {
         // STT/LLM 처리와 TTS 첫 바이트 확인까지는 응답을 건드리지 않는다 - 여기서 실패하면 기존과 같은 JSON 오류 응답이 나간다.
         StreamedConversation result = conversationService.processUserMessageStream(userId, audioFile);
+        writeStream(result, userId, response);
+    }
 
-        // StreamingResponseBody 대신 응답에 직접 쓴다: 비동기 재-dispatch가 없어 JWT 필터/보안 설정과 얽히지 않는다.
+    /** 대화 시작 요청의 입력 데이터 상세 로그 (/start, /start-stream 공통) */
+    private void logStartRequest(Long userId, ConversationStartRequest request, String label) {
+        log.info("=== {} - userId: {} ===", label, userId);
+        if (request != null && request.getLocationData() != null) {
+            var loc = request.getLocationData();
+            log.debug("[입력] 현재좌표: ({}, {}), 총이동거리: {}km",
+                    loc.getCurrentLatitude(), loc.getCurrentLongitude(), loc.getTotalDistanceKm());
+            if (loc.getVisitedPlaces() != null) {
+                log.info("[입력] 방문장소 수: {}", loc.getVisitedPlaces().size());
+                loc.getVisitedPlaces().forEach(place ->
+                    log.debug("[입력] 방문장소 - 좌표: ({}, {}), 시작: {}, 종료: {}, 체류: {}분",
+                            place.getLatitude(), place.getLongitude(),
+                            place.getVisitStartTime(), place.getVisitEndTime(),
+                            place.getStayDurationMinutes()));
+            }
+        } else {
+            log.info("[입력] 위치 데이터 없음");
+        }
+    }
+
+    /**
+     * 프레임 스트림 응답 쓰기 (/message-stream, /start-stream 공통).
+     *
+     * StreamingResponseBody 대신 응답에 직접 쓴다: 비동기 재-dispatch가 없어 JWT 필터/보안 설정과 얽히지 않는다.
+     */
+    private void writeStream(StreamedConversation result, Long userId, HttpServletResponse response) throws IOException {
         try (InputStream audio = result.audioStream()) {
             byte[] meta = objectMapper.writeValueAsBytes(new StreamMeta(result.userMessage(), result.aiResponse()));
 

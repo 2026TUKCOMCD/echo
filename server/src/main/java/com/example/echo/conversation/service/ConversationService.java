@@ -111,6 +111,68 @@ public class ConversationService {
 
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         long turnStart = System.currentTimeMillis();
+        ResolvedGreeting greeting = resolveGreeting(userId, healthData, rawLocationData);
+        UserContext context = greeting.context();
+
+        // 5. TTS 변환
+        byte[] audioData = timed("tts", userId, context.getConversationHistory().size(),
+                () -> voiceService.textToSpeech(greeting.firstMessage(), context.getPreferences().getVoiceSettings()));
+
+        // 6. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
+        contextService.addConversationTurn(userId, null, greeting.firstMessage());
+
+        recordTotal("start_total", userId, turnStart, context.getConversationHistory().size());
+
+        return ConversationStartResponse.builder()
+                .message(greeting.firstMessage())
+                .audioData(audioData)
+                .timestamp(LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * startConversation의 스트리밍 버전 - 첫 인사 TTS 전체 합성을 기다리지 않고, 첫 오디오 바이트가
+     * 도착하면 인사말 텍스트와 함께 스트림을 반환한다. 히스토리는 processUserMessageStream과 같은
+     * 이유로 스트림을 연 뒤에 저장한다(스트림이 중간에 끊겨도 tts-retry가 인사말을 찾을 수 있도록).
+     *
+     * 첫 인사에는 사용자 발화가 없으므로 StreamedConversation.userMessage는 항상 null이다.
+     */
+    public StreamedConversation startConversationStream(Long userId, HealthData healthData, RawLocationData rawLocationData) {
+        long turnStart = System.currentTimeMillis();
+        ResolvedGreeting greeting = resolveGreeting(userId, healthData, rawLocationData);
+        UserContext context = greeting.context();
+        int historyTurns = context.getConversationHistory().size();
+        long ttsStart = System.currentTimeMillis();
+
+        // 5. TTS 스트림 열기 - 첫 오디오 바이트가 도착할 때까지 대기한다 (start_tts_first_byte = 체감 지연)
+        //    인사말 TTS와 응답 TTS는 길이·성격이 달라 평균이 섞이지 않도록 stage 이름을 분리한다.
+        InputStream audioStream = timed("start_tts_first_byte", userId, historyTurns,
+                () -> voiceService.textToSpeechStream(greeting.firstMessage(), context.getPreferences().getVoiceSettings()));
+
+        // 6. 히스토리 추가 (동기) - 실패하면 열어 둔 TTS 연결을 반드시 닫는다
+        try {
+            contextService.addConversationTurn(userId, null, greeting.firstMessage());
+        } catch (RuntimeException e) {
+            closeQuietly(audioStream);
+            throw e;
+        }
+
+        recordTotal("start_first_audio", userId, turnStart, context.getConversationHistory().size());
+
+        return new StreamedConversation(
+                null,
+                greeting.firstMessage(),
+                audioStream,
+                () -> recordTotal("start_tts_stream_total", userId, ttsStart, historyTurns)
+        );
+    }
+
+    /** 컨텍스트 초기화 + 시스템 프롬프트 구성까지 끝낸 첫 인사. TTS는 호출 방식(일괄/스트리밍)에 따라 이후 단계에서 처리한다. */
+    private record ResolvedGreeting(UserContext context, String firstMessage) {
+    }
+
+    /** 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 → 첫 인사 생성 (일괄/스트리밍 공통 구간) */
+    private ResolvedGreeting resolveGreeting(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
         if (healthData != null) {
             healthDataService.saveHealthData(userId, healthData);
@@ -137,20 +199,7 @@ public class ConversationService {
         String firstMessage = timed("llm_greeting", userId, context.getConversationHistory().size(),
                 () -> aiService.generateGreeting(systemPrompt, context));
 
-        // 5. TTS 변환
-        byte[] audioData = timed("tts", userId, context.getConversationHistory().size(),
-                () -> voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings()));
-
-        // 6. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
-        contextService.addConversationTurn(userId, null, firstMessage);
-
-        recordTotal("start_total", userId, turnStart, context.getConversationHistory().size());
-
-        return ConversationStartResponse.builder()
-                .message(firstMessage)
-                .audioData(audioData)
-                .timestamp(LocalDateTime.now())
-                .build();
+        return new ResolvedGreeting(context, firstMessage);
     }
 
     /** STT + AI 응답까지 끝낸 한 턴의 텍스트 결과. TTS는 호출 방식(일괄/스트리밍)에 따라 이후 단계에서 처리한다. */

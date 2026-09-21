@@ -73,6 +73,33 @@ http://localhost:8080
 
 ---
 
+### 1-1. 대화 시작 (스트리밍 응답)
+
+`/start`와 같은 처리(컨텍스트 초기화 → 첫 인사 생성 → TTS)를 하되, TTS 전체 합성을 기다리지 않고 오디오를 생성되는 대로 내려보냅니다. 응답 규격은 [2-1절](#2-1-메시지-전송-스트리밍-응답)과 같습니다.
+
+- **URL:** `/api/conversations/start-stream`
+- **Method:** `POST`
+- **Content-Type (요청):** `application/json` (본문은 `/start`와 동일, 생략 가능)
+- **Content-Type (응답):** `application/x-echo-stream`
+
+#### 응답 본문 (프레임 스트림)
+
+프레임 규격은 `/message-stream`과 완전히 같습니다. 단, **첫 인사에는 사용자 발화가 없으므로 META의 `userMessage`는 항상 `null`** 입니다.
+
+```json
+{"userMessage": null, "aiResponse": "안녕하세요, 어르신! 오늘 하루는 어떠셨어요?"}
+```
+
+- 기존 `/start`는 그대로 유지됩니다. 스트리밍을 지원하지 않는 구버전 서버는 이 경로에 404를 반환하므로, 클라이언트는 404/405일 때만 `/start`로 폴백합니다.
+- 스트림이 시작되기 전(첫 인사 생성 실패, TTS 첫 바이트 도착 실패)의 오류는 `/start`와 같은 JSON 오류 응답입니다. 이 경우 대화 히스토리는 저장되지 않습니다.
+- 스트림이 시작된 뒤에는 히스토리가 이미 저장된 상태이므로, 중간에 끊겨도 `/tts-retry`가 첫 인사를 정상적으로 찾습니다.
+
+#### 지연 측정 로그
+
+`[지연측정]` 로그에 `start_tts_first_byte`(첫 오디오 바이트까지), `start_first_audio`(요청~첫 오디오, 일괄 방식의 `start_total`에 대응), `start_tts_stream_total`(스트림 전송 완료까지) 구간이 남습니다. 인사말 TTS와 응답 TTS의 통계가 섞이지 않도록 `/message-stream`과 stage 이름을 분리했습니다.
+
+---
+
 ### 2. 메시지 전송
 
 사용자 음성 메시지를 처리하고 AI 응답을 반환합니다.
