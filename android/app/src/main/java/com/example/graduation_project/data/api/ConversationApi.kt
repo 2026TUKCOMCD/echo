@@ -18,12 +18,23 @@ interface ConversationApi {
 
     companion object {
         const val MESSAGE_STREAM_PATH = "/api/conversations/message-stream"
+        const val START_STREAM_PATH = "/api/conversations/start-stream"
     }
 
     @POST("/api/conversations/start")
     suspend fun startConversation(
         @Body request: ConversationStartRequest
     ): ConversationStartResponse
+
+    /**
+     * 대화 시작의 스트리밍 응답 버전. 프레임 규격은 [sendMessageStream]과 같고,
+     * 첫 인사에는 사용자 발화가 없어 META의 userMessage는 항상 null이다.
+     */
+    @Streaming
+    @POST(START_STREAM_PATH)
+    suspend fun startConversationStream(
+        @Body request: ConversationStartRequest
+    ): Response<ResponseBody>
 
     @Multipart
     @POST("/api/conversations/message")
