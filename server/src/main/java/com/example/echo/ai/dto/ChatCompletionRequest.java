@@ -5,6 +5,7 @@
  */
 package com.example.echo.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Getter;
@@ -27,6 +28,10 @@ public class ChatCompletionRequest {
     /** 응답 최대 토큰 수 */
     @JsonProperty("max_tokens")
     private Integer maxTokens;
+
+    /** true면 SSE 스트리밍 응답. 일반 호출에서는 필드 자체를 보내지 않는다 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean stream;
 
     /**
      * 대화 메시지 단위

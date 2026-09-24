@@ -91,6 +91,13 @@ jwt:
   access-token-expiration: 3600000      # 1시간
   refresh-token-expiration: 2592000000  # 30일
 
+# 스트리밍 대화 응답(/message-stream, /start-stream): LLM이 생성하는 대로 "첫 조각 + 나머지"로 나눠 TTS
+conversation:
+  stream:
+    first-chunk-min-chars: 15   # 첫 문장이 이보다 짧으면 다음 문장까지 붙임 (짧으면 재생이 금방 끝나 공백이 생김)
+    first-chunk-max-chars: 80   # 문장 끝 없이 이 길이를 넘으면 쉼표/공백에서 자름
+    llm-timeout-seconds: 90
+
 # ElevenLabs TTS 설정
 elevenlabs:
   base-url: https://api.elevenlabs.io/v1

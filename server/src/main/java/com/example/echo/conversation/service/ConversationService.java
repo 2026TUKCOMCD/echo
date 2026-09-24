@@ -9,6 +9,8 @@ import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.conversation.dto.StreamedConversation;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.conversation.dto.TtsRetryResponse;
+import com.example.echo.conversation.stream.SpeechSegment;
+import com.example.echo.conversation.stream.SpeechSegmentSource;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.entity.Diary;
 import com.example.echo.diary.service.DiaryOutcome;
@@ -20,6 +22,7 @@ import com.example.echo.memory.entity.Memory;
 import com.example.echo.memory.service.MemoryService;
 import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.service.PromptService;
+import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.service.VoiceService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -73,6 +76,7 @@ public class ConversationService {
     @Qualifier("applicationTaskExecutor")
     private final TaskExecutor taskExecutor;
     private final MeterRegistry meterRegistry;
+    private final SpeechStreamPipeline speechStreamPipeline;
 
     /**
      * STT/LLM/TTS 등 파이프라인 구간의 소요 시간을 측정해 Micrometer 타이머(echo.conversation.stage,
@@ -109,70 +113,78 @@ public class ConversationService {
         log.info("[지연측정] stage={}, userId={}, elapsedMs={}, historyTurns={}", stage, userId, elapsedMs, historyTurns);
     }
 
+    // 첫 인사와 메시지 턴의 LLM/TTS는 길이·성격이 달라 평균이 섞이지 않도록 stage 이름을 분리한다.
+    // llm_greeting / llm 은 스트리밍 전과 같은 의미(LLM 전체 소요)로 유지해 전후 비교가 가능하게 한다.
+    private static final SpeechStreamPipeline.Stages GREETING_STAGES = new SpeechStreamPipeline.Stages(
+            "start_llm_first_token", "start_llm_first_chunk", "llm_greeting",
+            "start_tts_first_byte", "start_tts_rest_first_byte");
+    private static final SpeechStreamPipeline.Stages MESSAGE_STAGES = new SpeechStreamPipeline.Stages(
+            "llm_first_token", "llm_first_chunk", "llm",
+            "tts_first_byte", "tts_rest_first_byte");
+
+    /** 이미 잰 구간 시간을 timed()와 같은 타이머/로그 형식으로 기록한다 */
+    private void recordElapsed(String stage, Long userId, long elapsedMs, int historyTurns) {
+        Timer.builder("echo.conversation.stage")
+                .description("대화 파이프라인 구간별 소요 시간")
+                .tag("stage", stage)
+                .register(meterRegistry)
+                .record(elapsedMs, TimeUnit.MILLISECONDS);
+        log.info("[지연측정] stage={}, userId={}, elapsedMs={}, historyTurns={}", stage, userId, elapsedMs, historyTurns);
+    }
+
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         long turnStart = System.currentTimeMillis();
-        ResolvedGreeting greeting = resolveGreeting(userId, healthData, rawLocationData);
-        UserContext context = greeting.context();
+        UserContext context = prepareGreetingContext(userId, healthData, rawLocationData);
+
+        // 4. 첫 인사 생성
+        String firstMessage = timed("llm_greeting", userId, context.getConversationHistory().size(),
+                () -> aiService.generateGreeting(context.getSystemPrompt(), context));
 
         // 5. TTS 변환
         byte[] audioData = timed("tts", userId, context.getConversationHistory().size(),
-                () -> voiceService.textToSpeech(greeting.firstMessage(), context.getPreferences().getVoiceSettings()));
+                () -> voiceService.textToSpeech(firstMessage, context.getPreferences().getVoiceSettings()));
 
         // 6. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
-        contextService.addConversationTurn(userId, null, greeting.firstMessage());
+        contextService.addConversationTurn(userId, null, firstMessage);
 
         recordTotal("start_total", userId, turnStart, context.getConversationHistory().size());
 
         return ConversationStartResponse.builder()
-                .message(greeting.firstMessage())
+                .message(firstMessage)
                 .audioData(audioData)
                 .timestamp(LocalDateTime.now())
                 .build();
     }
 
     /**
-     * startConversation의 스트리밍 버전 - 첫 인사 TTS 전체 합성을 기다리지 않고, 첫 오디오 바이트가
-     * 도착하면 인사말 텍스트와 함께 스트림을 반환한다. 히스토리는 processUserMessageStream과 같은
-     * 이유로 스트림을 연 뒤에 저장한다(스트림이 중간에 끊겨도 tts-retry가 인사말을 찾을 수 있도록).
+     * startConversation의 스트리밍 버전 - 첫 인사를 LLM이 생성하는 대로 조각 단위로 TTS해, 첫 조각의 오디오 첫 바이트가
+     * 도착하면 바로 반환한다. 나머지 조각과 히스토리 저장은 {@link SpeechStreamPipeline}이 이어서 처리한다.
      *
      * 첫 인사에는 사용자 발화가 없으므로 StreamedConversation.userMessage는 항상 null이다.
      */
     public StreamedConversation startConversationStream(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         long turnStart = System.currentTimeMillis();
-        ResolvedGreeting greeting = resolveGreeting(userId, healthData, rawLocationData);
-        UserContext context = greeting.context();
+        UserContext context = prepareGreetingContext(userId, healthData, rawLocationData);
         int historyTurns = context.getConversationHistory().size();
-        long ttsStart = System.currentTimeMillis();
 
-        // 5. TTS 스트림 열기 - 첫 오디오 바이트가 도착할 때까지 대기한다 (start_tts_first_byte = 체감 지연)
-        //    인사말 TTS와 응답 TTS는 길이·성격이 달라 평균이 섞이지 않도록 stage 이름을 분리한다.
-        InputStream audioStream = timed("start_tts_first_byte", userId, historyTurns,
-                () -> voiceService.textToSpeechStream(greeting.firstMessage(), context.getPreferences().getVoiceSettings()));
+        SpeechStreamPipeline.Started started = speechStreamPipeline.start(
+                () -> aiService.openGreetingStream(context.getSystemPrompt(), context),
+                context.getPreferences().getVoiceSettings(),
+                GREETING_STAGES,
+                (stage, elapsedMs) -> recordElapsed(stage, userId, elapsedMs, historyTurns),
+                greeting -> contextService.addConversationTurn(userId, null, greeting));
 
-        // 6. 히스토리 추가 (동기) - 실패하면 열어 둔 TTS 연결을 반드시 닫는다
-        try {
-            contextService.addConversationTurn(userId, null, greeting.firstMessage());
-        } catch (RuntimeException e) {
-            closeQuietly(audioStream);
-            throw e;
-        }
-
-        recordTotal("start_first_audio", userId, turnStart, context.getConversationHistory().size());
+        recordTotal("start_first_audio", userId, turnStart, historyTurns);
 
         return new StreamedConversation(
                 null,
-                greeting.firstMessage(),
-                audioStream,
-                () -> recordTotal("start_tts_stream_total", userId, ttsStart, historyTurns)
+                started.segments(),
+                () -> recordTotal("start_tts_stream_total", userId, started.ttsStartedAtMs(), historyTurns)
         );
     }
 
-    /** 컨텍스트 초기화 + 시스템 프롬프트 구성까지 끝낸 첫 인사. TTS는 호출 방식(일괄/스트리밍)에 따라 이후 단계에서 처리한다. */
-    private record ResolvedGreeting(UserContext context, String firstMessage) {
-    }
-
-    /** 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 → 첫 인사 생성 (일괄/스트리밍 공통 구간) */
-    private ResolvedGreeting resolveGreeting(Long userId, HealthData healthData, RawLocationData rawLocationData) {
+    /** 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다. */
+    private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0. 건강 데이터 저장 (Android에서 수신한 경우)
         if (healthData != null) {
             healthDataService.saveHealthData(userId, healthData);
@@ -194,15 +206,10 @@ public class ConversationService {
         String systemPrompt = appendRecentDiaries(
                 promptService.buildSystemPrompt(context, lifeMemories, recallGuide), userId);
         context.setSystemPrompt(systemPrompt);
-
-        // 4. 첫 인사 생성
-        String firstMessage = timed("llm_greeting", userId, context.getConversationHistory().size(),
-                () -> aiService.generateGreeting(systemPrompt, context));
-
-        return new ResolvedGreeting(context, firstMessage);
+        return context;
     }
 
-    /** STT + AI 응답까지 끝낸 한 턴의 텍스트 결과. TTS는 호출 방식(일괄/스트리밍)에 따라 이후 단계에서 처리한다. */
+    /** STT + AI 응답까지 끝낸 한 턴의 텍스트 결과 (일괄 처리용) */
     private record ResolvedTurn(UserContext context, String userMessage, String aiResponse, boolean sttEmpty) {
     }
 
@@ -229,59 +236,104 @@ public class ConversationService {
     }
 
     /**
-     * processUserMessage의 스트리밍 버전 - TTS 전체 합성을 기다리지 않고, 첫 오디오 바이트가 도착하면
-     * 텍스트와 함께 스트림을 반환한다. 히스토리는 스트림이 열린 뒤에 저장하므로 TTS를 열지 못한 턴은
-     * 기존 /message와 같이 기록되지 않고 예외로 끝난다. 이후 스트림이 중간에 끊겨도 히스토리는
-     * 저장돼 있어 tts-retry가 마지막 응답을 정상적으로 찾을 수 있다.
+     * processUserMessage의 스트리밍 버전 - AI 응답을 LLM이 생성하는 대로 조각 단위로 TTS해, 첫 조각의 오디오 첫 바이트가
+     * 도착하면 바로 반환한다. 나머지 조각과 히스토리 저장은 {@link SpeechStreamPipeline}이 이어서 처리한다
+     * (히스토리 규칙은 그 클래스 주석 참고).
+     *
+     * STT 결과가 비어 있으면 LLM 없이 고정 안내 문구 한 조각으로 응답한다.
      */
     public StreamedConversation processUserMessageStream(Long userId, MultipartFile audioFile) {
         long turnStart = System.currentTimeMillis();
-        ResolvedTurn turn = resolveTurn(userId, audioFile);
+        TranscribedTurn turn = transcribe(userId, audioFile);
         UserContext context = turn.context();
         int historyTurns = context.getConversationHistory().size();
+        VoiceSettings voiceSettings = context.getPreferences().getVoiceSettings();
+
+        if (turn.sttEmpty()) {
+            return emptySttStream(userId, turn, voiceSettings, turnStart, historyTurns);
+        }
+
+        context.setConsecutiveEmptySttCount(0);
+        String userMessage = turn.userMessage();
+        // 풀 스레드에서 읽으므로, 이번 턴 저장 전의 히스토리를 고정해서 넘긴다
+        List<ConversationTurn> history = List.copyOf(context.getConversationHistory());
+        SpeechStreamPipeline.Started started = speechStreamPipeline.start(
+                () -> aiService.openResponseStream(context.getSystemPrompt(), history, userMessage),
+                voiceSettings,
+                MESSAGE_STAGES,
+                (stage, elapsedMs) -> recordElapsed(stage, userId, elapsedMs, historyTurns),
+                aiResponse -> contextService.addConversationTurn(userId, userMessage, aiResponse));
+
+        recordTotal("message_first_audio", userId, turnStart, historyTurns);
+
+        return new StreamedConversation(
+                userMessage,
+                started.segments(),
+                () -> recordTotal("tts_stream_total", userId, started.ttsStartedAtMs(), historyTurns)
+        );
+    }
+
+    /** STT가 비었을 때 - LLM 없이 고정 안내 문구를 한 조각으로 보낸다. 히스토리는 TTS를 연 뒤 저장한다. */
+    private StreamedConversation emptySttStream(Long userId, TranscribedTurn turn, VoiceSettings voiceSettings,
+                                                long turnStart, int historyTurns) {
+        String aiResponse = emptySttResponse(userId, turn.context());
         long ttsStart = System.currentTimeMillis();
-
-        // 4. TTS 스트림 열기 - 첫 오디오 바이트가 도착할 때까지 대기한다 (tts_first_byte = 체감 지연)
         InputStream audioStream = timed("tts_first_byte", userId, historyTurns,
-                () -> voiceService.textToSpeechStream(turn.aiResponse(), context.getPreferences().getVoiceSettings()));
+                () -> voiceService.textToSpeechStream(aiResponse, voiceSettings));
 
-        // 5. 히스토리 업데이트 (동기) - 실패하면 열어 둔 TTS 연결을 반드시 닫는다
+        // 빈 user 메시지는 기록하지 않는다(addTurnToHistory 참고). 실패하면 열어 둔 TTS 연결을 반드시 닫는다
         try {
-            addTurnToHistory(userId, turn);
+            contextService.addConversationTurn(userId, null, aiResponse);
         } catch (RuntimeException e) {
             closeQuietly(audioStream);
             throw e;
         }
 
-        recordTotal("message_first_audio", userId, turnStart, context.getConversationHistory().size());
+        recordTotal("message_first_audio", userId, turnStart, historyTurns);
 
         return new StreamedConversation(
                 turn.userMessage(),
-                turn.aiResponse(),
-                audioStream,
+                SpeechSegmentSource.single(new SpeechSegment(aiResponse, audioStream)),
                 () -> recordTotal("tts_stream_total", userId, ttsStart, historyTurns)
         );
     }
 
-    /** 컨텍스트 조회 → STT → AI 응답 생성 (일괄/스트리밍 공통 구간) */
-    private ResolvedTurn resolveTurn(Long userId, MultipartFile audioFile) {
+    /** STT까지 끝낸 한 턴 (일괄/스트리밍 공통 구간) */
+    private record TranscribedTurn(UserContext context, String userMessage, boolean sttEmpty) {
+    }
+
+    /** 컨텍스트 조회 → STT (일괄/스트리밍 공통 구간) */
+    private TranscribedTurn transcribe(Long userId, MultipartFile audioFile) {
         // 1. 컨텍스트 조회
         UserContext context = contextService.getContext(userId);
 
         // 2. STT 변환
         String userMessage = timed("stt", userId, context.getConversationHistory().size(),
                 () -> voiceService.speechToText(audioFile));
-        boolean sttEmpty = userMessage.isBlank();
+        return new TranscribedTurn(context, userMessage, userMessage.isBlank());
+    }
+
+    /**
+     * STT 결과가 비어있으면(무음 등) AI를 호출하지 않고 바로 재요청 안내로 응답한다.
+     * 연속 횟수에 따라 문구를 단계적으로 바꾸고, 알아들을 수 있는 발화가 들어오면 리셋한다.
+     */
+    private String emptySttResponse(Long userId, UserContext context) {
+        context.setConsecutiveEmptySttCount(context.getConsecutiveEmptySttCount() + 1);
+        log.info("STT 결과가 비어있어 AI 호출 없이 안내로 응답 - userId: {}, 연속 {}회",
+                userId, context.getConsecutiveEmptySttCount());
+        return emptySttFallbackResponse(context.getConsecutiveEmptySttCount());
+    }
+
+    /** 컨텍스트 조회 → STT → AI 응답 생성 (일괄 처리용) */
+    private ResolvedTurn resolveTurn(Long userId, MultipartFile audioFile) {
+        TranscribedTurn transcribed = transcribe(userId, audioFile);
+        UserContext context = transcribed.context();
+        String userMessage = transcribed.userMessage();
 
         // 3. AI 응답 생성 (OpenAI 권장 방식: messages 배열)
-        //    STT 결과가 비어있으면(무음 등) AI를 호출하지 않고 바로 재요청 안내로 응답한다.
-        //    연속 횟수에 따라 문구를 단계적으로 바꾸고, 알아들을 수 있는 발화가 들어오면 리셋한다.
         String aiResponse;
-        if (sttEmpty) {
-            context.setConsecutiveEmptySttCount(context.getConsecutiveEmptySttCount() + 1);
-            log.info("STT 결과가 비어있어 AI 호출 없이 안내로 응답 - userId: {}, 연속 {}회",
-                    userId, context.getConsecutiveEmptySttCount());
-            aiResponse = emptySttFallbackResponse(context.getConsecutiveEmptySttCount());
+        if (transcribed.sttEmpty()) {
+            aiResponse = emptySttResponse(userId, context);
         } else {
             context.setConsecutiveEmptySttCount(0);
             String systemPrompt = context.getSystemPrompt();
@@ -290,7 +342,7 @@ public class ConversationService {
                     () -> aiService.generateResponse(systemPrompt, history, userMessage));
         }
 
-        return new ResolvedTurn(context, userMessage, aiResponse, sttEmpty);
+        return new ResolvedTurn(context, userMessage, aiResponse, transcribed.sttEmpty());
     }
 
     /**
@@ -391,6 +443,7 @@ public class ConversationService {
                 () -> voiceService.textToSpeech(lastAiResponse, context.getPreferences().getVoiceSettings()));
 
         return TtsRetryResponse.builder()
+                .aiResponse(lastAiResponse)
                 .audioData(audioData)
                 .build();
     }

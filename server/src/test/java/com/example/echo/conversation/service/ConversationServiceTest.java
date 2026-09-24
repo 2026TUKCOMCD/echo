@@ -76,7 +76,8 @@ class ConversationServiceTest {
                 memoryService,
                 recallTopicRotationService,
                 Runnable::run,
-                new SimpleMeterRegistry()
+                new SimpleMeterRegistry(),
+                null // 스트리밍 경로는 이 테스트에서 다루지 않음 (ConversationServiceTest2, SpeechStreamPipelineTest 참고)
         );
         mockContext = createMockContext();
     }

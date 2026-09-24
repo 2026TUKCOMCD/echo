@@ -1,5 +1,6 @@
 package com.example.echo.conversation.stream;
 
+import com.example.echo.conversation.stream.TestSpeechSegments.Frame;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -9,52 +10,58 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
+import static com.example.echo.conversation.stream.TestSpeechSegments.parseFrames;
+import static com.example.echo.conversation.stream.TestSpeechSegments.segment;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("ConversationStreamWriter - 프레임 스트림 작성")
 class ConversationStreamWriterTest {
 
-    private record Frame(int type, byte[] payload) {
-    }
-
-    /** 응답 본문 바이트를 프레임 목록으로 파싱 (클라이언트 파서와 같은 규칙) */
-    private static List<Frame> parseFrames(byte[] body) {
-        List<Frame> frames = new ArrayList<>();
-        int pos = 0;
-        while (pos < body.length) {
-            int type = body[pos] & 0xFF;
-            int length = ((body[pos + 1] & 0xFF) << 24) | ((body[pos + 2] & 0xFF) << 16)
-                    | ((body[pos + 3] & 0xFF) << 8) | (body[pos + 4] & 0xFF);
-            byte[] payload = new byte[length];
-            System.arraycopy(body, pos + 5, payload, 0, length);
-            frames.add(new Frame(type, payload));
-            pos += 5 + length;
-        }
-        return frames;
-    }
+    private static final byte[] META = "{\"userMessage\":\"안녕\"}".getBytes(StandardCharsets.UTF_8);
+    private static final Function<String, byte[]> TEXT = text -> ("{\"text\":\"" + text + "\"}").getBytes(StandardCharsets.UTF_8);
 
     @Test
-    @DisplayName("META → AUDIO → END 순서로 프레임을 쓰고 정상 종료(COMPLETED)를 반환한다")
-    void write_success_metaThenAudioThenEnd() {
+    @DisplayName("META → TEXT → AUDIO → TEXT → AUDIO → END 순서로 조각마다 텍스트를 오디오 앞에 쓴다")
+    void write_success_textBeforeEachSegmentAudio() {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] meta = "{\"userMessage\":\"안녕\",\"aiResponse\":\"반가워요\"}".getBytes(StandardCharsets.UTF_8);
-        byte[] audio = "mp3-bytes".getBytes(StandardCharsets.UTF_8);
+        TestSpeechSegments segments = TestSpeechSegments.of(
+                segment("그러셨군요! 산책은 즐거우셨어요?", "mp3-1"),
+                segment("어디로 다녀오셨는지 궁금해요.", "mp3-2"));
 
-        ConversationStreamWriter.Result result =
-                ConversationStreamWriter.write(out, meta, new ByteArrayInputStream(audio));
+        ConversationStreamWriter.Result result = ConversationStreamWriter.write(out, META, segments, TEXT);
 
         assertThat(result).isEqualTo(ConversationStreamWriter.Result.COMPLETED);
         List<Frame> frames = parseFrames(out.toByteArray());
-        assertThat(frames).hasSize(3);
-        assertThat(frames.get(0).type()).isEqualTo(ConversationStreamWriter.TYPE_META);
-        assertThat(frames.get(0).payload()).isEqualTo(meta);
-        assertThat(frames.get(1).type()).isEqualTo(ConversationStreamWriter.TYPE_AUDIO);
-        assertThat(frames.get(1).payload()).isEqualTo(audio);
-        assertThat(frames.get(2).type()).isEqualTo(ConversationStreamWriter.TYPE_END);
-        assertThat(frames.get(2).payload()).isEmpty();
+        assertThat(frames).extracting(Frame::type).containsExactly(
+                ConversationStreamWriter.TYPE_META,
+                ConversationStreamWriter.TYPE_TEXT,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_TEXT,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_END);
+        assertThat(frames.get(0).payload()).isEqualTo(META);
+        assertThat(frames.get(1).text()).isEqualTo("{\"text\":\"그러셨군요! 산책은 즐거우셨어요?\"}");
+        assertThat(frames.get(2).text()).isEqualTo("mp3-1");
+        assertThat(frames.get(3).text()).isEqualTo("{\"text\":\"어디로 다녀오셨는지 궁금해요.\"}");
+        assertThat(frames.get(4).text()).isEqualTo("mp3-2");
+        assertThat(frames.get(5).payload()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("조각이 하나뿐이어도 TEXT → AUDIO → END로 끝난다")
+    void write_singleSegment() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        ConversationStreamWriter.write(out, META, TestSpeechSegments.of(segment("네, 좋아요.", "mp3")), TEXT);
+
+        assertThat(parseFrames(out.toByteArray())).extracting(Frame::type).containsExactly(
+                ConversationStreamWriter.TYPE_META,
+                ConversationStreamWriter.TYPE_TEXT,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_END);
     }
 
     @Test
@@ -83,7 +90,7 @@ class ConversationStreamWriterTest {
         }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
 
-        ConversationStreamWriter.write(out, "{}".getBytes(StandardCharsets.UTF_8), new ByteArrayInputStream(audio));
+        ConversationStreamWriter.write(out, META, TestSpeechSegments.of(segment("긴 응답", audio)), TEXT);
 
         List<Frame> audioFrames = parseFrames(out.toByteArray()).stream()
                 .filter(f -> f.type() == ConversationStreamWriter.TYPE_AUDIO)
@@ -117,13 +124,49 @@ class ConversationStreamWriterTest {
         };
         ByteArrayOutputStream out = new ByteArrayOutputStream();
 
-        ConversationStreamWriter.Result result =
-                ConversationStreamWriter.write(out, "{}".getBytes(StandardCharsets.UTF_8), failingAudio);
+        ConversationStreamWriter.Result result = ConversationStreamWriter.write(
+                out, META, TestSpeechSegments.of(new SpeechSegment("안녕", failingAudio)), TEXT);
 
         assertThat(result).isEqualTo(ConversationStreamWriter.Result.UPSTREAM_FAILED);
-        List<Frame> frames = parseFrames(out.toByteArray());
-        assertThat(frames).extracting(Frame::type)
-                .containsExactly(ConversationStreamWriter.TYPE_META, ConversationStreamWriter.TYPE_AUDIO);
+        assertThat(parseFrames(out.toByteArray())).extracting(Frame::type).containsExactly(
+                ConversationStreamWriter.TYPE_META, ConversationStreamWriter.TYPE_TEXT, ConversationStreamWriter.TYPE_AUDIO);
+    }
+
+    @Test
+    @DisplayName("다음 조각을 준비하지 못하면(나머지 TTS 실패) 이미 보낸 조각 뒤에 END 없이 UPSTREAM_FAILED")
+    void write_nextSegmentFails_noEndFrame() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        ConversationStreamWriter.Result result = ConversationStreamWriter.write(
+                out, META, TestSpeechSegments.failingAfter(segment("첫 조각입니다.", "mp3-1")), TEXT);
+
+        assertThat(result).isEqualTo(ConversationStreamWriter.Result.UPSTREAM_FAILED);
+        assertThat(parseFrames(out.toByteArray())).extracting(Frame::type).containsExactly(
+                ConversationStreamWriter.TYPE_META, ConversationStreamWriter.TYPE_TEXT, ConversationStreamWriter.TYPE_AUDIO);
+    }
+
+    @Test
+    @DisplayName("보낸 조각의 오디오 스트림은 다 쓰면 닫는다")
+    void write_closesSegmentAudio() {
+        class TrackingStream extends ByteArrayInputStream {
+            boolean closed;
+
+            TrackingStream() {
+                super(new byte[]{1, 2});
+            }
+
+            @Override
+            public void close() throws IOException {
+                closed = true;
+                super.close();
+            }
+        }
+        TrackingStream audio = new TrackingStream();
+
+        ConversationStreamWriter.write(new ByteArrayOutputStream(), META,
+                TestSpeechSegments.of(new SpeechSegment("안녕", audio)), TEXT);
+
+        assertThat(audio.closed).isTrue();
     }
 
     @Test
@@ -137,7 +180,7 @@ class ConversationStreamWriterTest {
         };
 
         ConversationStreamWriter.Result result = ConversationStreamWriter.write(
-                brokenOut, "{}".getBytes(StandardCharsets.UTF_8), new ByteArrayInputStream(new byte[]{1}));
+                brokenOut, META, TestSpeechSegments.of(segment("안녕", "a")), TEXT);
 
         assertThat(result).isEqualTo(ConversationStreamWriter.Result.CLIENT_DISCONNECTED);
     }
