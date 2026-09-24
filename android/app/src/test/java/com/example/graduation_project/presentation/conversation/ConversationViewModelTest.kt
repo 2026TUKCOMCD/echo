@@ -5,7 +5,12 @@ import android.util.Log
 import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.api.AudioFrameInputStream
+import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.audio
+import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.end
+import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.text
 import com.example.graduation_project.data.local.dao.MessageDao
+import com.example.graduation_project.data.local.entity.MessageEntity
 import com.example.graduation_project.data.location.LocationCollectionService
 import com.example.graduation_project.data.location.LocationDataManager
 import com.example.graduation_project.data.model.ConversationEndResponse
@@ -407,11 +412,21 @@ class ConversationViewModelTest {
 
     // ===== 스트리밍 응답 테스트 =====
 
+    /** 첫 조각 뒤에 오는 프레임들(TEXT/AUDIO/END) - 첫머리(META, 첫 TEXT)는 저장소가 이미 읽은 상태 */
+    private fun restFrames(vararg frames: ByteArray) =
+        AudioFrameInputStream(ByteArrayInputStream(frames.fold(ByteArray(0)) { acc, f -> acc + f }))
+
+    private fun assistantSaves() = mutableListOf<MessageEntity>().also { saved ->
+        coEvery { mockMessageDao.insertMessage(any()) } answers {
+            firstArg<MessageEntity>().takeIf { it.role == MessageEntity.ROLE_ASSISTANT }?.let { saved += it }
+        }
+    }
+
     @Test
-    fun `스트리밍 응답이면 말풍선을 추가하고 녹음 중지 후 스트림을 재생한다`() =
+    fun `스트리밍 응답이면 첫 조각으로 말풍선을 추가하고 녹음 중지 후 스트림을 재생한다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
-            val audio = ByteArrayInputStream(byteArrayOf(1, 2, 3))
+            val audio = restFrames(audio(1, 2, 3), end())
             coEvery { mockRepository.sendMessageStreaming(any()) } returns
                 ApiResult.Success(MessageReply.Streaming("오늘 산책했어요", "산책하셨군요!", audio))
 
@@ -419,7 +434,7 @@ class ConversationViewModelTest {
             viewModel.sendMessage(ByteArray(0))
             advanceUntilIdle()
 
-            // 오디오가 다 오기 전에도 텍스트는 바로 표시되고, 재생 중(Playing) 상태가 됨
+            // 오디오가 다 오기 전에도 첫 조각 텍스트는 바로 표시되고, 재생 중(Playing) 상태가 됨
             assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
             val texts = viewModel.uiState.value.messages.map { it.text }
             assertTrue(texts.containsAll(listOf("오늘 산책했어요", "산책하셨군요!")))
@@ -431,9 +446,50 @@ class ConversationViewModelTest {
         }
 
     @Test
+    fun `재생 중 도착한 다음 조각 텍스트는 같은 말풍선에 공백 하나로 이어 붙는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            val audio = restFrames(audio(1), text("날씨는 어땠어요?"), audio(2), end())
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Streaming("오늘 산책했어요", "산책하셨군요!", audio))
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            // when: 재생기가 오디오를 읽는 동안 TEXT 프레임을 만남
+            audio.readBytes()
+
+            // then
+            val aiMessages = viewModel.uiState.value.messages.filter { !it.isFromUser }
+            assertEquals("산책하셨군요! 날씨는 어땠어요?", aiMessages.last().text)
+        }
+
+    @Test
+    fun `스트리밍 AI 응답은 재생이 끝날 때 완성된 전체 문장으로 한 번만 Room에 저장된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            advanceUntilIdle()
+            val saved = assistantSaves()
+            val audio = restFrames(audio(1), text("날씨는 어땠어요?"), audio(2), end())
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Streaming("오늘 산책했어요", "산책하셨군요!", audio))
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+            audio.readBytes()
+            advanceUntilIdle()
+            assertTrue("재생이 끝나기 전에는 AI 응답을 저장하지 않음", saved.isEmpty())
+
+            // when
+            audioPlayListenerSlot.captured.onPlaybackComplete()
+            advanceUntilIdle()
+
+            // then
+            assertEquals(listOf("산책하셨군요! 날씨는 어땠어요?"), saved.map { it.content })
+        }
+
+    @Test
     fun `대화 시작이 스트리밍이면 인사말을 바로 표시하고 스트림을 재생한다`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            val audio = ByteArrayInputStream(byteArrayOf(4, 5, 6))
+            val audio = restFrames(audio(4, 5, 6), end())
             coEvery { mockRepository.startConversationStreaming(any(), any()) } returns
                 ApiResult.Success(MessageReply.Streaming(null, "안녕하세요, 어르신!", audio))
 
@@ -462,13 +518,15 @@ class ConversationViewModelTest {
         }
 
     @Test
-    fun `스트리밍 재생이 실패하면 서버 TTS 재요청으로 폴백한다`() =
+    fun `스트리밍 재생이 실패하면 서버 TTS 재요청으로 폴백하고, 말풍선을 받은 전체 문장으로 채운다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
+            advanceUntilIdle()
+            val saved = assistantSaves()
             coEvery { mockRepository.sendMessageStreaming(any()) } returns
-                ApiResult.Success(MessageReply.Streaming("안녕", "반가워요", ByteArrayInputStream(byteArrayOf(1))))
+                ApiResult.Success(MessageReply.Streaming("안녕", "반가워요.", restFrames(audio(1))))
             coEvery { mockRepository.retryTts() } returns
-                ApiResult.Success(TtsRetryResponse(audioData = "retry-audio"))
+                ApiResult.Success(TtsRetryResponse(aiResponse = "반가워요. 오늘 어떠셨어요?", audioData = "retry-audio"))
 
             viewModel.sendMessage(ByteArray(0))
             advanceUntilIdle()
@@ -480,9 +538,36 @@ class ConversationViewModelTest {
             )
             advanceUntilIdle()
 
-            // then: 기존 tts-retry 경로(Base64)로 처음부터 다시 재생
+            // then: 기존 tts-retry 경로(Base64)로 처음부터 다시 재생하고, 말풍선은 전체 문장으로 교체
             coVerify(exactly = 1) { mockRepository.retryTts() }
             verify { mockAudioPlayerManager.play("retry-audio") }
+            val aiMessages = viewModel.uiState.value.messages.filter { !it.isFromUser }
+            assertEquals("반가워요. 오늘 어떠셨어요?", aiMessages.last().text)
+
+            // 다시 재생이 끝나면 전체 문장으로 저장
+            audioPlayListenerSlot.captured.onPlaybackComplete()
+            advanceUntilIdle()
+            assertEquals(listOf("반가워요. 오늘 어떠셨어요?"), saved.map { it.content })
+        }
+
+    @Test
+    fun `재생 도중 대화를 종료하면 그때까지 받은 AI 응답을 저장한다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            advanceUntilIdle()
+            val saved = assistantSaves()
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Streaming("안녕", "반가워요.", restFrames(audio(1))))
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            // when: Playing 중 종료
+            viewModel.endConversation()
+            advanceUntilIdle()
+
+            // then
+            assertEquals(listOf("반가워요."), saved.map { it.content })
         }
 
     // ===== 백그라운드 전환 테스트 =====

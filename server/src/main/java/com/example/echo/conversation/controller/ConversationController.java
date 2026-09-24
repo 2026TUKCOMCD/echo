@@ -6,11 +6,14 @@ import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartRequest;
 import com.example.echo.conversation.dto.ConversationStartResponse;
 import com.example.echo.conversation.dto.StreamMeta;
+import com.example.echo.conversation.dto.StreamText;
 import com.example.echo.conversation.dto.StreamedConversation;
 import com.example.echo.conversation.dto.TtsRetryResponse;
 import com.example.echo.conversation.exception.StreamAbortedException;
 import com.example.echo.conversation.service.ConversationService;
 import com.example.echo.conversation.stream.ConversationStreamWriter;
+import com.example.echo.conversation.stream.SpeechSegmentSource;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -29,7 +32,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
 
 /**
  * 대화 처리 컨트롤러
@@ -73,8 +75,8 @@ public class ConversationController {
 
     @Operation(
             summary = "대화 시작 (스트리밍 응답)",
-            description = "/start와 같은 처리(컨텍스트 초기화 → 첫 인사 생성 → TTS)를 하되, TTS 전체 합성을 기다리지 않고 "
-                    + "오디오를 생성되는 대로 내려보냅니다. 응답 규격은 /message-stream과 같은 application/x-echo-stream "
+            description = "/start와 같은 처리(컨텍스트 초기화 → 첫 인사 생성 → TTS)를 하되, 첫 인사를 생성되는 대로 조각 단위로 "
+                    + "TTS해 오디오를 내려보냅니다. 응답 규격은 /message-stream과 같은 application/x-echo-stream "
                     + "프레임 스트림이며, 첫 인사에는 사용자 발화가 없으므로 META의 userMessage는 항상 null입니다."
     )
     @ApiResponses({
@@ -89,7 +91,7 @@ public class ConversationController {
     ) throws IOException {
         logStartRequest(userId, request, "대화 시작 요청 (스트리밍)");
 
-        // 컨텍스트 초기화/첫 인사 생성/TTS 첫 바이트 확인까지는 응답을 건드리지 않는다 - 여기서 실패하면 기존과 같은 JSON 오류 응답이 나간다.
+        // 컨텍스트 초기화, 첫 인사 첫 조각, 그 조각의 TTS 첫 바이트 확인까지는 응답을 건드리지 않는다 - 여기서 실패하면 기존과 같은 JSON 오류 응답이 나간다.
         StreamedConversation result = conversationService.startConversationStream(
                 userId,
                 request != null ? request.getHealthData() : null,
@@ -123,15 +125,16 @@ public class ConversationController {
 
     @Operation(
             summary = "음성 메시지 전송 (스트리밍 응답)",
-            description = "/message와 같은 처리(STT → AI → TTS)를 하되, TTS 전체 합성을 기다리지 않고 오디오를 생성되는 대로 "
+            description = "/message와 같은 처리(STT → AI → TTS)를 하되, AI 응답을 생성되는 대로 조각 단위로 TTS해 오디오를 "
                     + "내려보냅니다. 응답은 application/x-echo-stream 프레임 스트림입니다: "
-                    + "[1바이트 type][4바이트 big-endian 길이][payload] 프레임이 META(0x01, JSON) → AUDIO(0x02, mp3 조각)... → "
-                    + "END(0x00) 순서로 옵니다. END 없이 끝나면 클라이언트는 잘린 스트림으로 보고 /tts-retry로 폴백해야 합니다."
+                    + "[1바이트 type][4바이트 big-endian 길이][payload] 프레임이 META(0x01, {userMessage}) → "
+                    + "[TEXT(0x03, {text}) → AUDIO(0x02, mp3 조각)...] 조각 반복 → END(0x00) 순서로 옵니다. "
+                    + "END 없이 끝나면 클라이언트는 잘린 스트림으로 보고 /tts-retry로 폴백해야 합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "스트리밍 시작 (본문은 프레임 스트림)"),
             @ApiResponse(responseCode = "400", description = "음성 파일 형식 오류"),
-            @ApiResponse(responseCode = "500", description = "STT/AI/TTS 시작 전 처리 실패")
+            @ApiResponse(responseCode = "500", description = "STT/AI/TTS 첫 소리 전 처리 실패")
     })
     @PostMapping(value = "/message-stream", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public void processMessageStream(
@@ -140,7 +143,7 @@ public class ConversationController {
             @RequestPart("audio") MultipartFile audioFile,
             HttpServletResponse response
     ) throws IOException {
-        // STT/LLM 처리와 TTS 첫 바이트 확인까지는 응답을 건드리지 않는다 - 여기서 실패하면 기존과 같은 JSON 오류 응답이 나간다.
+        // STT, AI 응답 첫 조각, 그 조각의 TTS 첫 바이트 확인까지는 응답을 건드리지 않는다 - 여기서 실패하면 기존과 같은 JSON 오류 응답이 나간다.
         StreamedConversation result = conversationService.processUserMessageStream(userId, audioFile);
         writeStream(result, userId, response);
     }
@@ -171,8 +174,8 @@ public class ConversationController {
      * StreamingResponseBody 대신 응답에 직접 쓴다: 비동기 재-dispatch가 없어 JWT 필터/보안 설정과 얽히지 않는다.
      */
     private void writeStream(StreamedConversation result, Long userId, HttpServletResponse response) throws IOException {
-        try (InputStream audio = result.audioStream()) {
-            byte[] meta = objectMapper.writeValueAsBytes(new StreamMeta(result.userMessage(), result.aiResponse()));
+        try (SpeechSegmentSource segments = result.segments()) {
+            byte[] meta = objectMapper.writeValueAsBytes(new StreamMeta(result.userMessage()));
 
             response.setStatus(HttpServletResponse.SC_OK);
             response.setContentType(ConversationStreamWriter.CONTENT_TYPE);
@@ -180,11 +183,11 @@ public class ConversationController {
             // nginx가 이 응답만 버퍼링하지 않고 청크를 즉시 전달하도록 한다 (nginx 설정 변경 불필요)
             response.setHeader("X-Accel-Buffering", "no");
 
-            ConversationStreamWriter.Result outcome =
-                    ConversationStreamWriter.write(response.getOutputStream(), meta, audio);
+            ConversationStreamWriter.Result outcome = ConversationStreamWriter.write(
+                    response.getOutputStream(), meta, segments, this::encodeText);
             switch (outcome) {
                 case COMPLETED -> result.onStreamCompleted().run();
-                case UPSTREAM_FAILED -> log.error("TTS 스트림이 중간에 끊겨 END 없이 종료 - userId: {}", userId);
+                case UPSTREAM_FAILED -> log.error("응답 조각 준비/TTS 스트림이 중간에 실패해 END 없이 종료 - userId: {}", userId);
                 case CLIENT_DISCONNECTED -> log.info("클라이언트가 연결을 끊어 스트리밍을 중단 - userId: {}", userId);
             }
         } catch (RuntimeException e) {
@@ -193,6 +196,15 @@ public class ConversationController {
                 throw new StreamAbortedException("스트리밍 응답 도중 예상치 못한 실패 - userId: " + userId, e);
             }
             throw e;
+        }
+    }
+
+    private byte[] encodeText(String text) {
+        try {
+            return objectMapper.writeValueAsBytes(new StreamText(text));
+        } catch (JsonProcessingException e) {
+            // 문자열 하나짜리 레코드라 사실상 발생하지 않는다
+            throw new IllegalStateException("TEXT 프레임 직렬화 실패", e);
         }
     }
 

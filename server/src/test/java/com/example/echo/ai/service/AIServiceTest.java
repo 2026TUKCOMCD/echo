@@ -11,7 +11,11 @@ import com.example.echo.ai.dto.ChatCompletionResponse;
 import com.example.echo.ai.exception.AIException;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
+import com.example.echo.ai.stream.ChatCompletionStream;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import feign.FeignException;
+import feign.Request;
+import feign.Response;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,10 +26,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,7 +63,7 @@ class AIServiceTest {
         chatProperties.setTemperature(0.7);
         chatProperties.setMaxTokens(1024);
 
-        aiService = new AIService(openRouterClient, chatProperties);
+        aiService = new AIService(openRouterClient, chatProperties, new ObjectMapper());
 
         context = UserContext.builder()
                 .userId(1L)
@@ -396,6 +403,66 @@ class AIServiceTest {
         // Then
         List<String> logMessages = capturedLogMessages();
         assertThat(logMessages).noneMatch(msg -> msg.contains("적중"));
+    }
+
+    private static Response streamResponse(int status, String body) {
+        return Response.builder()
+                .status(status)
+                .request(Request.create(Request.HttpMethod.POST, "https://openrouter.ai/api/v1/chat/completions",
+                        Map.of(), null, StandardCharsets.UTF_8, null))
+                .body(body, StandardCharsets.UTF_8)
+                .build();
+    }
+
+    @Test
+    @DisplayName("openResponseStream: generateResponse와 같은 메시지 구성에 stream=true를 붙여 요청하고, 텍스트 조각을 읽을 수 있다")
+    void openResponseStream_sendsStreamTrue_andReadsDeltas() throws IOException {
+        // Given
+        List<ConversationTurn> history = List.of(ConversationTurn.builder()
+                .userMessage("안녕").aiResponse("반가워요").timestamp(LocalDateTime.now()).build());
+        when(openRouterClient.createChatCompletionStream(any(ChatCompletionRequest.class))).thenReturn(streamResponse(200,
+                "data: {\"choices\":[{\"delta\":{\"content\":\"네\"}}]}\n\ndata: [DONE]\n\n"));
+
+        // When
+        String first;
+        try (ChatCompletionStream stream = aiService.openResponseStream("시스템", history, "산책했어요")) {
+            first = stream.nextDelta();
+        }
+
+        // Then
+        assertThat(first).isEqualTo("네");
+        ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
+        org.mockito.Mockito.verify(openRouterClient).createChatCompletionStream(captor.capture());
+        ChatCompletionRequest request = captor.getValue();
+        assertThat(request.getStream()).isTrue();
+        assertThat(request.getModel()).isEqualTo(TEST_MODEL);
+        assertThat(request.getMessages()).extracting(ChatCompletionRequest.Message::getRole)
+                .containsExactly("system", "user", "assistant", "user");
+        assertThat(request.getMessages().get(3).getContent()).isEqualTo("산책했어요");
+    }
+
+    @Test
+    @DisplayName("openGreetingStream: HTTP 오류 응답이면 AIException (스트리밍 호출은 Feign이 예외로 바꿔 주지 않는다)")
+    void openGreetingStream_httpError_throws() {
+        when(openRouterClient.createChatCompletionStream(any(ChatCompletionRequest.class)))
+                .thenReturn(streamResponse(429, "{\"error\":\"rate limited\"}"));
+
+        assertThatThrownBy(() -> aiService.openGreetingStream("시스템", context))
+                .isInstanceOf(AIException.class)
+                .hasMessageContaining("429");
+    }
+
+    @Test
+    @DisplayName("일반 호출(generateResponse)은 stream 필드를 보내지 않는다")
+    void generateResponse_doesNotSendStream() {
+        ChatCompletionResponse response = createMockResponse("응답");
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class))).thenReturn(response);
+
+        aiService.generateResponse("시스템", List.of(), "안녕");
+
+        ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
+        org.mockito.Mockito.verify(openRouterClient).createChatCompletion(captor.capture());
+        assertThat(captor.getValue().getStream()).isNull();
     }
 
     /**

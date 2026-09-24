@@ -72,21 +72,28 @@ class ConversationRepositoryStreamingTest {
 
     private val healthData = HealthData(steps = 1000)
 
+    private fun text(value: String) =
+        frame(ConversationStreamProtocol.TYPE_TEXT, """{"text":"$value"}""".toByteArray())
+
     private fun startStreamBody(): ByteArray =
-        frame(ConversationStreamProtocol.TYPE_META, """{"userMessage":null,"aiResponse":"안녕하세요, 어르신!"}""".toByteArray()) +
+        frame(ConversationStreamProtocol.TYPE_META, """{"userMessage":null}""".toByteArray()) +
+            text("안녕하세요, 어르신!") +
             frame(ConversationStreamProtocol.TYPE_AUDIO, byteArrayOf(9, 8)) +
             frame(ConversationStreamProtocol.TYPE_END, ByteArray(0))
 
     private fun streamBody(): ByteArray =
-        frame(ConversationStreamProtocol.TYPE_META, """{"userMessage":"안녕","aiResponse":"반가워요"}""".toByteArray()) +
+        frame(ConversationStreamProtocol.TYPE_META, """{"userMessage":"안녕"}""".toByteArray()) +
+            text("반가워요.") +
             frame(ConversationStreamProtocol.TYPE_AUDIO, byteArrayOf(1, 2, 3)) +
+            text("오늘 어떠셨어요?") +
+            frame(ConversationStreamProtocol.TYPE_AUDIO, byteArrayOf(4)) +
             frame(ConversationStreamProtocol.TYPE_END, ByteArray(0))
 
     private fun errorResponse(code: Int): Response<okhttp3.ResponseBody> =
         Response.error(code, """{"status":$code}""".toResponseBody("application/json".toMediaType()))
 
     @Test
-    fun `스트리밍 성공 시 텍스트와 오디오 스트림을 반환한다`() = runTest {
+    fun `스트리밍 성공 시 사용자 발화와 첫 조각을 돌려주고, 나머지 조각 텍스트는 오디오를 읽으며 받는다`() = runTest {
         coEvery { api.sendMessageStream(any()) } returns
             Response.success(streamBody().toResponseBody("application/x-echo-stream".toMediaType()))
 
@@ -94,8 +101,11 @@ class ConversationRepositoryStreamingTest {
 
         val reply = (result as ApiResult.Success).data as MessageReply.Streaming
         assertEquals("안녕", reply.userMessage)
-        assertEquals("반가워요", reply.aiResponse)
-        assertArrayEquals(byteArrayOf(1, 2, 3), reply.audio.readBytes())
+        assertEquals("반가워요.", reply.aiResponse)
+        val moreText = mutableListOf<String>()
+        reply.audio.onText = { moreText += it }
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), reply.audio.readBytes())
+        assertEquals(listOf("오늘 어떠셨어요?"), moreText)
         coVerify(exactly = 0) { api.sendMessage(any()) }
     }
 
@@ -149,7 +159,7 @@ class ConversationRepositoryStreamingTest {
     }
 
     @Test
-    fun `META를 읽지 못하면(본문 손상) 재전송하지 않고 NetworkError를 반환한다`() = runTest {
+    fun `첫머리(META, 첫 TEXT)를 읽지 못하면(본문 손상) 재전송하지 않고 NetworkError를 반환한다`() = runTest {
         coEvery { api.sendMessageStream(any()) } returns
             Response.success(byteArrayOf(0x02, 0, 0).toResponseBody("application/x-echo-stream".toMediaType()))
 
