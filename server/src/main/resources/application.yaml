@@ -53,6 +53,11 @@ openai:
     no-speech-threshold: 0.6
     logprob-threshold: -1.0
     compression-ratio-threshold: 2.4
+  # 장기기억 임베딩 - model/dimensions를 바꾸면 부팅 백필이 저장된 벡터를 전부 다시 만든다
+  embedding:
+    model: text-embedding-3-small
+    dimensions: 512
+    timeout-ms: 500  # 대화 중 호출. 정상 100~300ms, 넘으면 기억 없이 진행
 
 # OpenRouter (채팅 전용) - 단일 모델(terra)로 고정
 openrouter:

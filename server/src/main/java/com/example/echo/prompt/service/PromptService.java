@@ -626,7 +626,7 @@ public class PromptService {
     /**
      * 활성화된 프롬프트 템플릿 조회 (캐싱 적용)
      *
-     * @param type 프롬프트 타입 (SYSTEM, CONVERSATION, DIARY)
+     * @param type 프롬프트 타입 (SYSTEM, DIARY, MEMORY)
      * @return 활성화된 프롬프트 템플릿
      * @throws IllegalStateException 활성화된 템플릿이 없을 경우
      */

@@ -58,6 +58,20 @@ public class Memory {
     @Column(name = "tags", length = 200)
     private String tags;
 
+    /**
+     * content의 임베딩 벡터 (float32 리틀엔디안 직렬화, EmbeddingCodec 참조)
+     * - null이면 아직 임베딩이 없는 행 → 부팅 백필(MemoryEmbeddingBackfillRunner)이 채운다
+     */
+    @Column(name = "embedding", columnDefinition = "BLOB")
+    private byte[] embedding;
+
+    /**
+     * embedding을 만든 모델·차원 (예: text-embedding-3-small@512)
+     * - 설정과 다르면 백필이 다시 만든다 (모델·차원 교체 시 기존 벡터와 비교 불가)
+     */
+    @Column(name = "embedding_model", length = 40)
+    private String embeddingModel;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
