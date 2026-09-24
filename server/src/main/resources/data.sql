@@ -4,7 +4,13 @@
 -- 템플릿 수정이 필요하면 이 파일을 수정 후 앱 재시작
 -- =====================================================
 
+-- template_type 네이티브 ENUM → VARCHAR 전환 (엔티티 columnDefinition과 동일하게)
+-- ddl-auto: update는 기존 컬럼 타입을 바꾸지 않아, ENUM으로 만들어진 운영 DB는 PromptType 값 추가 시
+-- INSERT가 'Data truncated'로 실패해 부팅이 막힌다(2026-07-23). 이미 VARCHAR면 실질 변경 없음
+ALTER TABLE prompt_templates MODIFY template_type VARCHAR(20) NOT NULL;
+
 -- 기존 데이터 삭제 (개발 환경용)
+-- 'CONVERSATION'은 타입이 삭제됐지만 기존 DB에 남은 행 정리를 위해 유지
 DELETE FROM prompt_templates WHERE template_type IN ('SYSTEM', 'CONVERSATION', 'DIARY', 'MEMORY');
 
 -- =====================================================
@@ -2448,57 +2454,6 @@ INSERT INTO prompt_templates (template_type, template_content, version, is_activ
     17,
     true
 );
--- =====================================================
--- CONVERSATION 프롬프트 v1 (비활성화): 기존 버전
--- =====================================================
-INSERT INTO prompt_templates (template_type, template_content, version, is_active) VALUES (
-    'CONVERSATION',
-    '{{systemPrompt}}
-
-## 오늘의 정보
-{{todayContext}}
-
-## 이전 대화
-{{conversationHistory}}
-
-## 사용자 발화
-{{userMessage}}
-
-위 정보를 바탕으로 따뜻하고 공감 어린 응답을 해주세요.
-응답은 1-2문장으로 짧게 해주세요.',
-    1,
-    false
-);
-
--- =====================================================
--- CONVERSATION 프롬프트 v2 (활성화): todayContext 제거 + 응답 지침 강화
--- =====================================================
-INSERT INTO prompt_templates (template_type, template_content, version, is_active) VALUES (
-    'CONVERSATION',
-    '{{systemPrompt}}
-
-════════════════════════════════════════
-[이전 대화 내용]
-════════════════════════════════════════
-{{conversationHistory}}
-
-════════════════════════════════════════
-[현재 사용자 발화]
-════════════════════════════════════════
-{{userMessage}}
-
-────────────────────────────────────────
-[응답 지침]
-- 위 시스템 프롬프트의 대화 원칙과 흐름에 따라 자연스럽게 응답하세요.
-- 이전 대화 내용을 반영하여 맥락을 유지하세요.
-- 응답은 2~3문장으로 작성하고, 질문은 1개만 하세요.
-- 어르신의 기억이 데이터와 다르면 "제가 잘못 측정했나 봐요"라며 존중하세요.
-- 건강 수치를 직접 언급하지 마세요.
-- 예시 질문을 그대로 사용하지 말고 자연스럽게 변형하세요.',
-    2,
-    true
-);
-
 -- =====================================================
 -- DIARY 프롬프트 v1 (비활성화): 기존 버전
 -- =====================================================
