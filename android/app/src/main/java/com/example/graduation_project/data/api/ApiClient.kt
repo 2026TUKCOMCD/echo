@@ -27,8 +27,14 @@ object ApiClient {
 
     // BODY 레벨 로깅은 응답 본문을 끝까지 읽어 버퍼링한 뒤에 넘겨주므로 스트리밍 응답을 무력화한다
     // (디버그 빌드에서 첫 소리가 전체 합성 완료 후에야 나옴). 스트리밍 요청은 로깅을 건너뛴다.
+    // 스트리밍 엔드포인트를 추가하면 반드시 이 목록에도 넣어야 한다.
+    private val streamingPaths = setOf(
+        ConversationApi.MESSAGE_STREAM_PATH,
+        ConversationApi.START_STREAM_PATH
+    )
+
     private val loggingInterceptor = Interceptor { chain ->
-        if (chain.request().url.encodedPath == ConversationApi.MESSAGE_STREAM_PATH) {
+        if (chain.request().url.encodedPath in streamingPaths) {
             chain.proceed(chain.request())
         } else {
             httpLoggingInterceptor.intercept(chain)

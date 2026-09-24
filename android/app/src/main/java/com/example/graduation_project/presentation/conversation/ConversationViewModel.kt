@@ -412,17 +412,18 @@ class ConversationViewModel(
             // API 호출 대기 타이머
             _uiState.update { it.copy(processingMessage = null) }
             startProcessingTimer()
-            val result = repository.startConversation(healthData, locationData)
+            // 스트리밍 우선 (서버에 스트리밍 엔드포인트가 없으면 저장소가 /start로 폴백)
+            val result = repository.startConversationStreaming(healthData, locationData)
 
             // PROCESSING 타이머 중지
             stopProcessingTimer()
 
             when (result) {
                 is ApiResult.Success -> {
-                    val response = result.data
+                    val reply = result.data
                     conversationId = UUID.randomUUID().toString()
                     val aiMessage = createAiMessage(
-                        response.message ?: "안녕하세요! 오늘 하루는 어떠셨나요?"
+                        reply.aiResponse ?: "안녕하세요! 오늘 하루는 어떠셨나요?"
                     )
 
                     // Sending → Playing
@@ -436,15 +437,18 @@ class ConversationViewModel(
                     }
 
                     // AI 응답 음성 재생 (재생 전 녹음 중지 포함)
-                    response.audioData?.let { audioData ->
-                        playAiAudio(audioData)
-                    } ?: run {
-                        // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
-                        transitionTo(ConversationState.Listening)
-                        _uiState.update {
-                            it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
+                    when {
+                        reply is MessageReply.Streaming -> playAiAudioStream(reply.audio)
+                        reply is MessageReply.Buffered && reply.audioData != null ->
+                            playAiAudio(reply.audioData)
+                        else -> {
+                            // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
+                            transitionTo(ConversationState.Listening)
+                            _uiState.update {
+                                it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
+                            }
+                            startRecording()
                         }
-                        startRecording()
                     }
 
                     // AI 인사 메시지 Room DB 저장

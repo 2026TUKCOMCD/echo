@@ -6,6 +6,8 @@ import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.api.ConversationApi
 import com.example.graduation_project.data.api.ConversationStreamProtocol
 import com.example.graduation_project.data.model.ConversationMessageResponse
+import com.example.graduation_project.data.model.ConversationStartResponse
+import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.model.MessageReply
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -68,6 +70,13 @@ class ConversationRepositoryStreamingTest {
         return out.toByteArray()
     }
 
+    private val healthData = HealthData(steps = 1000)
+
+    private fun startStreamBody(): ByteArray =
+        frame(ConversationStreamProtocol.TYPE_META, """{"userMessage":null,"aiResponse":"안녕하세요, 어르신!"}""".toByteArray()) +
+            frame(ConversationStreamProtocol.TYPE_AUDIO, byteArrayOf(9, 8)) +
+            frame(ConversationStreamProtocol.TYPE_END, ByteArray(0))
+
     private fun streamBody(): ByteArray =
         frame(ConversationStreamProtocol.TYPE_META, """{"userMessage":"안녕","aiResponse":"반가워요"}""".toByteArray()) +
             frame(ConversationStreamProtocol.TYPE_AUDIO, byteArrayOf(1, 2, 3)) +
@@ -103,7 +112,7 @@ class ConversationRepositoryStreamingTest {
         assertTrue(second is ApiResult.Success)
         coVerify(exactly = 1) { api.sendMessageStream(any()) }
         coVerify(exactly = 2) { api.sendMessage(any()) }
-        assertTrue(streamSupport.unsupported)
+        assertTrue(streamSupport.messageUnsupported)
     }
 
     @Test
@@ -126,7 +135,7 @@ class ConversationRepositoryStreamingTest {
         assertTrue(error is ApiException.ServerError)
         assertEquals(500, (error as ApiException.ServerError).code)
         coVerify(exactly = 0) { api.sendMessage(any()) }
-        assertEquals(false, streamSupport.unsupported)
+        assertEquals(false, streamSupport.messageUnsupported)
     }
 
     @Test
@@ -148,5 +157,69 @@ class ConversationRepositoryStreamingTest {
 
         assertTrue((result as ApiResult.Error).exception is ApiException.NetworkError)
         coVerify(exactly = 0) { api.sendMessage(any()) }
+    }
+
+    // ---------- /start-stream ----------
+
+    @Test
+    fun `대화 시작 스트리밍 성공 시 인사말과 오디오 스트림을 반환한다`() = runTest {
+        coEvery { api.startConversationStream(any()) } returns
+            Response.success(startStreamBody().toResponseBody("application/x-echo-stream".toMediaType()))
+
+        val result = repository.startConversationStreaming(healthData, null)
+
+        val reply = (result as ApiResult.Success).data as MessageReply.Streaming
+        // 첫 인사에는 사용자 발화가 없다
+        assertEquals(null, reply.userMessage)
+        assertEquals("안녕하세요, 어르신!", reply.aiResponse)
+        assertArrayEquals(byteArrayOf(9, 8), reply.audio.readBytes())
+        coVerify(exactly = 0) { api.startConversation(any()) }
+    }
+
+    @Test
+    fun `start-stream이 404면 기존 start로 폴백하고, 이후에는 스트리밍을 다시 시도하지 않는다`() = runTest {
+        coEvery { api.startConversationStream(any()) } returns errorResponse(404)
+        coEvery { api.startConversation(any()) } returns
+            ConversationStartResponse(message = "안녕하세요, 어르신!", audioData = "base64")
+
+        val first = repository.startConversationStreaming(healthData, null)
+        val second = repository.startConversationStreaming(healthData, null)
+
+        assertEquals(
+            MessageReply.Buffered(null, "안녕하세요, 어르신!", "base64"),
+            (first as ApiResult.Success).data
+        )
+        assertTrue(second is ApiResult.Success)
+        coVerify(exactly = 1) { api.startConversationStream(any()) }
+        coVerify(exactly = 2) { api.startConversation(any()) }
+        assertTrue(streamSupport.startUnsupported)
+    }
+
+    @Test
+    fun `start-stream 404는 message-stream 스트리밍까지 끄지 않는다`() = runTest {
+        coEvery { api.startConversationStream(any()) } returns errorResponse(404)
+        coEvery { api.startConversation(any()) } returns ConversationStartResponse(audioData = "base64")
+        coEvery { api.sendMessageStream(any()) } returns
+            Response.success(streamBody().toResponseBody("application/x-echo-stream".toMediaType()))
+
+        repository.startConversationStreaming(healthData, null)
+        val message = repository.sendMessageStreaming(audioPart)
+
+        // 한쪽만 배포된 서버에서 멀쩡한 엔드포인트의 지연 개선까지 잃으면 안 된다
+        assertTrue((message as ApiResult.Success).data is MessageReply.Streaming)
+        assertEquals(false, streamSupport.messageUnsupported)
+        coVerify(exactly = 0) { api.sendMessage(any()) }
+    }
+
+    @Test
+    fun `start-stream이 500이면 재요청하지 않고 서버 오류를 반환한다`() = runTest {
+        coEvery { api.startConversationStream(any()) } returns errorResponse(500)
+
+        val result = repository.startConversationStreaming(healthData, null)
+
+        val error = (result as ApiResult.Error).exception
+        assertTrue(error is ApiException.ServerError)
+        coVerify(exactly = 0) { api.startConversation(any()) }
+        assertEquals(false, streamSupport.startUnsupported)
     }
 }
