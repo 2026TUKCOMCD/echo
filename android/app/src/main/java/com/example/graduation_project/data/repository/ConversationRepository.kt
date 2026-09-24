@@ -141,10 +141,10 @@ class ConversationRepository(
     }
 
     /**
-     * 스트리밍 요청을 열고 META 프레임까지 읽는다 (`/start-stream`, `/message-stream` 공통).
+     * 스트리밍 요청을 열고 META와 첫 TEXT 프레임까지 읽는다 (`/start-stream`, `/message-stream` 공통).
      * @return 엔드포인트가 없으면(404/405) null
      * @throws HttpException 그 외 HTTP 오류 (safeApiCall이 Client/ServerError로 변환)
-     * @throws IOException 네트워크 오류, 또는 META를 읽지 못함
+     * @throws IOException 네트워크 오류, 또는 첫머리 프레임을 읽지 못함
      */
     private suspend fun openStream(call: suspend () -> Response<ResponseBody>): MessageReply.Streaming? {
         val response = call()
@@ -162,8 +162,8 @@ class ConversationRepository(
         return withContext(ioDispatcher) {
             val input = body.byteStream()
             try {
-                val meta = ConversationStreamProtocol.readMeta(input)
-                MessageReply.Streaming(meta.userMessage, meta.aiResponse, AudioFrameInputStream(input))
+                val start = ConversationStreamProtocol.readStart(input)
+                MessageReply.Streaming(start.userMessage, start.firstText, AudioFrameInputStream(input))
             } catch (e: Throwable) {
                 body.close()
                 throw e

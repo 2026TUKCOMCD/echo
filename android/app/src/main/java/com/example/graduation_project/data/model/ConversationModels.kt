@@ -19,11 +19,16 @@ data class ConversationMessageResponse(
     val timestamp: String? = null
 )
 
-// /api/conversations/message-stream 응답의 META 프레임(JSON) - 오디오보다 먼저 도착
+// /message-stream, /start-stream 응답의 META 프레임(JSON) - 맨 앞에 1번. 첫 인사면 userMessage는 null
 @Serializable
 data class StreamMeta(
-    val userMessage: String? = null,
-    val aiResponse: String? = null
+    val userMessage: String? = null
+)
+
+// 스트리밍 응답의 TEXT 프레임(JSON) - AI 응답 조각 텍스트. 그 조각의 오디오 바로 앞에 온다
+@Serializable
+data class StreamText(
+    val text: String = ""
 )
 
 // /api/conversations/end 응답 Model(DTO)
@@ -37,8 +42,10 @@ data class ConversationEndResponse(
 )
 
 // /api/conversations/tts-retry 응답 Model(DTO)
+// aiResponse: 다시 합성한 AI 응답 전체 - 스트리밍이 끊겼을 때 말풍선을 전체 문장으로 채우는 용도
 @Serializable
 data class TtsRetryResponse(
+    val aiResponse: String? = null,
     val audioData: String? = null
 )
 
