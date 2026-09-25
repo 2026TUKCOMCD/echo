@@ -38,6 +38,8 @@ import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 @Slf4j
@@ -183,20 +185,37 @@ public class ConversationService {
         );
     }
 
-    /** 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다. */
-    private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
-        // 0. 건강 데이터 저장 (Android에서 수신한 경우)
-        if (healthData != null) {
-            healthDataService.saveHealthData(userId, healthData);
-        }
+    /** appendRecentDiaries에서 조회하는 최근 일기 범위 (일) */
+    private static final int RECENT_DIARY_DAYS = 7;
 
-        // 1. 컨텍스트 초기화 (healthData, locationData 전달)
-        UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
+    /**
+     * 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다.
+     *
+     * 건강데이터 저장·컨텍스트 초기화(위치/날씨 포함)·장기기억 조회·최근 일기 조회는 서로 결과를
+     * 참조하지 않는 독립적인 I/O라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이
+     * 기다린다. 이 넷의 결과를 합치는 프롬프트 빌드(2·3단계)만 그 뒤에 순차로 남는다.
+     */
+    private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
+        // 0-1. 독립적인 네 작업을 한꺼번에 제출
+        CompletableFuture<Void> healthSaveFuture = healthData != null
+                ? CompletableFuture.runAsync(() -> healthDataService.saveHealthData(userId, healthData), taskExecutor)
+                : CompletableFuture.completedFuture(null);
+        CompletableFuture<UserContext> contextFuture = CompletableFuture.supplyAsync(
+                () -> contextService.initializeContext(userId, healthData, rawLocationData), taskExecutor);
+        CompletableFuture<List<Memory>> memoriesFuture = CompletableFuture.supplyAsync(
+                () -> loadLifeMemories(userId), taskExecutor);
+        CompletableFuture<List<Diary>> diariesFuture = CompletableFuture.supplyAsync(
+                () -> loadRecentDiaries(userId), taskExecutor);
+
+        // 건강데이터 저장은 실패 시 원래도 대화 시작 전체를 막았으므로, join()으로 예외를 그대로 전파한다
+        join(healthSaveFuture);
+        UserContext context = join(contextFuture);
+        List<Memory> lifeMemories = join(memoriesFuture);
+        List<Diary> recentDiaries = join(diariesFuture);
 
         // 2. 오늘의 장기기억 회상 주제(3단계용) 확정
         // 시스템 프롬프트는 대화 시작 시 1회 생성되어 세션 내내 재사용되므로, 여기서 확정한 주제가
-        // 자정을 넘겨도 세션 중에는 그대로 유지된다. 시스템 프롬프트에 구워 넣어야 하니 2보다 먼저 계산한다.
-        List<Memory> lifeMemories = loadLifeMemories(userId);
+        // 자정을 넘겨도 세션 중에는 그대로 유지된다. 시스템 프롬프트에 구워 넣어야 하니 3보다 먼저 계산한다.
         String recallTopic = recallTopicRotationService.currentTopic();
         String recallGuide = promptService.buildRecallGuide(recallTopic, lifeMemories);
 
@@ -204,9 +223,27 @@ public class ConversationService {
         // 장기기억·오늘의 회상 주제는 템플릿 변수로, 최근 7일 일기는 뒤에 덧붙여
         // AI가 이전 대화를 기억하는 것처럼 이어가게 함
         String systemPrompt = appendRecentDiaries(
-                promptService.buildSystemPrompt(context, lifeMemories, recallGuide), userId);
+                promptService.buildSystemPrompt(context, lifeMemories, recallGuide), recentDiaries);
         context.setSystemPrompt(systemPrompt);
         return context;
+    }
+
+    /**
+     * future.join()이 던지는 CompletionException을 벗겨 원래 예외를 다시 던진다.
+     *
+     * CompletionException으로 그대로 전파하면 GlobalExceptionHandler의 예외 타입 기반 매핑
+     * (예: BaseException → 지정된 HTTP 상태)이 깨져 전부 500으로 뭉개진다 - SpeechStreamPipeline.await()의
+     * ExecutionException 언래핑과 같은 이유.
+     */
+    private static <T> T join(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw e;
+        }
     }
 
     /** STT + AI 응답까지 끝낸 한 턴의 텍스트 결과 (일괄 처리용) */
@@ -364,33 +401,37 @@ public class ConversationService {
     }
 
     /**
-     * 최근 7일의 일기를 시스템 프롬프트에 덧붙임
+     * 최근 7일의 성공한 일기 조회
      *
-     * 일기 조회에 실패해도 대화 시작을 막지 않음 (원본 프롬프트 그대로 반환)
+     * 일기 조회에 실패해도 대화 시작을 막지 않음 (일기 없이 진행)
      */
-    private String appendRecentDiaries(String systemPrompt, Long userId) {
+    private List<Diary> loadRecentDiaries(Long userId) {
         try {
-            List<Diary> recentDiaries = diaryService.getRecentSuccessfulDiaries(userId, 7);
-            if (recentDiaries.isEmpty()) {
-                return systemPrompt;
-            }
-
-            StringBuilder sb = new StringBuilder(systemPrompt);
-            sb.append("\n\n────────────────────────────────────────\n");
-            sb.append("[최근 7일의 일기 - 이전 대화에서 나온 이야기입니다. ");
-            sb.append("자연스럽게 이어가되, 같은 질문을 반복하지 마세요]\n");
-            recentDiaries.forEach(diary -> sb.append("- ")
-                    .append(diary.getDiaryDate().getMonthValue()).append("월 ")
-                    .append(diary.getDiaryDate().getDayOfMonth()).append("일: ")
-                    .append(diary.getContent().replace("\n", " "))
-                    .append("\n"));
-
+            List<Diary> recentDiaries = diaryService.getRecentSuccessfulDiaries(userId, RECENT_DIARY_DAYS);
             log.info("최근 일기 {}건을 시스템 프롬프트에 주입 - userId: {}", recentDiaries.size(), userId);
-            return sb.toString();
+            return recentDiaries;
         } catch (Exception e) {
             log.warn("최근 일기 조회 실패 - 일기 없이 대화 시작 - userId: {}", userId, e);
+            return List.of();
+        }
+    }
+
+    /** 조회해온 최근 일기를 시스템 프롬프트 뒤에 덧붙임 (일기가 없으면 원본 그대로 반환) */
+    private String appendRecentDiaries(String systemPrompt, List<Diary> recentDiaries) {
+        if (recentDiaries.isEmpty()) {
             return systemPrompt;
         }
+
+        StringBuilder sb = new StringBuilder(systemPrompt);
+        sb.append("\n\n────────────────────────────────────────\n");
+        sb.append("[최근 7일의 일기 - 이전 대화에서 나온 이야기입니다. ");
+        sb.append("자연스럽게 이어가되, 같은 질문을 반복하지 마세요]\n");
+        recentDiaries.forEach(diary -> sb.append("- ")
+                .append(diary.getDiaryDate().getMonthValue()).append("월 ")
+                .append(diary.getDiaryDate().getDayOfMonth()).append("일: ")
+                .append(diary.getContent().replace("\n", " "))
+                .append("\n"));
+        return sb.toString();
     }
 
     /**
