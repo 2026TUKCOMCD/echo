@@ -191,15 +191,23 @@ public class ConversationService {
     /**
      * 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다.
      *
-     * 건강데이터 저장·컨텍스트 초기화(위치/날씨 포함)·장기기억 조회·최근 일기 조회는 서로 결과를
-     * 참조하지 않는 독립적인 I/O라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이
-     * 기다린다. 이 넷의 결과를 합치는 프롬프트 빌드(2·3단계)만 그 뒤에 순차로 남는다.
+     * 컨텍스트 초기화(위치/날씨 포함)·장기기억 조회·최근 일기 조회는 서로 결과를 참조하지 않는
+     * 독립적인 읽기라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이 기다린다.
+     *
+     * 건강데이터 저장은 이 병렬 배치에 넣지 않고 맨 앞에서 동기로 먼저 끝낸다 - 이건 "읽기"가 아니라
+     * "쓰기 + 부작용"이라 성격이 다르다. 컨텍스트 초기화와 병렬로 돌리면, 저장이 실패해도 컨텍스트
+     * 초기화는 멈추지 않고 끝까지 실행돼 ContextService의 세션 저장소에 절반만 완성된(systemPrompt가
+     * 없는) 컨텍스트를 남기게 된다 - CompletableFuture는 형제 작업이 실패해도 나머지를 자동으로
+     * 취소해주지 않기 때문이다. 원래 순차 코드가 "저장 실패 시 그 자리에서 전체 중단"을 보장했던
+     * 것과 같은 보장을 유지하기 위해 이 순서를 지킨다.
      */
     private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
-        // 0-1. 독립적인 네 작업을 한꺼번에 제출
-        CompletableFuture<Void> healthSaveFuture = healthData != null
-                ? CompletableFuture.runAsync(() -> healthDataService.saveHealthData(userId, healthData), taskExecutor)
-                : CompletableFuture.completedFuture(null);
+        // 0. 건강 데이터 저장 (Android에서 수신한 경우) - 실패하면 즉시 중단
+        if (healthData != null) {
+            healthDataService.saveHealthData(userId, healthData);
+        }
+
+        // 1. 독립적인 세 읽기 작업을 한꺼번에 제출
         CompletableFuture<UserContext> contextFuture = CompletableFuture.supplyAsync(
                 () -> contextService.initializeContext(userId, healthData, rawLocationData), taskExecutor);
         CompletableFuture<List<Memory>> memoriesFuture = CompletableFuture.supplyAsync(
@@ -207,8 +215,6 @@ public class ConversationService {
         CompletableFuture<List<Diary>> diariesFuture = CompletableFuture.supplyAsync(
                 () -> loadRecentDiaries(userId), taskExecutor);
 
-        // 건강데이터 저장은 실패 시 원래도 대화 시작 전체를 막았으므로, join()으로 예외를 그대로 전파한다
-        join(healthSaveFuture);
         UserContext context = join(contextFuture);
         List<Memory> lifeMemories = join(memoriesFuture);
         List<Diary> recentDiaries = join(diariesFuture);
