@@ -195,13 +195,19 @@ public class ConversationService {
      * 참조하지 않는 독립적인 I/O라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이
      * 기다린다.
      *
-     * 건강데이터 저장이 이 배치에 안전하게 낄 수 있는 이유: (1) EnrichedHealthData는 방금 저장한
-     * DB 값이 아니라 이 메서드가 받은 healthData 객체를 그대로 쓰고(HealthDataService.buildEnrichedHealthData
-     * 참고 - 7일 평균도 오늘을 제외한 과거 로그만 봄), (2) saveHealthDataSafely가 실패를 내부에서
-     * 삼키고 로그만 남기므로 다른 형제 작업(특히 컨텍스트초기화의 contextStore.put 부작용)을 실패
-     * 상태로 남겨둔 채 방치할 위험이 없다. 즉 저장 실패는 "오늘 건강 기록 한 줄이 유실"되는 선에서
-     * 끝나고, 대화 시작 자체는 막지 않는다 - 일기·장기기억이 이미 이런 방식(실패해도 대화는 계속)을
-     * 쓰고 있는 것과 같은 판단이다.
+     * 건강데이터 저장이 이 배치에 안전하게 낄 수 있는 이유:
+     * (1) EnrichedHealthData는 방금 저장한 DB 값이 아니라 이 메서드가 받은 healthData 객체를 그대로
+     *     쓰고(HealthDataService.buildEnrichedHealthData 참고 - 7일 평균도 오늘을 제외한 과거 로그만
+     *     봄), 저장 성공 여부와 무관하게 항상 정확하다. 즉 오늘 대화 세션엔 저장 결과가 애초에
+     *     불필요하다 - "critical하지 않은 의존성"이라는 뜻이다.
+     * (2) 그래서 saveHealthDataSafely가 실패를 내부에서 삼키고 로그만 남기도록 만들었다. 실패가
+     *     더 이상 위로 전파되지 않으므로, 다른 형제 작업(특히 컨텍스트초기화의 contextStore.put
+     *     부작용)이 실패 상태로 남겨진 채 방치될 위험 자체가 성립하지 않는다 - CompletableFuture는
+     *     형제 작업이 실패해도 나머지를 자동으로 취소해주지 않기 때문에, "애초에 실패가 전파될 일이
+     *     없게" 만드는 쪽이 "실패 시 조기 중단"을 흉내 내는 것보다 더 확실한 해법이다.
+     * 저장 실패는 결국 "오늘 건강 기록 한 줄이 유실"되는 선에서 끝난다 - 장기기억 추출(endConversation)이
+     * 이미 쓰고 있는 것과 같은 fire-and-forget 판단이다. 설계 과정 전체(왜 처음엔 분리했다가 다시
+     * 합쳤는지)는 별도 설계 문서 참고.
      */
     private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0-1. 독립적인 네 작업을 한꺼번에 제출
@@ -408,11 +414,12 @@ public class ConversationService {
     }
 
     /**
-     * 건강 데이터 저장 (Android에서 수신한 경우) - 실패해도 대화 시작을 막지 않음
+     * 건강 데이터 저장 (Android에서 수신한 경우) - 실패해도 대화 시작을 막지 않음 (저장 없이 진행)
      *
      * 오늘 건강 기록 한 줄이 유실될 뿐, 이 세션의 EnrichedHealthData는 이미 받은 healthData 객체로
      * 계산되므로 저장 성공 여부와 무관하게 정확하다(HealthDataService.buildEnrichedHealthData 참고).
-     * 저장이 안 되면 다음 날 이후의 7일 평균 계산에서 이 날짜만 빠지는 정도의 영향만 남는다.
+     * 저장이 안 되면 다음 날 이후의 7일 평균 계산에서 이 날짜만 빠지는 정도의 영향만 남는다 -
+     * 대화 시작을 막을 만큼 critical한 의존성이 아니라는 뜻이다.
      *
      * TODO: 지금은 저장 실패가 서버 로그에만 남고 사용자는 전혀 알 방법이 없다. 장기기억(loadLifeMemories)도
      * 마찬가지로 조용히 쌓이기만 하고 확인할 화면이 없는데, 나중에 "내 건강 기록 추이"·"AI가 기억하고 있는 나의 이야기"를
