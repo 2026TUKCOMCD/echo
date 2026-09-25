@@ -191,23 +191,23 @@ public class ConversationService {
     /**
      * 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다.
      *
-     * 컨텍스트 초기화(위치/날씨 포함)·장기기억 조회·최근 일기 조회는 서로 결과를 참조하지 않는
-     * 독립적인 읽기라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이 기다린다.
+     * 건강데이터 저장·컨텍스트 초기화(위치/날씨 포함)·장기기억 조회·최근 일기 조회는 서로 결과를
+     * 참조하지 않는 독립적인 I/O라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이
+     * 기다린다.
      *
-     * 건강데이터 저장은 이 병렬 배치에 넣지 않고 맨 앞에서 동기로 먼저 끝낸다 - 이건 "읽기"가 아니라
-     * "쓰기 + 부작용"이라 성격이 다르다. 컨텍스트 초기화와 병렬로 돌리면, 저장이 실패해도 컨텍스트
-     * 초기화는 멈추지 않고 끝까지 실행돼 ContextService의 세션 저장소에 절반만 완성된(systemPrompt가
-     * 없는) 컨텍스트를 남기게 된다 - CompletableFuture는 형제 작업이 실패해도 나머지를 자동으로
-     * 취소해주지 않기 때문이다. 원래 순차 코드가 "저장 실패 시 그 자리에서 전체 중단"을 보장했던
-     * 것과 같은 보장을 유지하기 위해 이 순서를 지킨다.
+     * 건강데이터 저장이 이 배치에 안전하게 낄 수 있는 이유: (1) EnrichedHealthData는 방금 저장한
+     * DB 값이 아니라 이 메서드가 받은 healthData 객체를 그대로 쓰고(HealthDataService.buildEnrichedHealthData
+     * 참고 - 7일 평균도 오늘을 제외한 과거 로그만 봄), (2) saveHealthDataSafely가 실패를 내부에서
+     * 삼키고 로그만 남기므로 다른 형제 작업(특히 컨텍스트초기화의 contextStore.put 부작용)을 실패
+     * 상태로 남겨둔 채 방치할 위험이 없다. 즉 저장 실패는 "오늘 건강 기록 한 줄이 유실"되는 선에서
+     * 끝나고, 대화 시작 자체는 막지 않는다 - 일기·장기기억이 이미 이런 방식(실패해도 대화는 계속)을
+     * 쓰고 있는 것과 같은 판단이다.
      */
     private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
-        // 0. 건강 데이터 저장 (Android에서 수신한 경우) - 실패하면 즉시 중단
-        if (healthData != null) {
-            healthDataService.saveHealthData(userId, healthData);
-        }
-
-        // 1. 독립적인 세 읽기 작업을 한꺼번에 제출
+        // 0-1. 독립적인 네 작업을 한꺼번에 제출
+        CompletableFuture<Void> healthSaveFuture = healthData != null
+                ? CompletableFuture.runAsync(() -> saveHealthDataSafely(userId, healthData), taskExecutor)
+                : CompletableFuture.completedFuture(null);
         CompletableFuture<UserContext> contextFuture = CompletableFuture.supplyAsync(
                 () -> contextService.initializeContext(userId, healthData, rawLocationData), taskExecutor);
         CompletableFuture<List<Memory>> memoriesFuture = CompletableFuture.supplyAsync(
@@ -215,6 +215,7 @@ public class ConversationService {
         CompletableFuture<List<Diary>> diariesFuture = CompletableFuture.supplyAsync(
                 () -> loadRecentDiaries(userId), taskExecutor);
 
+        join(healthSaveFuture);
         UserContext context = join(contextFuture);
         List<Memory> lifeMemories = join(memoriesFuture);
         List<Diary> recentDiaries = join(diariesFuture);
@@ -407,6 +408,26 @@ public class ConversationService {
     }
 
     /**
+     * 건강 데이터 저장 (Android에서 수신한 경우) - 실패해도 대화 시작을 막지 않음
+     *
+     * 오늘 건강 기록 한 줄이 유실될 뿐, 이 세션의 EnrichedHealthData는 이미 받은 healthData 객체로
+     * 계산되므로 저장 성공 여부와 무관하게 정확하다(HealthDataService.buildEnrichedHealthData 참고).
+     * 저장이 안 되면 다음 날 이후의 7일 평균 계산에서 이 날짜만 빠지는 정도의 영향만 남는다.
+     *
+     * TODO: 지금은 저장 실패가 서버 로그에만 남고 사용자는 전혀 알 방법이 없다. 장기기억(loadLifeMemories)도
+     * 마찬가지로 조용히 쌓이기만 하고 확인할 화면이 없는데, 나중에 "내 건강 기록 추이"·"AI가 기억하고 있는 나의 이야기"를
+     * 사용자가 직접 볼 수 있는 화면이 생기면, 그때는 저장/조회 실패를 사용자에게도 노출할지(예: 일기의 diaryStatus처럼)
+     * 함께 고려해야 한다.
+     */
+    private void saveHealthDataSafely(Long userId, HealthData healthData) {
+        try {
+            healthDataService.saveHealthData(userId, healthData);
+        } catch (Exception e) {
+            log.warn("건강 데이터 저장 실패 - 저장 없이 대화 시작 - userId: {}", userId, e);
+        }
+    }
+
+    /**
      * 최근 7일의 성공한 일기 조회
      *
      * 일기 조회에 실패해도 대화 시작을 막지 않음 (일기 없이 진행)
@@ -449,6 +470,8 @@ public class ConversationService {
      * 기억 조회에 실패해도 대화 시작을 막지 않음 (기억 없이 진행)
      *
      * 기억이 상한(20개)을 넘어 선별이 필요해지면 이 메서드 안에서만 교체하면 된다.
+     *
+     * TODO: 사용자에게 노출하는 화면 관련 - saveHealthDataSafely의 TODO 참고.
      */
     private List<Memory> loadLifeMemories(Long userId) {
         try {
