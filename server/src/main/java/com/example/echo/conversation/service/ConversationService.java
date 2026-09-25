@@ -206,8 +206,7 @@ public class ConversationService {
      *     형제 작업이 실패해도 나머지를 자동으로 취소해주지 않기 때문에, "애초에 실패가 전파될 일이
      *     없게" 만드는 쪽이 "실패 시 조기 중단"을 흉내 내는 것보다 더 확실한 해법이다.
      * 저장 실패는 결국 "오늘 건강 기록 한 줄이 유실"되는 선에서 끝난다 - 장기기억 추출(endConversation)이
-     * 이미 쓰고 있는 것과 같은 fire-and-forget 판단이다. 설계 과정 전체(왜 처음엔 분리했다가 다시
-     * 합쳤는지)는 별도 설계 문서 참고.
+     * 이미 쓰고 있는 것과 같은 fire-and-forget 판단이다.
      */
     private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         // 0-1. 독립적인 네 작업을 한꺼번에 제출
