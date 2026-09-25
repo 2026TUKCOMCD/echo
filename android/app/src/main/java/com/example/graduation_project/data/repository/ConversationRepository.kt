@@ -15,6 +15,7 @@ import com.example.graduation_project.data.model.HealthData
 import com.example.graduation_project.data.model.MessageReply
 import com.example.graduation_project.data.model.RawLocationData
 import com.example.graduation_project.data.model.TtsRetryResponse
+import com.example.graduation_project.util.TurnLatencyTracker
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -163,6 +164,7 @@ class ConversationRepository(
             val input = body.byteStream()
             try {
                 val start = ConversationStreamProtocol.readStart(input)
+                TurnLatencyTracker.onFirstFrame()
                 MessageReply.Streaming(start.userMessage, start.firstText, AudioFrameInputStream(input))
             } catch (e: Throwable) {
                 body.close()

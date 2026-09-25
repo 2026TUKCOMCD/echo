@@ -2,7 +2,10 @@ package com.example.graduation_project.data.api
 
 import com.example.graduation_project.BuildConfig
 import com.example.graduation_project.data.local.TokenStorage
+import com.example.graduation_project.util.TurnLatencyTracker
 import kotlinx.serialization.json.Json
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -41,6 +44,16 @@ object ApiClient {
         }
     }
 
+    // 지연 측정: 스트리밍 요청의 업로드(요청 본문 전송) 완료 시점을 기록한다.
+    // 소켓 버퍼 기준이라 실제 전송 완료보다 이르다 (TurnLatencyTracker.onUploadEnd 참고)
+    private val streamLatencyListener = object : EventListener() {
+        override fun requestBodyEnd(call: Call, byteCount: Long) {
+            if (call.request().url.encodedPath in streamingPaths) {
+                TurnLatencyTracker.onUploadEnd()
+            }
+        }
+    }
+
     private val authRetrofit = Retrofit.Builder()
         .baseUrl(BuildConfig.BASE_URL)
         .client(
@@ -75,6 +88,7 @@ object ApiClient {
             .addInterceptor(loggingInterceptor)
             .addInterceptor(AuthInterceptor(tokenStorage))
             .authenticator(TokenAuthenticator(tokenStorage, authApi))
+            .eventListener(streamLatencyListener)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
