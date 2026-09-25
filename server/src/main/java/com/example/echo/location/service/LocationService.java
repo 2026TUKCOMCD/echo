@@ -12,12 +12,15 @@ import com.example.echo.routineplace.dto.RoutinePlaceInfo;
 import com.example.echo.routineplace.entity.RoutinePlace;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 위치 데이터 처리 서비스
@@ -33,6 +36,10 @@ public class LocationService {
 
     private final GeocodingService geocodingService;
     private final WeatherClient weatherClient;
+    // @EnableScheduling이 만드는 taskScheduler도 TaskExecutor라 타입만으로는 모호하다.
+    // ConversationService와 동일하게 application.yaml의 spring.task.execution 설정을 받는 쪽을 명시한다.
+    @Qualifier("applicationTaskExecutor")
+    private final TaskExecutor taskExecutor;
 
     /**
      * 거주지(집) 판정 반경 (미터)
@@ -109,7 +116,8 @@ public class LocationService {
 
         List<VisitedPlace> enrichedPlaces = new ArrayList<>();
         if (raw.getVisitedPlaces() != null) {
-            // 1. 집 / 루틴 매칭 / 미확인 세 갈래로 분류한다.
+            // 1. 집 / 루틴 매칭 / 미확인 세 갈래로 분류한다. 이 단계는 순수 거리 계산이라 외부 API를
+            //    타지 않으므로 순차로 해도 비용이 없다.
             //    - 집: 지오코딩/날씨 조회 불필요(이름을 이미 알고 있음 - 100% 낭비였던 부분)
             //    - 루틴 매칭: 사용자가 확정한 장소(회사/병원 등)라 지오코딩은 불필요하지만,
             //      날씨는 여전히 유효한 대화 소재이므로 조회한다.
@@ -117,6 +125,7 @@ public class LocationService {
             //      (실제로 대화에 쓰이는 건 그중 체류 시간이 가장 긴 1곳뿐이지만, 다른 곳도 자연스럽게
             //      언급될 여지를 위해 소수는 남겨둔다 - PromptService.buildVisitedPlacesText 참고)
             List<RawVisitedPlace> homeVisits = new ArrayList<>();
+            List<RoutineMatch> routineMatches = new ArrayList<>();
             List<RawVisitedPlace> outingCandidates = new ArrayList<>();
             for (RawVisitedPlace rawPlace : raw.getVisitedPlaces()) {
                 if (isAtHome(rawPlace.getLatitude(), rawPlace.getLongitude(), homeLatitude, homeLongitude)) {
@@ -125,7 +134,7 @@ public class LocationService {
                 }
                 Optional<RoutinePlaceInfo> routineMatch = matchRoutinePlace(rawPlace, confirmedRoutinePlaces);
                 if (routineMatch.isPresent()) {
-                    enrichedPlaces.add(buildRoutineVisitedPlace(rawPlace, routineMatch.get()));
+                    routineMatches.add(new RoutineMatch(rawPlace, routineMatch.get()));
                 } else {
                     outingCandidates.add(rawPlace);
                 }
@@ -138,10 +147,21 @@ public class LocationService {
                             .reversed())
                     .limit(OUTING_ENRICHMENT_LIMIT)
                     .toList();
-            topOutings.forEach(rawPlace -> enrichedPlaces.add(enrichOuting(rawPlace)));
 
-            log.debug("방문 장소 처리 - 전체 {}곳 (집 {}곳, 미확인 외출 {}곳 중 상위 {}곳만 지오코딩/날씨 조회)",
-                    raw.getVisitedPlaces().size(), homeVisits.size(), outingCandidates.size(), topOutings.size());
+            // 2. 루틴 매칭 날씨 조회와 상위 외출 지오코딩/날씨 조회는 서로 결과를 참조하지 않는 별개의
+            //    외부 API 호출이라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이 기다린다.
+            //    (지오코딩/날씨 클라이언트는 내부에서 예외를 삼키고 null/빈 결과를 돌려주므로
+            //    future가 예외로 완료되는 경우는 없다 - GeocodingService, WeatherClient 참고)
+            List<CompletableFuture<VisitedPlace>> pendingPlaces = new ArrayList<>();
+            routineMatches.forEach(match -> pendingPlaces.add(CompletableFuture.supplyAsync(
+                    () -> buildRoutineVisitedPlace(match.place(), match.info()), taskExecutor)));
+            topOutings.forEach(rawPlace -> pendingPlaces.add(
+                    CompletableFuture.supplyAsync(() -> enrichOuting(rawPlace), taskExecutor)));
+            pendingPlaces.forEach(future -> enrichedPlaces.add(future.join()));
+
+            log.debug("방문 장소 처리 - 전체 {}곳 (집 {}곳, 루틴 매칭 {}곳, 미확인 외출 {}곳 중 상위 {}곳만 병렬로 지오코딩/날씨 조회)",
+                    raw.getVisitedPlaces().size(), homeVisits.size(), routineMatches.size(),
+                    outingCandidates.size(), topOutings.size());
         }
 
         log.debug("위치 데이터 보강 완료 - currentCity: {}, 방문장소 수: {}, 총 이동거리: {}km",
@@ -152,6 +172,10 @@ public class LocationService {
                 .visitedPlaces(enrichedPlaces)
                 .totalDistanceKm(raw.getTotalDistanceKm())
                 .build();
+    }
+
+    /** 루틴 매칭된 방문 하나와, 매칭된 루틴 장소 정보를 함께 들고 다니기 위한 페어 (병렬 처리용) */
+    private record RoutineMatch(RawVisitedPlace place, RoutinePlaceInfo info) {
     }
 
     /**

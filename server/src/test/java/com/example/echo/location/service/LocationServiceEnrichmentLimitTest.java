@@ -7,12 +7,14 @@ import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.RawLocationData;
 import com.example.echo.location.dto.RawVisitedPlace;
 import com.example.echo.location.dto.VisitedPlace;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.TaskExecutor;
 
 import java.time.LocalTime;
 import java.util.List;
@@ -20,6 +22,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -46,8 +49,20 @@ class LocationServiceEnrichmentLimitTest {
     @Mock
     private WeatherClient weatherClient;
 
+    @Mock
+    private TaskExecutor taskExecutor;
+
     @InjectMocks
     private LocationService locationService;
+
+    @BeforeEach
+    void setUp() {
+        // 병렬 조회를 제출받는 즉시 같은 스레드에서 동기 실행 - 테스트가 실제 스레드풀 없이도 결정적으로 동작한다
+        lenient().doAnswer(invocation -> {
+            invocation.<Runnable>getArgument(0).run();
+            return null;
+        }).when(taskExecutor).execute(any());
+    }
 
     private RawVisitedPlace outing(double lat, double lng, int stayDurationMinutes) {
         return RawVisitedPlace.builder()
