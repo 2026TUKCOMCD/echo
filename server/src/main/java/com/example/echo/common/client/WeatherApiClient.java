@@ -16,7 +16,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  */
 @FeignClient(
         name = "weather-api-client",
-        url = "${weather.api.url}"
+        url = "${weather.api.url}",
+        configuration = WeatherFeignConfig.class
 )
 public interface WeatherApiClient {
 
