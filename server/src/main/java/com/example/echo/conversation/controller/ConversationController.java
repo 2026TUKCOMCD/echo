@@ -1,6 +1,7 @@
 package com.example.echo.conversation.controller;
 
 import com.example.echo.common.auth.CurrentUser;
+import com.example.echo.conversation.config.ConversationStreamProperties;
 import com.example.echo.conversation.dto.ConversationEndResponse;
 import com.example.echo.conversation.dto.ConversationResponse;
 import com.example.echo.conversation.dto.ConversationStartRequest;
@@ -45,6 +46,7 @@ public class ConversationController {
 
     private final ConversationService conversationService;
     private final ObjectMapper objectMapper;
+    private final ConversationStreamProperties streamProperties;
 
     @Operation(
             summary = "대화 시작",
@@ -184,7 +186,7 @@ public class ConversationController {
             response.setHeader("X-Accel-Buffering", "no");
 
             ConversationStreamWriter.Result outcome = ConversationStreamWriter.write(
-                    response.getOutputStream(), meta, segments, this::encodeText);
+                    response.getOutputStream(), meta, segments, this::encodeText, streamProperties.getSegmentGapMs());
             switch (outcome) {
                 case COMPLETED -> result.onStreamCompleted().run();
                 case UPSTREAM_FAILED -> log.error("응답 조각 준비/TTS 스트림이 중간에 실패해 END 없이 종료 - userId: {}", userId);

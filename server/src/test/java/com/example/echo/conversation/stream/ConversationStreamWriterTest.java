@@ -184,4 +184,79 @@ class ConversationStreamWriterTest {
 
         assertThat(result).isEqualTo(ConversationStreamWriter.Result.CLIENT_DISCONNECTED);
     }
+
+    @Test
+    @DisplayName("두 번째 조각부터 TEXT 뒤, 오디오 앞에 앞 조각 형식의 무음 프레임을 넣는다")
+    void write_withGap_insertsSilenceBeforeLaterSegments() {
+        byte[] first = Mp3SilenceTest.frames(Mp3SilenceTest.MPEG1_HEADER, 417, 3, false);
+        byte[] rest = Mp3SilenceTest.frames(Mp3SilenceTest.MPEG1_HEADER, 417, 2, false);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        ConversationStreamWriter.Result result = ConversationStreamWriter.write(out, META,
+                TestSpeechSegments.of(segment("강남 다녀오셨군요, 좋으셨겠어요.", first), segment("뭐가 제일 좋으셨어요?", rest)),
+                TEXT, 350);
+
+        assertThat(result).isEqualTo(ConversationStreamWriter.Result.COMPLETED);
+        List<Frame> frames = parseFrames(out.toByteArray());
+        assertThat(frames).extracting(Frame::type).containsExactly(
+                ConversationStreamWriter.TYPE_META,
+                ConversationStreamWriter.TYPE_TEXT,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_TEXT,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_END);
+        assertThat(frames.get(2).payload()).isEqualTo(first);
+        byte[] gap = frames.get(4).payload();
+        assertThat(gap).hasSize(14 * 417);
+        assertThat(gap).startsWith(Mp3SilenceTest.MPEG1_HEADER);
+        assertThat(frames.get(5).payload()).isEqualTo(rest);
+    }
+
+    @Test
+    @DisplayName("조각이 하나뿐이면 무음을 넣지 않는다")
+    void write_withGap_singleSegment_noSilence() {
+        byte[] audio = Mp3SilenceTest.frames(Mp3SilenceTest.MPEG1_HEADER, 417, 3, false);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        ConversationStreamWriter.write(out, META, TestSpeechSegments.of(segment("네, 좋아요.", audio)), TEXT, 350);
+
+        assertThat(parseFrames(out.toByteArray())).extracting(Frame::type).containsExactly(
+                ConversationStreamWriter.TYPE_META,
+                ConversationStreamWriter.TYPE_TEXT,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_END);
+    }
+
+    @Test
+    @DisplayName("앞 조각에서 MP3 헤더를 찾지 못하면 무음 없이 그대로 잇는다")
+    void write_withGap_notMp3_noSilence() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        ConversationStreamWriter.write(out, META,
+                TestSpeechSegments.of(segment("첫 조각입니다.", "mp3-1"), segment("나머지.", "mp3-2")), TEXT, 350);
+
+        List<Frame> frames = parseFrames(out.toByteArray());
+        assertThat(frames).extracting(Frame::type).containsExactly(
+                ConversationStreamWriter.TYPE_META,
+                ConversationStreamWriter.TYPE_TEXT,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_TEXT,
+                ConversationStreamWriter.TYPE_AUDIO,
+                ConversationStreamWriter.TYPE_END);
+        assertThat(frames.get(4).text()).isEqualTo("mp3-2");
+    }
+
+    @Test
+    @DisplayName("무음 길이가 0이면 MP3여도 넣지 않는다")
+    void write_gapZero_noSilence() {
+        byte[] audio = Mp3SilenceTest.frames(Mp3SilenceTest.MPEG1_HEADER, 417, 3, false);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        ConversationStreamWriter.write(out, META,
+                TestSpeechSegments.of(segment("첫 조각입니다.", audio), segment("나머지.", audio.clone())), TEXT, 0);
+
+        assertThat(parseFrames(out.toByteArray())).filteredOn(f -> f.type() == ConversationStreamWriter.TYPE_AUDIO)
+                .hasSize(2);
+    }
 }
