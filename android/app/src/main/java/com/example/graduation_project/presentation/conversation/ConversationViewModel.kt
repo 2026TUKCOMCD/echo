@@ -38,6 +38,7 @@ import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.model.SpeechErrorType
+import com.example.graduation_project.util.TurnLatencyTracker
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -231,6 +232,9 @@ class ConversationViewModel(
     private fun setupAudioPlayListener() {
         audioPlayerManager.setListener(object : AudioPlayListener {
             override fun onPlaybackStart() {
+                // 지연 측정: 어르신이 첫 소리를 듣는 시점 (이번 턴의 앱 쪽 구간을 로그로 남김)
+                TurnLatencyTracker.onPlaybackStart()
+
                 // TTS 재생 시작 시 VAD 중지 (스피커 소리 감지 방지)
                 stopRecording()
 
@@ -464,6 +468,7 @@ class ConversationViewModel(
             _uiState.update { it.copy(processingMessage = null) }
             startProcessingTimer()
             // 스트리밍 우선 (서버에 스트리밍 엔드포인트가 없으면 저장소가 /start로 폴백)
+            TurnLatencyTracker.onRequestStart(TurnLatencyTracker.KIND_START)
             val result = repository.startConversationStreaming(healthData, locationData)
 
             // PROCESSING 타이머 중지
@@ -548,6 +553,7 @@ class ConversationViewModel(
             val audioPart = MultipartBody.Part.createFormData("audio", "recording.wav", requestBody)
 
             // 스트리밍 우선 (서버에 스트리밍 엔드포인트가 없으면 저장소가 /message로 폴백)
+            TurnLatencyTracker.onRequestStart(TurnLatencyTracker.KIND_MESSAGE)
             val result = repository.sendMessageStreaming(audioPart)
 
             // PROCESSING 타이머 중지
