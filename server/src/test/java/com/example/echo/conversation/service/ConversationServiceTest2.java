@@ -53,6 +53,8 @@ import static org.assertj.core.api.Assertions.*;
         import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ConversationService 테스트2 - processUserMessage, endConversation")
@@ -127,6 +129,17 @@ class ConversationServiceTest2 {
     @Nested
     @DisplayName("startConversation 메서드")
     class StartConversation {
+
+        @BeforeEach
+        void setUpTaskExecutor() {
+            // prepareGreetingContext가 건강데이터저장/컨텍스트초기화/장기기억/최근일기 조회를 taskExecutor로
+            // 병렬 제출한다. endConversation의 "백그라운드 제출 자체"를 검증하는 테스트와 달리, 여기서는
+            // 그 결과값이 곧바로 필요하므로 제출받는 즉시 동기 실행되도록 스텁한다.
+            lenient().doAnswer(invocation -> {
+                invocation.<Runnable>getArgument(0).run();
+                return null;
+            }).when(taskExecutor).execute(any());
+        }
 
         @Test
         @DisplayName("성공: 대화를 시작하고 인사말과 음성을 반환한다")
@@ -616,6 +629,15 @@ class ConversationServiceTest2 {
     @Nested
     @DisplayName("startConversationStream 메서드")
     class StartConversationStream {
+
+        @BeforeEach
+        void setUpTaskExecutor() {
+            // StartConversation과 동일한 이유 - prepareGreetingContext의 병렬 제출을 동기 실행으로 스텁
+            lenient().doAnswer(invocation -> {
+                invocation.<Runnable>getArgument(0).run();
+                return null;
+            }).when(taskExecutor).execute(any());
+        }
 
         @Test
         @DisplayName("성공: 시스템 프롬프트로 인사 LLM 스트림을 열고, 확정된 인사말은 user 메시지 없이 저장한다")

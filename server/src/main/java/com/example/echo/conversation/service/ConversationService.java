@@ -38,6 +38,8 @@ import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 @Slf4j
@@ -183,20 +185,49 @@ public class ConversationService {
         );
     }
 
-    /** 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다. */
-    private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
-        // 0. 건강 데이터 저장 (Android에서 수신한 경우)
-        if (healthData != null) {
-            healthDataService.saveHealthData(userId, healthData);
-        }
+    /** appendRecentDiaries에서 조회하는 최근 일기 범위 (일) */
+    private static final int RECENT_DIARY_DAYS = 7;
 
-        // 1. 컨텍스트 초기화 (healthData, locationData 전달)
-        UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
+    /**
+     * 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다.
+     *
+     * 건강데이터 저장·컨텍스트 초기화(위치/날씨 포함)·장기기억 조회·최근 일기 조회는 서로 결과를
+     * 참조하지 않는 독립적인 I/O라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이
+     * 기다린다.
+     *
+     * 건강데이터 저장이 이 배치에 안전하게 낄 수 있는 이유:
+     * (1) EnrichedHealthData는 방금 저장한 DB 값이 아니라 이 메서드가 받은 healthData 객체를 그대로
+     *     쓰고(HealthDataService.buildEnrichedHealthData 참고 - 7일 평균도 오늘을 제외한 과거 로그만
+     *     봄), 저장 성공 여부와 무관하게 항상 정확하다. 즉 오늘 대화 세션엔 저장 결과가 애초에
+     *     불필요하다 - "critical하지 않은 의존성"이라는 뜻이다.
+     * (2) 그래서 saveHealthDataSafely가 실패를 내부에서 삼키고 로그만 남기도록 만들었다. 실패가
+     *     더 이상 위로 전파되지 않으므로, 다른 형제 작업(특히 컨텍스트초기화의 contextStore.put
+     *     부작용)이 실패 상태로 남겨진 채 방치될 위험 자체가 성립하지 않는다 - CompletableFuture는
+     *     형제 작업이 실패해도 나머지를 자동으로 취소해주지 않기 때문에, "애초에 실패가 전파될 일이
+     *     없게" 만드는 쪽이 "실패 시 조기 중단"을 흉내 내는 것보다 더 확실한 해법이다.
+     * 저장 실패는 결국 "오늘 건강 기록 한 줄이 유실"되는 선에서 끝난다 - 장기기억 추출(endConversation)이
+     * 이미 쓰고 있는 것과 같은 fire-and-forget 판단이다.
+     */
+    private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
+        // 0-1. 독립적인 네 작업을 한꺼번에 제출
+        CompletableFuture<Void> healthSaveFuture = healthData != null
+                ? CompletableFuture.runAsync(() -> saveHealthDataSafely(userId, healthData), taskExecutor)
+                : CompletableFuture.completedFuture(null);
+        CompletableFuture<UserContext> contextFuture = CompletableFuture.supplyAsync(
+                () -> contextService.initializeContext(userId, healthData, rawLocationData), taskExecutor);
+        CompletableFuture<List<Memory>> memoriesFuture = CompletableFuture.supplyAsync(
+                () -> loadLifeMemories(userId), taskExecutor);
+        CompletableFuture<List<Diary>> diariesFuture = CompletableFuture.supplyAsync(
+                () -> loadRecentDiaries(userId), taskExecutor);
+
+        join(healthSaveFuture);
+        UserContext context = join(contextFuture);
+        List<Memory> lifeMemories = join(memoriesFuture);
+        List<Diary> recentDiaries = join(diariesFuture);
 
         // 2. 오늘의 장기기억 회상 주제(3단계용) 확정
         // 시스템 프롬프트는 대화 시작 시 1회 생성되어 세션 내내 재사용되므로, 여기서 확정한 주제가
-        // 자정을 넘겨도 세션 중에는 그대로 유지된다. 시스템 프롬프트에 구워 넣어야 하니 2보다 먼저 계산한다.
-        List<Memory> lifeMemories = loadLifeMemories(userId);
+        // 자정을 넘겨도 세션 중에는 그대로 유지된다. 시스템 프롬프트에 구워 넣어야 하니 3보다 먼저 계산한다.
         String recallTopic = recallTopicRotationService.currentTopic();
         String recallGuide = promptService.buildRecallGuide(recallTopic, lifeMemories);
 
@@ -204,9 +235,27 @@ public class ConversationService {
         // 장기기억·오늘의 회상 주제는 템플릿 변수로, 최근 7일 일기는 뒤에 덧붙여
         // AI가 이전 대화를 기억하는 것처럼 이어가게 함
         String systemPrompt = appendRecentDiaries(
-                promptService.buildSystemPrompt(context, lifeMemories, recallGuide), userId);
+                promptService.buildSystemPrompt(context, lifeMemories, recallGuide), recentDiaries);
         context.setSystemPrompt(systemPrompt);
         return context;
+    }
+
+    /**
+     * future.join()이 던지는 CompletionException을 벗겨 원래 예외를 다시 던진다.
+     *
+     * CompletionException으로 그대로 전파하면 GlobalExceptionHandler의 예외 타입 기반 매핑
+     * (예: BaseException → 지정된 HTTP 상태)이 깨져 전부 500으로 뭉개진다 - SpeechStreamPipeline.await()의
+     * ExecutionException 언래핑과 같은 이유.
+     */
+    private static <T> T join(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw e;
+        }
     }
 
     /** STT + AI 응답까지 끝낸 한 턴의 텍스트 결과 (일괄 처리용) */
@@ -364,33 +413,58 @@ public class ConversationService {
     }
 
     /**
-     * 최근 7일의 일기를 시스템 프롬프트에 덧붙임
+     * 건강 데이터 저장 (Android에서 수신한 경우) - 실패해도 대화 시작을 막지 않음 (저장 없이 진행)
      *
-     * 일기 조회에 실패해도 대화 시작을 막지 않음 (원본 프롬프트 그대로 반환)
+     * 오늘 건강 기록 한 줄이 유실될 뿐, 이 세션의 EnrichedHealthData는 이미 받은 healthData 객체로
+     * 계산되므로 저장 성공 여부와 무관하게 정확하다(HealthDataService.buildEnrichedHealthData 참고).
+     * 저장이 안 되면 다음 날 이후의 7일 평균 계산에서 이 날짜만 빠지는 정도의 영향만 남는다 -
+     * 대화 시작을 막을 만큼 critical한 의존성이 아니라는 뜻이다.
+     *
+     * TODO: 지금은 저장 실패가 서버 로그에만 남고 사용자는 전혀 알 방법이 없다. 장기기억(loadLifeMemories)도
+     * 마찬가지로 조용히 쌓이기만 하고 확인할 화면이 없는데, 나중에 "내 건강 기록 추이"·"AI가 기억하고 있는 나의 이야기"를
+     * 사용자가 직접 볼 수 있는 화면이 생기면, 그때는 저장/조회 실패를 사용자에게도 노출할지(예: 일기의 diaryStatus처럼)
+     * 함께 고려해야 한다.
      */
-    private String appendRecentDiaries(String systemPrompt, Long userId) {
+    private void saveHealthDataSafely(Long userId, HealthData healthData) {
         try {
-            List<Diary> recentDiaries = diaryService.getRecentSuccessfulDiaries(userId, 7);
-            if (recentDiaries.isEmpty()) {
-                return systemPrompt;
-            }
+            healthDataService.saveHealthData(userId, healthData);
+        } catch (Exception e) {
+            log.warn("건강 데이터 저장 실패 - 저장 없이 대화 시작 - userId: {}", userId, e);
+        }
+    }
 
-            StringBuilder sb = new StringBuilder(systemPrompt);
-            sb.append("\n\n────────────────────────────────────────\n");
-            sb.append("[최근 7일의 일기 - 이전 대화에서 나온 이야기입니다. ");
-            sb.append("자연스럽게 이어가되, 같은 질문을 반복하지 마세요]\n");
-            recentDiaries.forEach(diary -> sb.append("- ")
-                    .append(diary.getDiaryDate().getMonthValue()).append("월 ")
-                    .append(diary.getDiaryDate().getDayOfMonth()).append("일: ")
-                    .append(diary.getContent().replace("\n", " "))
-                    .append("\n"));
-
+    /**
+     * 최근 7일의 성공한 일기 조회
+     *
+     * 일기 조회에 실패해도 대화 시작을 막지 않음 (일기 없이 진행)
+     */
+    private List<Diary> loadRecentDiaries(Long userId) {
+        try {
+            List<Diary> recentDiaries = diaryService.getRecentSuccessfulDiaries(userId, RECENT_DIARY_DAYS);
             log.info("최근 일기 {}건을 시스템 프롬프트에 주입 - userId: {}", recentDiaries.size(), userId);
-            return sb.toString();
+            return recentDiaries;
         } catch (Exception e) {
             log.warn("최근 일기 조회 실패 - 일기 없이 대화 시작 - userId: {}", userId, e);
+            return List.of();
+        }
+    }
+
+    /** 조회해온 최근 일기를 시스템 프롬프트 뒤에 덧붙임 (일기가 없으면 원본 그대로 반환) */
+    private String appendRecentDiaries(String systemPrompt, List<Diary> recentDiaries) {
+        if (recentDiaries.isEmpty()) {
             return systemPrompt;
         }
+
+        StringBuilder sb = new StringBuilder(systemPrompt);
+        sb.append("\n\n────────────────────────────────────────\n");
+        sb.append("[최근 7일의 일기 - 이전 대화에서 나온 이야기입니다. ");
+        sb.append("자연스럽게 이어가되, 같은 질문을 반복하지 마세요]\n");
+        recentDiaries.forEach(diary -> sb.append("- ")
+                .append(diary.getDiaryDate().getMonthValue()).append("월 ")
+                .append(diary.getDiaryDate().getDayOfMonth()).append("일: ")
+                .append(diary.getContent().replace("\n", " "))
+                .append("\n"));
+        return sb.toString();
     }
 
     /**
@@ -402,6 +476,8 @@ public class ConversationService {
      * 기억 조회에 실패해도 대화 시작을 막지 않음 (기억 없이 진행)
      *
      * 기억이 상한(20개)을 넘어 선별이 필요해지면 이 메서드 안에서만 교체하면 된다.
+     *
+     * TODO: 사용자에게 노출하는 화면 관련 - saveHealthDataSafely의 TODO 참고.
      */
     private List<Memory> loadLifeMemories(Long userId) {
         try {
