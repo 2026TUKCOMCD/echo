@@ -2,6 +2,7 @@ package com.example.echo.conversation.controller;
 
 import com.example.echo.common.auth.CurrentUserArgumentResolver;
 import com.example.echo.common.exception.GlobalExceptionHandler;
+import com.example.echo.conversation.config.ConversationStreamProperties;
 import com.example.echo.conversation.dto.StreamedConversation;
 import com.example.echo.conversation.service.ConversationService;
 import com.example.echo.conversation.stream.ConversationStreamWriter;
@@ -54,7 +55,7 @@ class ConversationControllerStartStreamTest {
 
     @BeforeEach
     void setUp() {
-        ConversationController controller = new ConversationController(conversationService, objectMapper);
+        ConversationController controller = new ConversationController(conversationService, objectMapper, new ConversationStreamProperties());
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new CurrentUserArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())

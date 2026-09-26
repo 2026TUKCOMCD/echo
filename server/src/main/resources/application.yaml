@@ -102,6 +102,7 @@ conversation:
     first-chunk-min-chars: 15   # 첫 문장이 이보다 짧으면 다음 문장까지 붙임 (짧으면 재생이 금방 끝나 공백이 생김)
     first-chunk-max-chars: 80   # 문장 끝 없이 이 길이를 넘으면 쉼표/공백에서 자름
     llm-timeout-seconds: 90
+    segment-gap-ms: 350         # 조각 사이 무음 - 따로 합성한 조각은 앞뒤 무음이 없어 마침표 뒤에 쉬는 틈이 사라짐
 
 # ElevenLabs TTS 설정
 elevenlabs:
