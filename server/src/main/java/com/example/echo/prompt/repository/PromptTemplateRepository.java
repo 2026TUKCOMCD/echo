@@ -27,7 +27,7 @@ public interface PromptTemplateRepository extends JpaRepository<PromptTemplate, 
      * 사용 예시:
      * Optional<PromptTemplate> template = repository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM);
      *
-     * @param type 프롬프트 타입 (SYSTEM, CONVERSATION, DIARY)
+     * @param type 프롬프트 타입 (SYSTEM, DIARY, MEMORY)
      * @return 해당 타입의 활성화된 최신 템플릿 (없으면 Optional.empty())
      */
     Optional<PromptTemplate> findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType type);

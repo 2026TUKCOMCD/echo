@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
 import com.example.graduation_project.data.api.ApiClient
+import com.example.graduation_project.data.api.AudioFrameInputStream
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.health.HealthConnectManager
@@ -20,6 +21,7 @@ import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.ConversationDiaryLinkEntity
 import com.example.graduation_project.data.local.entity.MessageEntity
+import com.example.graduation_project.data.model.MessageReply
 import com.example.graduation_project.data.repository.ConversationRepository
 import com.example.graduation_project.data.repository.DiaryRepository
 import com.example.graduation_project.domain.usecase.GetHealthDataUseCase
@@ -36,6 +38,7 @@ import com.example.graduation_project.presentation.model.ConversationUiState
 import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.model.SpeechErrorType
+import com.example.graduation_project.util.TurnLatencyTracker
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -100,6 +103,9 @@ class ConversationViewModel(
 
     // 로컬 대화 세션 ID (대화 시작 시 생성, 종료 시 초기화)
     private var conversationId: String? = null
+
+    // 재생 중인 AI 응답 말풍선 ID - 스트리밍 응답은 조각이 이어 붙으며 완성되므로 재생이 끝날 때 Room에 저장한다
+    private var pendingAiMessageId: String? = null
 
     // PROCESSING 상태 타이머 Job
     private var processingTimerJob: Job? = null
@@ -226,6 +232,9 @@ class ConversationViewModel(
     private fun setupAudioPlayListener() {
         audioPlayerManager.setListener(object : AudioPlayListener {
             override fun onPlaybackStart() {
+                // 지연 측정: 어르신이 첫 소리를 듣는 시점 (이번 턴의 앱 쪽 구간을 로그로 남김)
+                TurnLatencyTracker.onPlaybackStart()
+
                 // TTS 재생 시작 시 VAD 중지 (스피커 소리 감지 방지)
                 stopRecording()
 
@@ -247,6 +256,8 @@ class ConversationViewModel(
             override fun onPlaybackComplete() {
                 // 재생 완료 → playbackStatus 초기화 (오디오 자체는 이미 끝났으므로 즉시 반영)
                 isServerRetryInProgress = false
+                // 스트리밍 응답의 조각이 모두 도착해 말풍선이 완성됐으므로 이제 저장
+                savePendingAiMessage()
                 _uiState.update {
                     it.copy(
                         playbackStatus = PlaybackStatus.NONE,
@@ -307,6 +318,55 @@ class ConversationViewModel(
     }
 
     /**
+     * 스트리밍으로 도착 중인 AI 응답 음성을 재생합니다 (재생 전 녹음 중지는 playAiAudio와 동일).
+     * 다음 조각의 텍스트는 오디오를 읽는 도중 도착하므로 [aiMessageId] 말풍선에 이어 붙입니다.
+     * 스트림 소유권은 AudioPlayerManager로 넘어가며, 재생 종료/중지 시 그쪽에서 닫습니다.
+     */
+    private fun playAiAudioStream(audio: AudioFrameInputStream, aiMessageId: String) {
+        audio.onText = { text -> appendToAiMessage(aiMessageId, text) }
+        stopRecording()
+        audioPlayerManager.forceDecodeErrorForTest = forceDecodeErrorForTest
+        audioPlayerManager.playStream(audio)
+    }
+
+    /**
+     * 화면에 추가한 AI 말풍선을 재생이 끝날 때 저장하도록 표시해 둡니다.
+     * (Room 저장은 [savePendingAiMessage] - 스트리밍 응답은 조각이 다 모여야 전체 문장이 되므로)
+     */
+    private fun beginAiMessage(message: MessageUiModel) {
+        pendingAiMessageId = message.id
+    }
+
+    /**
+     * 말풍선에 다음 조각을 이어 붙입니다 (조각 사이는 공백 하나 - 서버 히스토리와 같은 규칙).
+     * 오디오 버퍼를 채우는 스레드에서 호출되지만 StateFlow.update는 스레드 안전합니다.
+     */
+    private fun appendToAiMessage(messageId: String, text: String) {
+        if (text.isBlank()) return
+        _uiState.update { state ->
+            state.copy(messages = state.messages.map { message ->
+                if (message.id != messageId) message
+                else message.copy(text = if (message.text.isBlank()) text else "${message.text} $text")
+            })
+        }
+    }
+
+    private fun replaceAiMessageText(messageId: String, text: String) {
+        _uiState.update { state ->
+            state.copy(messages = state.messages.map { message ->
+                if (message.id == messageId) message.copy(text = text) else message
+            })
+        }
+    }
+
+    /** 재생 중이던 AI 말풍선의 현재 텍스트를 Room에 저장합니다 (재생 완료/중단/텍스트 폴백 시 한 번). */
+    private fun savePendingAiMessage() {
+        val messageId = pendingAiMessageId ?: return
+        pendingAiMessageId = null
+        _uiState.value.messages.firstOrNull { it.id == messageId }?.let { saveMessageToDb(it) }
+    }
+
+    /**
      * 서버에 TTS 재생성을 요청합니다.
      * - 로컬 재시도 소진 또는 DecodeError 발생 시 호출
      * - 서버의 마지막 AI 응답 텍스트를 TTS로 재생성하여 반환
@@ -322,6 +382,12 @@ class ConversationViewModel(
         viewModelScope.launch {
             when (val result = repository.retryTts()) {
                 is ApiResult.Success -> {
+                    // 스트리밍이 중간에 끊겼으면 말풍선에 받은 조각까지만 있으므로 전체 문장으로 채운다
+                    val fullText = result.data.aiResponse
+                    val messageId = pendingAiMessageId
+                    if (!fullText.isNullOrBlank() && messageId != null) {
+                        replaceAiMessageText(messageId, fullText)
+                    }
                     val audioData = result.data.audioData
                     if (audioData != null) {
                         playAiAudio(audioData)
@@ -343,6 +409,7 @@ class ConversationViewModel(
      * - 서버 TTS 재요청도 실패했을 때 최후 수단으로 호출
      */
     private fun showTextFallback() {
+        savePendingAiMessage()
         val lastAiMessage = _uiState.value.messages
             .lastOrNull { !it.isFromUser }
             ?.text
@@ -400,17 +467,19 @@ class ConversationViewModel(
             // API 호출 대기 타이머
             _uiState.update { it.copy(processingMessage = null) }
             startProcessingTimer()
-            val result = repository.startConversation(healthData, locationData)
+            // 스트리밍 우선 (서버에 스트리밍 엔드포인트가 없으면 저장소가 /start로 폴백)
+            TurnLatencyTracker.onRequestStart(TurnLatencyTracker.KIND_START)
+            val result = repository.startConversationStreaming(healthData, locationData)
 
             // PROCESSING 타이머 중지
             stopProcessingTimer()
 
             when (result) {
                 is ApiResult.Success -> {
-                    val response = result.data
+                    val reply = result.data
                     conversationId = UUID.randomUUID().toString()
                     val aiMessage = createAiMessage(
-                        response.message ?: "안녕하세요! 오늘 하루는 어떠셨나요?"
+                        reply.aiResponse ?: "안녕하세요! 오늘 하루는 어떠셨나요?"
                     )
 
                     // Sending → Playing
@@ -423,20 +492,22 @@ class ConversationViewModel(
                         )
                     }
 
-                    // AI 응답 음성 재생 (재생 전 녹음 중지 포함)
-                    response.audioData?.let { audioData ->
-                        playAiAudio(audioData)
-                    } ?: run {
-                        // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
-                        transitionTo(ConversationState.Listening)
-                        _uiState.update {
-                            it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
+                    // AI 응답 음성 재생 (재생 전 녹음 중지 포함). 인사 메시지는 재생이 끝날 때 Room에 저장
+                    beginAiMessage(aiMessage)
+                    when {
+                        reply is MessageReply.Streaming -> playAiAudioStream(reply.audio, aiMessage.id)
+                        reply is MessageReply.Buffered && reply.audioData != null ->
+                            playAiAudio(reply.audioData)
+                        else -> {
+                            // audioData가 없으면 바로 저장 + LISTENING으로 전환 + 녹음 시작
+                            savePendingAiMessage()
+                            transitionTo(ConversationState.Listening)
+                            _uiState.update {
+                                it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
+                            }
+                            startRecording()
                         }
-                        startRecording()
                     }
-
-                    // AI 인사 메시지 Room DB 저장
-                    saveMessageToDb(aiMessage)
                 }
 
                 is ApiResult.Error -> {
@@ -481,16 +552,18 @@ class ConversationViewModel(
             val requestBody = wavData.toRequestBody("audio/wav".toMediaType())
             val audioPart = MultipartBody.Part.createFormData("audio", "recording.wav", requestBody)
 
-            val result = repository.sendMessage(audioPart)
+            // 스트리밍 우선 (서버에 스트리밍 엔드포인트가 없으면 저장소가 /message로 폴백)
+            TurnLatencyTracker.onRequestStart(TurnLatencyTracker.KIND_MESSAGE)
+            val result = repository.sendMessageStreaming(audioPart)
 
             // PROCESSING 타이머 중지
             stopProcessingTimer()
 
             when (result) {
                 is ApiResult.Success -> {
-                    val response = result.data
-                    val userMessage = createUserMessage(response.userMessage ?: "")
-                    val aiMessage = createAiMessage(response.aiResponse ?: "")
+                    val reply = result.data
+                    val userMessage = createUserMessage(reply.userMessage ?: "")
+                    val aiMessage = createAiMessage(reply.aiResponse ?: "")
 
                     // 발화 인식 성공 → 실패 카운트 초기화
                     onSpeechRecognized()
@@ -504,21 +577,25 @@ class ConversationViewModel(
                         )
                     }
 
-                    // AI 응답 음성 재생 (재생 전 녹음 중지 포함)
-                    response.audioData?.let { audioData ->
-                        playAiAudio(audioData)
-                    } ?: run {
-                        // audioData가 없으면 바로 LISTENING으로 전환 + 녹음 시작
-                        transitionTo(ConversationState.Listening)
-                        _uiState.update {
-                            it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
-                        }
-                        startRecording()
-                    }
-
-                    // 사용자 메시지 + AI 응답 메시지 Room DB 저장
+                    // 사용자 메시지는 바로 Room DB 저장, AI 응답은 재생이 끝날 때 저장 (스트리밍은 조각이 다 모여야 완성)
                     saveMessageToDb(userMessage)
-                    saveMessageToDb(aiMessage)
+                    beginAiMessage(aiMessage)
+
+                    // AI 응답 음성 재생 (재생 전 녹음 중지 포함)
+                    when {
+                        reply is MessageReply.Streaming -> playAiAudioStream(reply.audio, aiMessage.id)
+                        reply is MessageReply.Buffered && reply.audioData != null ->
+                            playAiAudio(reply.audioData)
+                        else -> {
+                            // audioData가 없으면 바로 저장 + LISTENING으로 전환 + 녹음 시작
+                            savePendingAiMessage()
+                            transitionTo(ConversationState.Listening)
+                            _uiState.update {
+                                it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
+                            }
+                            startRecording()
+                        }
+                    }
                 }
 
                 is ApiResult.Error -> {
@@ -573,6 +650,8 @@ class ConversationViewModel(
             // 사용자가 종료를 확정했으므로 재생/녹음을 즉시 중지 (재생 중 종료 포함)
             audioPlayerManager.stop()
             audioRecordManager.stop()
+            // 재생 도중 종료했으면 그때까지 받은 AI 응답을 저장 (conversationId가 지워지기 전에)
+            savePendingAiMessage()
 
             val endedConversationId = conversationId  // nulling되기 전에 캡처 (아래에서 링크 저장에 사용)
             val result = repository.endConversation()
@@ -696,6 +775,8 @@ class ConversationViewModel(
         stopRecording()
 
         if (state is ConversationState.Playing) {
+            // 재생이 중단돼 완료 콜백이 오지 않으므로 그때까지 받은 AI 응답을 저장
+            savePendingAiMessage()
             _uiState.update { it.copy(playbackStatus = PlaybackStatus.NONE) }
         }
     }

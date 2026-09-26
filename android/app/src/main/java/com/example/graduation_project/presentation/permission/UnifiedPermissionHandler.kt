@@ -22,13 +22,21 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.graduation_project.data.health.HealthConnectManager
+import com.example.graduation_project.data.local.TokenStorage
 import com.example.graduation_project.data.location.LocationScheduler
 import com.example.graduation_project.presentation.health.openHealthConnectSettings
 
-private const val APP_STATE_PREFS = "app_state"
 private const val PERMISSION_STATE_PREFS = "permission_state"
 private const val KEY_PERMISSION_FLOW_COMPLETED = "permission_flow_completed"
-private const val KEY_NEEDS_PERMISSION_RECHECK = "needs_permission_recheck"
+
+// 선택 권한별 "마지막으로 확인됐을 때 허용 상태였는지" 이력.
+// 재설치 등으로 OS 권한이 초기화된 경우(이전엔 true였는데 지금 실제로는 없는 경우)에만
+// 조용히 다시 요청하고, 사용자가 원래 거부했던 권한은 매번 다시 묻지 않기 위해 사용.
+private const val KEY_LOCATION_FOREGROUND_GRANTED = "location_foreground_granted"
+private const val KEY_LOCATION_BACKGROUND_GRANTED = "location_background_granted"
+private const val KEY_NOTIFICATION_GRANTED = "notification_granted"
+private const val KEY_HEALTH_CONNECT_GRANTED = "health_connect_granted"
 
 /**
  * 정확한 알람 권한이 없으면 시스템 설정으로 안내 (Android 12+)
@@ -62,11 +70,37 @@ fun UnifiedPermissionHandler(
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
-    val appStatePrefs = context.getSharedPreferences(APP_STATE_PREFS, Context.MODE_PRIVATE)
     val permPrefs = context.getSharedPreferences(PERMISSION_STATE_PREFS, Context.MODE_PRIVATE)
 
-    // 현재 권한 요청 단계
-    var currentStep by remember { mutableStateOf(PermissionStep.INTRO) }
+    // 계정별로 완료 여부를 구분 저장 (기기 공유·로그아웃 후 새 계정 가입 시
+    // 이전 계정의 완료 플래그를 그대로 물려받아 권한 카드가 스킵되는 것을 방지)
+    val currentUserId = remember { TokenStorage(context).getCurrentUserId() }
+    val permissionFlowKey = remember(currentUserId) {
+        if (currentUserId != null) "${KEY_PERMISSION_FLOW_COMPLETED}_$currentUserId" else KEY_PERMISSION_FLOW_COMPLETED
+    }
+    val locationForegroundGrantedKey = remember(currentUserId) {
+        if (currentUserId != null) "${KEY_LOCATION_FOREGROUND_GRANTED}_$currentUserId" else KEY_LOCATION_FOREGROUND_GRANTED
+    }
+    val locationBackgroundGrantedKey = remember(currentUserId) {
+        if (currentUserId != null) "${KEY_LOCATION_BACKGROUND_GRANTED}_$currentUserId" else KEY_LOCATION_BACKGROUND_GRANTED
+    }
+    val notificationGrantedKey = remember(currentUserId) {
+        if (currentUserId != null) "${KEY_NOTIFICATION_GRANTED}_$currentUserId" else KEY_NOTIFICATION_GRANTED
+    }
+    val healthConnectGrantedKey = remember(currentUserId) {
+        if (currentUserId != null) "${KEY_HEALTH_CONNECT_GRANTED}_$currentUserId" else KEY_HEALTH_CONNECT_GRANTED
+    }
+
+    // 이전에 권한 플로우를 완료한 적 있는지 (SharedPreferences에 계정별로 영구 저장)
+    val previouslyCompleted = permPrefs.getBoolean(permissionFlowKey, false)
+
+    // 완료 이력이 있으면 안내 다이얼로그(INTRO)는 건너뛰되, 각 권한 단계는 그대로 거쳐가며
+    // 실제 OS 권한 상태를 다시 검증한다 (재설치로 권한이 초기화된 경우를 감지하기 위함).
+    // OS 권한 상태를 매번 진실의 원천으로 재확인하므로, 앱 업데이트/재설치를 별도로
+    // 감지하는 로직(버전 코드 비교 등)은 필요 없다.
+    var currentStep by remember {
+        mutableStateOf(if (previouslyCompleted) PermissionStep.MICROPHONE else PermissionStep.INTRO)
+    }
 
     // 거부된 권한 설정 다이얼로그 표시 상태
     var showMicSettingsDialog by remember { mutableStateOf(false) }
@@ -74,14 +108,8 @@ fun UnifiedPermissionHandler(
     var showNotificationSettingsDialog by remember { mutableStateOf(false) }
     var showHealthConnectSettingsDialog by remember { mutableStateOf(false) }
 
-    // 앱 업데이트/재설치(버전 코드 변경) 시 권한 재확인 필요 여부
-    val needsRecheck = appStatePrefs.getBoolean(KEY_NEEDS_PERMISSION_RECHECK, false)
-    // 이전에 권한 플로우를 완료한 적 있는지 (SharedPreferences에 영구 저장)
-    val previouslyCompleted = permPrefs.getBoolean(KEY_PERMISSION_FLOW_COMPLETED, false)
-
-    var hasCompletedOnboarding by remember {
-        mutableStateOf(previouslyCompleted && !needsRecheck)
-    }
+    // COMPLETED 단계에 도달했을 때만 true로 바뀜 (전체 플로우 스킵 용도로는 더 이상 쓰지 않음)
+    var hasCompletedOnboarding by remember { mutableStateOf(false) }
 
     // 마이크 권한 보유 여부 (Compose 상태로 보관해, ON_RESUME 재확인 시 recomposition 유발)
     var hasMicPermission by remember {
@@ -118,6 +146,7 @@ fun UnifiedPermissionHandler(
     ) { permissions ->
         val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        permPrefs.edit().putBoolean(locationForegroundGrantedKey, granted).apply()
         if (granted) {
             currentStep = PermissionStep.LOCATION_BACKGROUND
         } else {
@@ -130,6 +159,7 @@ fun UnifiedPermissionHandler(
     val backgroundLocationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        permPrefs.edit().putBoolean(locationBackgroundGrantedKey, granted).apply()
         if (granted) {
             LocationScheduler.enableLocationCollection(context)
         }
@@ -140,6 +170,7 @@ fun UnifiedPermissionHandler(
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        permPrefs.edit().putBoolean(notificationGrantedKey, granted).apply()
         // 알람 예약은 알림 권한과 별개이므로, 알림 거부 여부와 무관하게 정확한 알람 권한 요청
         requestExactAlarmPermissionIfNeeded(context)
         if (granted) {
@@ -152,11 +183,12 @@ fun UnifiedPermissionHandler(
     // Health Connect 권한 요청 런처
     val healthConnectLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ ->
+    ) { grantResults ->
+        val allGranted = PermissionChecker.getHealthConnectPermissions().all { grantResults[it] == true }
+        permPrefs.edit().putBoolean(healthConnectGrantedKey, allGranted).apply()
         currentStep = PermissionStep.COMPLETED
         hasCompletedOnboarding = true
-        permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
-        appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
+        permPrefs.edit().putBoolean(permissionFlowKey, true).apply()
         onAllPermissionsHandled()
     }
 
@@ -172,22 +204,36 @@ fun UnifiedPermissionHandler(
             }
             PermissionStep.LOCATION_FOREGROUND -> {
                 if (PermissionChecker.hasForegroundLocationPermission(context)) {
+                    permPrefs.edit().putBoolean(locationForegroundGrantedKey, true).apply()
                     currentStep = PermissionStep.LOCATION_BACKGROUND
                 } else {
-                    foregroundLocationLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
+                    // 최초 플로우이거나, 이전엔 허용했었는데 지금은 사라진 경우(재설치 등)만 재요청.
+                    // 사용자가 원래 거부했던 선택 권한은 매번 다시 묻지 않는다.
+                    val wasGrantedBefore = permPrefs.getBoolean(locationForegroundGrantedKey, false)
+                    if (!previouslyCompleted || wasGrantedBefore) {
+                        foregroundLocationLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
                         )
-                    )
+                    } else {
+                        currentStep = PermissionStep.NOTIFICATION
+                    }
                 }
             }
             PermissionStep.LOCATION_BACKGROUND -> {
                 if (PermissionChecker.hasBackgroundLocationPermission(context)) {
+                    permPrefs.edit().putBoolean(locationBackgroundGrantedKey, true).apply()
                     LocationScheduler.enableLocationCollection(context)
                     currentStep = PermissionStep.NOTIFICATION
                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    val wasGrantedBefore = permPrefs.getBoolean(locationBackgroundGrantedKey, false)
+                    if (!previouslyCompleted || wasGrantedBefore) {
+                        backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    } else {
+                        currentStep = PermissionStep.NOTIFICATION
+                    }
                 } else {
                     LocationScheduler.enableLocationCollection(context)
                     currentStep = PermissionStep.NOTIFICATION
@@ -196,10 +242,17 @@ fun UnifiedPermissionHandler(
             PermissionStep.NOTIFICATION -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     if (PermissionChecker.hasNotificationPermission(context)) {
+                        permPrefs.edit().putBoolean(notificationGrantedKey, true).apply()
                         requestExactAlarmPermissionIfNeeded(context)
                         currentStep = PermissionStep.HEALTH_CONNECT
                     } else {
-                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        val wasGrantedBefore = permPrefs.getBoolean(notificationGrantedKey, false)
+                        if (!previouslyCompleted || wasGrantedBefore) {
+                            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            requestExactAlarmPermissionIfNeeded(context)
+                            currentStep = PermissionStep.HEALTH_CONNECT
+                        }
                     }
                 } else {
                     requestExactAlarmPermissionIfNeeded(context)
@@ -208,21 +261,32 @@ fun UnifiedPermissionHandler(
             }
             PermissionStep.HEALTH_CONNECT -> {
                 if (PermissionChecker.isHealthConnectAvailable(context)) {
-                    val permissions = PermissionChecker.getHealthConnectPermissions()
-                    if (permissions.isNotEmpty()) {
-                        healthConnectLauncher.launch(permissions.toTypedArray())
-                    } else {
+                    val alreadyGranted = try {
+                        HealthConnectManager(context).checkGrantedPermissions()
+                    } catch (e: Exception) {
+                        false
+                    }
+                    if (alreadyGranted) {
+                        permPrefs.edit().putBoolean(healthConnectGrantedKey, true).apply()
                         currentStep = PermissionStep.COMPLETED
                         hasCompletedOnboarding = true
-                        permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
-                        appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
+                        permPrefs.edit().putBoolean(permissionFlowKey, true).apply()
                         onAllPermissionsHandled()
+                    } else {
+                        val wasGrantedBefore = permPrefs.getBoolean(healthConnectGrantedKey, false)
+                        if (!previouslyCompleted || wasGrantedBefore) {
+                            healthConnectLauncher.launch(PermissionChecker.getHealthConnectPermissions().toTypedArray())
+                        } else {
+                            currentStep = PermissionStep.COMPLETED
+                            hasCompletedOnboarding = true
+                            permPrefs.edit().putBoolean(permissionFlowKey, true).apply()
+                            onAllPermissionsHandled()
+                        }
                     }
                 } else {
                     currentStep = PermissionStep.COMPLETED
                     hasCompletedOnboarding = true
-                    permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
-                    appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
+                    permPrefs.edit().putBoolean(permissionFlowKey, true).apply()
                     onAllPermissionsHandled()
                 }
             }
@@ -299,8 +363,7 @@ fun UnifiedPermissionHandler(
                 showHealthConnectSettingsDialog = false
                 currentStep = PermissionStep.COMPLETED
                 hasCompletedOnboarding = true
-                permPrefs.edit().putBoolean(KEY_PERMISSION_FLOW_COMPLETED, true).apply()
-                appStatePrefs.edit().putBoolean(KEY_NEEDS_PERMISSION_RECHECK, false).apply()
+                permPrefs.edit().putBoolean(permissionFlowKey, true).apply()
             },
             onOpenSettings = {
                 openHealthConnectSettings(context)

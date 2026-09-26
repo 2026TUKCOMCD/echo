@@ -168,6 +168,53 @@ class MemoryServiceTest {
     }
 
     @Test
+    @DisplayName("체험 데이터 초기화 이전에 시작된 대화의 추출 결과는 저장하지 않는다")
+    void extractAndSaveMemories_discardsResultOfSessionStartedBeforeReset() {
+        // given: 10시에 시작한 대화의 추출이 도는 사이 10시 5분에 초기화됨
+        UserContext context = contextWithUserMessage();
+        context.setStartedAt(LocalDateTime.of(2026, 9, 12, 10, 0));
+        memoryService.deleteAllMemories(TEST_USER_ID, LocalDateTime.of(2026, 9, 12, 10, 5));
+        verify(memoryRepository).deleteByUserId(TEST_USER_ID);
+        clearInvocations(memoryRepository);
+
+        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of());
+        when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
+                [{"lifePeriod": "청년기", "topic": "직업", "content": "이전 방문객의 기억", "tags": ["부산"]}]
+                """);
+
+        // when
+        memoryService.extractAndSaveMemories(context);
+
+        // then
+        verify(memoryRepository, never()).deleteByUserId(anyLong());
+        verify(memoryRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("체험 데이터 초기화 이후에 시작된 대화는 정상적으로 기억을 저장한다")
+    void extractAndSaveMemories_savesResultOfSessionStartedAfterReset() {
+        // given
+        UserContext context = contextWithUserMessage();
+        context.setStartedAt(LocalDateTime.of(2026, 9, 12, 10, 10));
+        memoryService.deleteAllMemories(TEST_USER_ID, LocalDateTime.of(2026, 9, 12, 10, 5));
+        clearInvocations(memoryRepository);
+
+        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of());
+        when(promptService.buildMemoryPrompt(any(), any())).thenReturn("기억 프롬프트");
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("""
+                [{"lifePeriod": "청년기", "topic": "직업", "content": "새 방문객의 기억", "tags": ["부산"]}]
+                """);
+
+        // when
+        memoryService.extractAndSaveMemories(context);
+
+        // then
+        verify(memoryRepository).deleteByUserId(TEST_USER_ID);
+        verify(memoryRepository).saveAll(any());
+    }
+
+    @Test
     @DisplayName("AI 호출이 실패해도 예외를 던지지 않고 기존 기억을 유지한다")
     void extractAndSaveMemories_swallowsAiFailure() {
         // given

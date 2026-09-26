@@ -6,6 +6,7 @@ import com.example.graduation_project.domain.voice.VadConfig
 import com.example.graduation_project.domain.voice.VadException
 import com.example.graduation_project.domain.voice.VadListener
 import com.example.graduation_project.domain.voice.VadState
+import com.example.graduation_project.util.TurnLatencyTracker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,13 @@ class VoiceRecordingManager(
     // 음성 데이터 버퍼 (PCM raw bytes)
     private val audioBuffer = ByteArrayOutputStream()
     private var isSpeechActive = false
+
+    // Pre-roll 순환 버퍼: 음성 시작 판정 전 프레임들을 담아뒀다가 발화 시작 시 앞에 이어붙인다
+    private val preRollBuffer = ArrayDeque<ShortArray>()
+    private val preRollFrameCount: Int by lazy {
+        val frameDurationMs = config.frameSize * 1000 / config.sampleRate
+        (config.preRollMs / frameDurationMs).coerceAtLeast(1)
+    }
 
     /**
      * VAD 리스너 설정
@@ -131,6 +139,7 @@ class VoiceRecordingManager(
         }
 
         audioBuffer.reset()
+        preRollBuffer.clear()
         isSpeechActive = false
         _vadState.value = VadState.Stopped
 
@@ -155,6 +164,7 @@ class VoiceRecordingManager(
                 Log.d(TAG, "Speech START detected")
                 isSpeechActive = true
                 audioBuffer.reset()
+                flushPreRollBuffer()
                 appendToBuffer(audioFrame)
                 _vadState.value = VadState.SpeechDetected
                 listener?.onSpeechStart()
@@ -169,11 +179,27 @@ class VoiceRecordingManager(
                 // Silero VAD의 silenceDurationMs가 충족되면 isSpeech가 false로 전환됨
                 finalizeSpeech()
             }
-            // 무음 상태 유지
+            // 무음 상태 유지 - 다음 발화의 pre-roll에 쓰일 최근 프레임을 순환 버퍼에 보관
             else -> {
-                // Listening 상태 유지
+                bufferPreRoll(audioFrame)
             }
         }
+    }
+
+    /**
+     * Listening 상태에서 최근 preRollFrameCount개의 프레임만 유지하는 순환 버퍼.
+     * 음성 시작이 감지되면 [flushPreRollBuffer]가 이 내용을 오디오 버퍼 앞에 이어붙인다.
+     */
+    private fun bufferPreRoll(audioFrame: ShortArray) {
+        preRollBuffer.addLast(audioFrame)
+        while (preRollBuffer.size > preRollFrameCount) {
+            preRollBuffer.removeFirst()
+        }
+    }
+
+    private fun flushPreRollBuffer() {
+        preRollBuffer.forEach { appendToBuffer(it) }
+        preRollBuffer.clear()
     }
 
     private fun finalizeSpeech() {
@@ -201,12 +227,25 @@ class VoiceRecordingManager(
             bitsPerSample = VadConfig.BITS_PER_SAMPLE
         )
 
+        // 지연 측정: 잘려 나간 무음 + 남겨 둔 여유(padding)를 "실제 말 끝 → VAD 판정" 무음 대기로 추정한다.
+        // 하나도 안 잘렸으면(주변 소음 등) 말 끝을 알 수 없으므로 0으로 둔다.
+        val removedBytes = pcmData.size - trimmedPcmData.size
+        val silenceTailMs = if (removedBytes > 0) pcmBytesToMs(removedBytes) + config.silenceTrimPaddingMs else 0L
+        TurnLatencyTracker.onSpeechEnded(
+            silenceTailMs = silenceTailMs,
+            audioLengthMs = pcmBytesToMs(trimmedPcmData.size),
+            wavBytes = wavData.size
+        )
+
         _vadState.value = VadState.SpeechEnded(wavData)
         listener?.onSpeechEnd(wavData)
 
         // 다음 발화를 위해 Listening 상태로 복귀
         _vadState.value = VadState.Listening
     }
+
+    /** 16-bit 모노 PCM 바이트 수 → 재생 길이(ms) */
+    private fun pcmBytesToMs(bytes: Int): Long = bytes * 1000L / (config.sampleRate * 2)
 
     private fun appendToBuffer(audioFrame: ShortArray) {
         // ShortArray를 ByteArray로 변환하여 버퍼에 추가

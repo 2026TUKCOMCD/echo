@@ -32,6 +32,15 @@ spring:
         await-termination: true
         await-termination-period: 30s
 
+# 지연 측정용 - echo.conversation.stage(STT/LLM/TTS 구간별), feign.client.requests/http.client.requests
+# (Feign 클라이언트별 순수 네트워크 구간, feign-micrometer가 이미 자동 계측 중)를 /actuator/metrics 로 조회.
+# health 외엔 SecurityConfig에서 permitAll이 아니므로 기존 인증 그대로 필요함 (별도 공개 아님)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+
 openai:
   api:
     url: https://api.openai.com/v1
@@ -44,6 +53,11 @@ openai:
     no-speech-threshold: 0.6
     logprob-threshold: -1.0
     compression-ratio-threshold: 2.4
+  # 장기기억 임베딩 - model/dimensions를 바꾸면 부팅 백필이 저장된 벡터를 전부 다시 만든다
+  embedding:
+    model: text-embedding-3-small
+    dimensions: 512
+    timeout-ms: 500  # 대화 중 호출. 정상 100~300ms, 넘으면 기억 없이 진행
 
 # OpenRouter (채팅 전용) - 단일 모델(terra)로 고정
 openrouter:
@@ -82,9 +96,22 @@ jwt:
   access-token-expiration: 3600000      # 1시간
   refresh-token-expiration: 2592000000  # 30일
 
+# 스트리밍 대화 응답(/message-stream, /start-stream): LLM이 생성하는 대로 "첫 조각 + 나머지"로 나눠 TTS
+conversation:
+  stream:
+    first-chunk-min-chars: 15   # 첫 문장이 이보다 짧으면 다음 문장까지 붙임 (짧으면 재생이 금방 끝나 공백이 생김)
+    first-chunk-max-chars: 80   # 문장 끝 없이 이 길이를 넘으면 쉼표/공백에서 자름
+    llm-timeout-seconds: 90
+
 # ElevenLabs TTS 설정
 elevenlabs:
   base-url: https://api.elevenlabs.io/v1
   voice-id: zmh5xhBvMzqR4ZlXgcgL
   model: eleven_v3
   # api-key는 application-local.yaml에서 설정 (예: api-key: your-key-here)
+
+# 민감정보 컬럼 암호화 (EncryptedStringConverter)
+# - Spring 프로퍼티가 아니라 System.getenv("ENCRYPTION_KEY")로 직접 읽음 (JPA 메타데이터 부트스트랩과
+#   무관하게 실제 암호화/복호화 시점에만 키를 검증하기 위함 - 상세 이유는 컨버터 클래스 주석 참고)
+# - 로컬 개발 시 OS 환경변수로 ENCRYPTION_KEY(Base64 인코딩된 32바이트 AES-256 키)를 설정할 것
+# - 생성 예시: openssl rand -base64 32

@@ -15,6 +15,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
@@ -383,6 +385,54 @@ class VoiceServiceImplTest {
             String result = voiceService.speechToText(webmFile);
 
             assertThat(result).isEqualTo("테스트");
+        }
+    }
+
+    // ========== TTS 스트리밍 테스트 ==========
+
+    @Nested
+    @DisplayName("textToSpeechStream - 검증 및 프로바이더 위임")
+    class TextToSpeechStreamTest {
+
+        @Test
+        @DisplayName("텍스트가 비어있으면 VoiceProcessingException 발생 (프로바이더 호출 안 함)")
+        void blankText_throwsException() {
+            assertThatThrownBy(() -> voiceService.textToSpeechStream("  ", null))
+                    .isInstanceOf(VoiceProcessingException.class)
+                    .hasMessage("변환할 텍스트가 비어있습니다.");
+
+            verify(elevenLabsProvider, never()).synthesizeStream(any(), any());
+        }
+
+        @Test
+        @DisplayName("텍스트가 800자 초과이면 VoiceProcessingException 발생")
+        void textExceedsMaxLength_throwsException() {
+            assertThatThrownBy(() -> voiceService.textToSpeechStream("가".repeat(801), null))
+                    .isInstanceOf(VoiceProcessingException.class)
+                    .hasMessage("텍스트가 800자를 초과합니다.");
+        }
+
+        @Test
+        @DisplayName("tts.provider=elevenlabs → ElevenLabs 프로바이더의 스트림을 그대로 반환")
+        void elevenlabsProvider_streamReturned() {
+            VoiceSettings settings = VoiceSettings.builder().voiceTone("warm").build();
+            InputStream expected = new ByteArrayInputStream("audio".getBytes());
+            when(elevenLabsProvider.synthesizeStream("안녕", settings)).thenReturn(expected);
+
+            InputStream result = voiceService.textToSpeechStream("안녕", settings);
+
+            assertThat(result).isSameAs(expected);
+            verify(azureProvider, never()).synthesizeStream(any(), any());
+        }
+
+        @Test
+        @DisplayName("프로바이더가 예상 못한 예외를 던지면 VoiceProcessingException으로 감싼다")
+        void unexpectedException_wrappedAsVoiceProcessingException() {
+            when(elevenLabsProvider.synthesizeStream(any(), any())).thenThrow(new IllegalStateException("boom"));
+
+            assertThatThrownBy(() -> voiceService.textToSpeechStream("안녕", null))
+                    .isInstanceOf(VoiceProcessingException.class)
+                    .hasCauseInstanceOf(IllegalStateException.class);
         }
     }
 

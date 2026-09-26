@@ -18,6 +18,9 @@ class UserRepository(
         return safeApiCall { userApi.updatePreferences(preferences) }
     }
 
+    suspend fun updateName(name: String): ApiResult<UserPreferences> =
+        safeApiCall { userApi.updateName(NameUpdateRequest(name)) }
+
     suspend fun updateBirthday(birthday: String?): ApiResult<UserPreferences> =
         safeApiCall { userApi.updateBirthday(BirthdayUpdateRequest(birthday)) }
 

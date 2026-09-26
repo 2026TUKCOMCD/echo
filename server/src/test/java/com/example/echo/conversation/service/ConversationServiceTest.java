@@ -15,6 +15,7 @@ import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.service.VoiceService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -74,7 +75,9 @@ class ConversationServiceTest {
                 healthDataService,
                 memoryService,
                 recallTopicRotationService,
-                Runnable::run
+                Runnable::run,
+                new SimpleMeterRegistry(),
+                null // 스트리밍 경로는 이 테스트에서 다루지 않음 (ConversationServiceTest2, SpeechStreamPipelineTest 참고)
         );
         mockContext = createMockContext();
     }

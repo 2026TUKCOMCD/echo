@@ -26,8 +26,8 @@ android {
     productFlavors {
         create("local") {
             dimension = "server"
-            // 로컬 네트워크 서버 연결
-            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080\"")
+            // 로컬 네트워크 서버 연결 (USB + adb reverse tcp:8080 tcp:8080 로 PC와 연결)
+            buildConfigField("String", "BASE_URL", "\"http://127.0.0.1:8080\"")
         }
         create("prod") {
             dimension = "server"
