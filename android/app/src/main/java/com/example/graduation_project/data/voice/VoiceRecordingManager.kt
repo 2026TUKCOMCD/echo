@@ -6,6 +6,7 @@ import com.example.graduation_project.domain.voice.VadConfig
 import com.example.graduation_project.domain.voice.VadException
 import com.example.graduation_project.domain.voice.VadListener
 import com.example.graduation_project.domain.voice.VadState
+import com.example.graduation_project.util.TurnLatencyTracker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -226,12 +227,25 @@ class VoiceRecordingManager(
             bitsPerSample = VadConfig.BITS_PER_SAMPLE
         )
 
+        // 지연 측정: 잘려 나간 무음 + 남겨 둔 여유(padding)를 "실제 말 끝 → VAD 판정" 무음 대기로 추정한다.
+        // 하나도 안 잘렸으면(주변 소음 등) 말 끝을 알 수 없으므로 0으로 둔다.
+        val removedBytes = pcmData.size - trimmedPcmData.size
+        val silenceTailMs = if (removedBytes > 0) pcmBytesToMs(removedBytes) + config.silenceTrimPaddingMs else 0L
+        TurnLatencyTracker.onSpeechEnded(
+            silenceTailMs = silenceTailMs,
+            audioLengthMs = pcmBytesToMs(trimmedPcmData.size),
+            wavBytes = wavData.size
+        )
+
         _vadState.value = VadState.SpeechEnded(wavData)
         listener?.onSpeechEnd(wavData)
 
         // 다음 발화를 위해 Listening 상태로 복귀
         _vadState.value = VadState.Listening
     }
+
+    /** 16-bit 모노 PCM 바이트 수 → 재생 길이(ms) */
+    private fun pcmBytesToMs(bytes: Int): Long = bytes * 1000L / (config.sampleRate * 2)
 
     private fun appendToBuffer(audioFrame: ShortArray) {
         // ShortArray를 ByteArray로 변환하여 버퍼에 추가
