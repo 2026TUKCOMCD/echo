@@ -26,6 +26,7 @@ import com.example.echo.ai.exception.AIException;
 import com.example.echo.ai.stream.ChatCompletionStream;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
+import com.example.echo.memory.entity.Memory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import feign.FeignException;
 import feign.Response;
@@ -81,6 +82,7 @@ public class AIService {
      * OpenAI 권장 방식: messages 배열에 role별로 분리하여 전송
      * - system: 시스템 프롬프트 (AI 페르소나, 규칙)
      * - user/assistant: 대화 히스토리
+     * - system: 이번 대화에서 떠올린 장기기억 (있을 때만)
      * - user: 현재 사용자 메시지
      *
      * 대화 단계(1단계 안부 → 2단계 오늘 활동 → 3단계 장기기억 → 마무리)는 시스템 프롬프트에만
@@ -88,15 +90,18 @@ public class AIService {
      *
      * @param systemPrompt 시스템 프롬프트 (캐싱된 것 사용)
      * @param history 대화 히스토리 (ConversationTurn 리스트)
+     * @param recalledMemories 이번 대화에서 지금까지 떠올린 장기기억 (비어 있어도 됨)
      * @param userMessage 현재 사용자 메시지
      * @return AI가 생성한 응답 메시지
      * @throws AIException API 호출 실패 시
      */
-    public String generateResponse(String systemPrompt, List<ConversationTurn> history, String userMessage) {
+    public String generateResponse(String systemPrompt, List<ConversationTurn> history, List<Memory> recalledMemories,
+                                   String userMessage) {
         log.debug("Generating response - history size: {}, userMessage length: {}",
                 history != null ? history.size() : 0, userMessage != null ? userMessage.length() : 0);
 
-        ChatCompletionRequest request = buildRequest(responseMessages(systemPrompt, history, userMessage), null);
+        ChatCompletionRequest request = buildRequest(
+                responseMessages(systemPrompt, history, recalledMemories, userMessage), null);
 
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
@@ -128,10 +133,12 @@ public class AIService {
      *
      * @throws AIException 스트림을 열지 못한 경우(HTTP 오류, 네트워크 오류)
      */
-    public ChatCompletionStream openResponseStream(String systemPrompt, List<ConversationTurn> history, String userMessage) {
+    public ChatCompletionStream openResponseStream(String systemPrompt, List<ConversationTurn> history,
+                                                   List<Memory> recalledMemories, String userMessage) {
         log.debug("Opening response stream - history size: {}, userMessage length: {}",
                 history != null ? history.size() : 0, userMessage != null ? userMessage.length() : 0);
-        return openStream(buildRequest(responseMessages(systemPrompt, history, userMessage), true), "AI 응답 생성 실패");
+        return openStream(buildRequest(responseMessages(systemPrompt, history, recalledMemories, userMessage), true),
+                "AI 응답 생성 실패");
     }
 
     private ChatCompletionStream openStream(ChatCompletionRequest request, String failureMessage) {
@@ -187,7 +194,7 @@ public class AIService {
     }
 
     private List<ChatCompletionRequest.Message> responseMessages(String systemPrompt, List<ConversationTurn> history,
-                                                                 String userMessage) {
+                                                                 List<Memory> recalledMemories, String userMessage) {
         List<ChatCompletionRequest.Message> messages = new ArrayList<>();
 
         // 1. 시스템 프롬프트
@@ -214,12 +221,34 @@ public class AIService {
             }
         }
 
-        // 3. 현재 사용자 메시지
+        // 3. 이번 대화에서 떠올린 장기기억 - 반드시 현재 사용자 메시지 바로 앞.
+        //    시스템 프롬프트나 히스토리 앞쪽에 넣으면 매 턴 앞부분이 달라져 프롬프트 캐싱이 깨진다
+        if (recalledMemories != null && !recalledMemories.isEmpty()) {
+            messages.add(ChatCompletionRequest.Message.builder()
+                    .role("system")
+                    .content(recalledMemoriesBlock(recalledMemories))
+                    .build());
+        }
+
+        // 4. 현재 사용자 메시지
         messages.add(ChatCompletionRequest.Message.builder()
                 .role("user")
                 .content(userMessage)
                 .build());
         return messages;
+    }
+
+    /**
+     * 장기기억 블록 - 시스템 프롬프트가 [어르신의 지난 이야기]라는 이름으로 이 블록을 가리킨다.
+     * 기억은 참고용이라, 쓸지 말지는 모델이 대화 흐름을 보고 정하게 한다(검색이 완벽할 필요가 없다).
+     */
+    private String recalledMemoriesBlock(List<Memory> memories) {
+        StringBuilder sb = new StringBuilder("[어르신의 지난 이야기] (이전 대화에서 어르신이 직접 들려주신 기억)\n");
+        memories.forEach(memory -> sb.append("- [").append(memory.getLifePeriod()).append("/")
+                .append(memory.getTopic()).append("] ").append(memory.getContent()).append("\n"));
+        sb.append("참고용입니다. 어르신 말씀이 옛 이야기로 이어질 때만 쓰고,\n")
+                .append("안부를 나누는 중이거나 지금 말씀과 어울리지 않으면 쓰지 마세요.");
+        return sb.toString();
     }
 
     /**
@@ -272,7 +301,7 @@ public class AIService {
     /**
      * 장기기억 추출
      *
-     * 대화 종료 시 [기존 기억 + 이번 대화]를 통합한 전체 기억 목록을 JSON 배열로 받는다.
+     * 대화 종료 시 이번 대화에서 말씀하신 사실 목록을 JSON 배열로 받는다.
      * 응답은 원문 그대로 반환하며, 파싱은 호출자(MemoryService)가 담당한다.
      *
      * @param memoryPrompt PromptService.buildMemoryPrompt()로 조합된 기억 추출 프롬프트
@@ -315,6 +344,55 @@ public class AIService {
         } catch (FeignException e) {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 기억 추출 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 장기기억 병합 판단
+     *
+     * 새 사실마다 ADD / UPDATE / NOOP 판단을 JSON 배열로 받는다.
+     * 응답은 원문 그대로 반환하며, 파싱과 검증은 호출자(MemoryService)가 담당한다.
+     *
+     * @param mergePrompt PromptService.buildMemoryMergePrompt()로 조합된 병합 판단 프롬프트
+     * @return AI가 생성한 JSON 배열 원문
+     * @throws AIException API 호출 실패 또는 빈 응답 시
+     */
+    public String generateMemoryMerge(String mergePrompt) {
+        log.debug("Judging memory merge - prompt length: {}", mergePrompt != null ? mergePrompt.length() : 0);
+
+        List<ChatCompletionRequest.Message> messages = new ArrayList<>();
+
+        messages.add(ChatCompletionRequest.Message.builder()
+                .role("system")
+                .content(mergePrompt)
+                .build());
+
+        messages.add(ChatCompletionRequest.Message.builder()
+                .role("user")
+                .content("위 새 사실마다 처리 방법을 JSON 배열로 판단해주세요.")
+                .build());
+
+        ChatCompletionRequest request = ChatCompletionRequest.builder()
+                .model(chatProperties.getModel())
+                .messages(messages)
+                .temperature(chatProperties.getTemperature())
+                .maxTokens(chatProperties.getMaxTokens())
+                .build();
+
+        try {
+            ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
+            String judged = extractContent(response);
+
+            if (judged.isBlank()) {
+                throw new AIException("기억 병합 판단 결과가 비어있습니다");
+            }
+
+            log.debug("Judged memory merge - length: {}", judged.length());
+            return judged.trim();
+        } catch (FeignException e) {
+            log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
+            throw new AIException("AI 기억 병합 판단 실패: " + e.getMessage(), e);
         }
     }
 

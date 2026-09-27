@@ -19,8 +19,8 @@ import com.example.echo.health.dto.HealthData;
 import com.example.echo.location.dto.RawLocationData;
 import com.example.echo.health.service.HealthDataService;
 import com.example.echo.memory.entity.Memory;
+import com.example.echo.memory.service.MemoryRecallService;
 import com.example.echo.memory.service.MemoryService;
-import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.service.VoiceService;
@@ -72,7 +72,7 @@ public class ConversationService {
     private final DiaryService diaryService;
     private final HealthDataService healthDataService;
     private final MemoryService memoryService;
-    private final RecallTopicRotationService recallTopicRotationService;
+    private final MemoryRecallService memoryRecallService;
     // @EnableScheduling이 만드는 taskScheduler도 TaskExecutor라 타입만으로는 모호하다.
     // application.yaml의 spring.task.execution 설정을 받는 쪽을 명시적으로 지정한다.
     @Qualifier("applicationTaskExecutor")
@@ -137,6 +137,7 @@ public class ConversationService {
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         long turnStart = System.currentTimeMillis();
         UserContext context = prepareGreetingContext(userId, healthData, rawLocationData);
+        CompletableFuture<Void> greetingRecall = recallForGreeting(userId, context);
 
         // 4. 첫 인사 생성
         String firstMessage = timed("llm_greeting", userId, context.getConversationHistory().size(),
@@ -149,6 +150,7 @@ public class ConversationService {
         // 6. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
         contextService.addConversationTurn(userId, null, firstMessage);
 
+        greetingRecall.join();
         recordTotal("start_total", userId, turnStart, context.getConversationHistory().size());
 
         return ConversationStartResponse.builder()
@@ -167,6 +169,7 @@ public class ConversationService {
     public StreamedConversation startConversationStream(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         long turnStart = System.currentTimeMillis();
         UserContext context = prepareGreetingContext(userId, healthData, rawLocationData);
+        CompletableFuture<Void> greetingRecall = recallForGreeting(userId, context);
         int historyTurns = context.getConversationHistory().size();
 
         SpeechStreamPipeline.Started started = speechStreamPipeline.start(
@@ -176,6 +179,7 @@ public class ConversationService {
                 (stage, elapsedMs) -> recordElapsed(stage, userId, elapsedMs, historyTurns),
                 greeting -> contextService.addConversationTurn(userId, null, greeting));
 
+        greetingRecall.join();
         recordTotal("start_first_audio", userId, turnStart, historyTurns);
 
         return new StreamedConversation(
@@ -191,7 +195,7 @@ public class ConversationService {
     /**
      * 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다.
      *
-     * 건강데이터 저장·컨텍스트 초기화(위치/날씨 포함)·장기기억 조회·최근 일기 조회는 서로 결과를
+     * 건강데이터 저장·컨텍스트 초기화(위치/날씨 포함)·최근 일기 조회는 서로 결과를
      * 참조하지 않는 독립적인 I/O라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이
      * 기다린다.
      *
@@ -209,35 +213,56 @@ public class ConversationService {
      * 이미 쓰고 있는 것과 같은 fire-and-forget 판단이다.
      */
     private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
-        // 0-1. 독립적인 네 작업을 한꺼번에 제출
+        // 0-1. 독립적인 세 작업을 한꺼번에 제출
         CompletableFuture<Void> healthSaveFuture = healthData != null
                 ? CompletableFuture.runAsync(() -> saveHealthDataSafely(userId, healthData), taskExecutor)
                 : CompletableFuture.completedFuture(null);
         CompletableFuture<UserContext> contextFuture = CompletableFuture.supplyAsync(
                 () -> contextService.initializeContext(userId, healthData, rawLocationData), taskExecutor);
-        CompletableFuture<List<Memory>> memoriesFuture = CompletableFuture.supplyAsync(
-                () -> loadLifeMemories(userId), taskExecutor);
         CompletableFuture<List<Diary>> diariesFuture = CompletableFuture.supplyAsync(
                 () -> loadRecentDiaries(userId), taskExecutor);
 
         join(healthSaveFuture);
         UserContext context = join(contextFuture);
-        List<Memory> lifeMemories = join(memoriesFuture);
         List<Diary> recentDiaries = join(diariesFuture);
 
-        // 2. 오늘의 장기기억 회상 주제(3단계용) 확정
-        // 시스템 프롬프트는 대화 시작 시 1회 생성되어 세션 내내 재사용되므로, 여기서 확정한 주제가
-        // 자정을 넘겨도 세션 중에는 그대로 유지된다. 시스템 프롬프트에 구워 넣어야 하니 3보다 먼저 계산한다.
-        String recallTopic = recallTopicRotationService.currentTopic();
-        String recallGuide = promptService.buildRecallGuide(recallTopic, lifeMemories);
-
         // 3. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
-        // 장기기억·오늘의 회상 주제는 템플릿 변수로, 최근 7일 일기는 뒤에 덧붙여
-        // AI가 이전 대화를 기억하는 것처럼 이어가게 함
-        String systemPrompt = appendRecentDiaries(
-                promptService.buildSystemPrompt(context, lifeMemories, recallGuide), recentDiaries);
+        // 최근 7일 일기는 뒤에 덧붙여 AI가 이전 대화를 기억하는 것처럼 이어가게 함.
+        // 장기기억은 시스템 프롬프트에 넣지 않는다 - 검색으로 찾은 것만 매 턴 따로 붙인다(recallForGreeting 참고)
+        String systemPrompt = appendRecentDiaries(promptService.buildSystemPrompt(context), recentDiaries);
         context.setSystemPrompt(systemPrompt);
         return context;
+    }
+
+    /**
+     * 대화 시작 장기기억 검색 - 오늘 외출한 곳과 이어지는 기억을 찾아 기억 블록의 초기값으로 둔다.
+     *
+     * 첫 인사는 기억 블록을 쓰지 않으므로 인사 생성과 병렬로 돌리고, 호출자는 응답을 반환하기 직전에 합류한다
+     * (다음 발화가 들어오기 전에 초기값이 채워져 있도록). 검색이 실패해도 대화 시작을 막지 않는다 - 빈 블록으로 진행.
+     */
+    private CompletableFuture<Void> recallForGreeting(Long userId, UserContext context) {
+        return CompletableFuture.runAsync(() -> memoryRecallService.greetingQuery(context).ifPresent(query ->
+                        timed("start_memory_recall", userId, 0, () -> memoryRecallService.recallInto(context, query))),
+                        taskExecutor)
+                .exceptionally(e -> {
+                    log.warn("대화 시작 장기기억 검색 실패 - 기억 없이 진행 - userId: {}", userId, e);
+                    return null;
+                });
+    }
+
+    /**
+     * 발화 장기기억 검색 - 새로 찾은 기억을 기억 블록에 덧붙인다 (LLM 호출 직전에 부른다)
+     *
+     * 게이트(첫 발화·맞장구)에 걸린 턴은 검색도 타이머 기록도 하지 않는다 - 0ms 표본이 검색 지연 평균을 흐린다.
+     * 검색이 실패하면 새로 붙는 기억 없이 진행하고, 블록에 이미 있는 기억은 그대로 남는다.
+     */
+    private void recallForTurn(Long userId, UserContext context, String userMessage) {
+        memoryRecallService.turnQuery(context, userMessage).ifPresent(query ->
+                timed("memory_recall", userId, context.getConversationHistory().size(),
+                        () -> memoryRecallService.recallInto(context, query)));
+        // AI가 이번 응답에서 어떤 기억을 보고 있었는지 - 대화 원문이 남지 않게 번호만 기록
+        log.info("장기기억 블록 - userId: {}, {}", userId,
+                context.getRecalledMemories().stream().map(memory -> "#" + memory.getId()).toList());
     }
 
     /**
@@ -304,10 +329,12 @@ public class ConversationService {
 
         context.setConsecutiveEmptySttCount(0);
         String userMessage = turn.userMessage();
-        // 풀 스레드에서 읽으므로, 이번 턴 저장 전의 히스토리를 고정해서 넘긴다
+        recallForTurn(userId, context, userMessage);
+        // 풀 스레드에서 읽으므로, 이번 턴 저장 전의 히스토리와 기억 블록을 고정해서 넘긴다
         List<ConversationTurn> history = List.copyOf(context.getConversationHistory());
+        List<Memory> recalledMemories = List.copyOf(context.getRecalledMemories());
         SpeechStreamPipeline.Started started = speechStreamPipeline.start(
-                () -> aiService.openResponseStream(context.getSystemPrompt(), history, userMessage),
+                () -> aiService.openResponseStream(context.getSystemPrompt(), history, recalledMemories, userMessage),
                 voiceSettings,
                 MESSAGE_STAGES,
                 (stage, elapsedMs) -> recordElapsed(stage, userId, elapsedMs, historyTurns),
@@ -385,10 +412,12 @@ public class ConversationService {
             aiResponse = emptySttResponse(userId, context);
         } else {
             context.setConsecutiveEmptySttCount(0);
+            recallForTurn(userId, context, userMessage);
             String systemPrompt = context.getSystemPrompt();
             List<ConversationTurn> history = context.getConversationHistory();
+            List<Memory> recalledMemories = context.getRecalledMemories();
             aiResponse = timed("llm", userId, history.size(),
-                    () -> aiService.generateResponse(systemPrompt, history, userMessage));
+                    () -> aiService.generateResponse(systemPrompt, history, recalledMemories, userMessage));
         }
 
         return new ResolvedTurn(context, userMessage, aiResponse, transcribed.sttEmpty());
@@ -420,7 +449,7 @@ public class ConversationService {
      * 저장이 안 되면 다음 날 이후의 7일 평균 계산에서 이 날짜만 빠지는 정도의 영향만 남는다 -
      * 대화 시작을 막을 만큼 critical한 의존성이 아니라는 뜻이다.
      *
-     * TODO: 지금은 저장 실패가 서버 로그에만 남고 사용자는 전혀 알 방법이 없다. 장기기억(loadLifeMemories)도
+     * TODO: 지금은 저장 실패가 서버 로그에만 남고 사용자는 전혀 알 방법이 없다. 장기기억도
      * 마찬가지로 조용히 쌓이기만 하고 확인할 화면이 없는데, 나중에 "내 건강 기록 추이"·"AI가 기억하고 있는 나의 이야기"를
      * 사용자가 직접 볼 수 있는 화면이 생기면, 그때는 저장/조회 실패를 사용자에게도 노출할지(예: 일기의 diaryStatus처럼)
      * 함께 고려해야 한다.
@@ -465,29 +494,6 @@ public class ConversationService {
                 .append(diary.getContent().replace("\n", " "))
                 .append("\n"));
         return sb.toString();
-    }
-
-    /**
-     * 시스템 프롬프트에 주입할 장기기억 조회
-     *
-     * 일기(최근 7일)가 "오늘 무슨 일이 있었나"라면, 장기기억은 "이 분은 어떤 분인가"에 해당한다.
-     * 오늘의 방문 장소를 단서 삼아 옛 기억을 끌어내는 회상 대화의 재료로 쓰인다.
-     *
-     * 기억 조회에 실패해도 대화 시작을 막지 않음 (기억 없이 진행)
-     *
-     * 기억이 상한(20개)을 넘어 선별이 필요해지면 이 메서드 안에서만 교체하면 된다.
-     *
-     * TODO: 사용자에게 노출하는 화면 관련 - saveHealthDataSafely의 TODO 참고.
-     */
-    private List<Memory> loadLifeMemories(Long userId) {
-        try {
-            List<Memory> memories = memoryService.getMemories(userId);
-            log.info("장기기억 {}건을 시스템 프롬프트에 주입 - userId: {}", memories.size(), userId);
-            return memories;
-        } catch (Exception e) {
-            log.warn("장기기억 조회 실패 - 장기기억 없이 대화 시작 - userId: {}", userId, e);
-            return List.of();
-        }
     }
 
     /**
