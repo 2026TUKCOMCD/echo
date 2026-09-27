@@ -272,7 +272,7 @@ public class AIService {
     /**
      * 장기기억 추출
      *
-     * 대화 종료 시 [기존 기억 + 이번 대화]를 통합한 전체 기억 목록을 JSON 배열로 받는다.
+     * 대화 종료 시 이번 대화에서 말씀하신 사실 목록을 JSON 배열로 받는다.
      * 응답은 원문 그대로 반환하며, 파싱은 호출자(MemoryService)가 담당한다.
      *
      * @param memoryPrompt PromptService.buildMemoryPrompt()로 조합된 기억 추출 프롬프트
@@ -315,6 +315,55 @@ public class AIService {
         } catch (FeignException e) {
             log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
             throw new AIException("AI 기억 추출 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 장기기억 병합 판단
+     *
+     * 새 사실마다 ADD / UPDATE / NOOP 판단을 JSON 배열로 받는다.
+     * 응답은 원문 그대로 반환하며, 파싱과 검증은 호출자(MemoryService)가 담당한다.
+     *
+     * @param mergePrompt PromptService.buildMemoryMergePrompt()로 조합된 병합 판단 프롬프트
+     * @return AI가 생성한 JSON 배열 원문
+     * @throws AIException API 호출 실패 또는 빈 응답 시
+     */
+    public String generateMemoryMerge(String mergePrompt) {
+        log.debug("Judging memory merge - prompt length: {}", mergePrompt != null ? mergePrompt.length() : 0);
+
+        List<ChatCompletionRequest.Message> messages = new ArrayList<>();
+
+        messages.add(ChatCompletionRequest.Message.builder()
+                .role("system")
+                .content(mergePrompt)
+                .build());
+
+        messages.add(ChatCompletionRequest.Message.builder()
+                .role("user")
+                .content("위 새 사실마다 처리 방법을 JSON 배열로 판단해주세요.")
+                .build());
+
+        ChatCompletionRequest request = ChatCompletionRequest.builder()
+                .model(chatProperties.getModel())
+                .messages(messages)
+                .temperature(chatProperties.getTemperature())
+                .maxTokens(chatProperties.getMaxTokens())
+                .build();
+
+        try {
+            ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
+            logCacheUsage(response);
+            String judged = extractContent(response);
+
+            if (judged.isBlank()) {
+                throw new AIException("기억 병합 판단 결과가 비어있습니다");
+            }
+
+            log.debug("Judged memory merge - length: {}", judged.length());
+            return judged.trim();
+        } catch (FeignException e) {
+            log.error("OpenRouter API 호출 실패 - 상태코드: {}, 메시지: {}", e.status(), e.getMessage());
+            throw new AIException("AI 기억 병합 판단 실패: " + e.getMessage(), e);
         }
     }
 

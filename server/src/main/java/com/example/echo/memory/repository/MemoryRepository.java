@@ -19,7 +19,7 @@ public interface MemoryRepository extends JpaRepository<Memory, Long> {
     List<Memory> findByUserIdOrderByIdAsc(Long userId);
 
     /**
-     * 전량 교체용 삭제 - 반드시 트랜잭션 안에서 호출할 것
+     * 체험 데이터 초기화용 삭제 - 반드시 트랜잭션 안에서 호출할 것
      */
     void deleteByUserId(Long userId);
 

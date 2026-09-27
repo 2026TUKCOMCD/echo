@@ -15,6 +15,7 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.VisitedPlace;
+import com.example.echo.memory.dto.MemoryMergeItem;
 import com.example.echo.memory.entity.Memory;
 import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.entity.PromptTemplate;
@@ -343,28 +344,25 @@ public class PromptService {
      * 장기기억 추출 프롬프트 생성
      *
      * 대화 종료 시 MemoryService가 호출
-     * [기존 기억 전체 + 이번 세션 대화]를 함께 전달해 통합된 전체 목록을 재생성하게 함
+     * 이번 세션 대화만 넘겨 사실을 한 문장씩 뽑게 한다. 기존 기억과의 중복 정리는 병합 판단(buildMemoryMergePrompt)이 맡는다
      *
-     * 템플릿 변수 (v2):
+     * 템플릿 변수 (v3):
      * - {{userName}}: 사용자 이름
-     * - {{existingMemories}}: 기존에 저장된 기억 목록 (없으면 "(없음)")
      * - {{conversationHistory}}: 이번 세션의 대화 내용
      * - {{topicVocabulary}}: topic 필드에 허용되는 어휘 목록 (RecallTopicRotationService.TOPICS와 동일해야
      *   3단계 회상 주제 로테이션의 발굴/심화 모드 매칭이 어긋나지 않음)
      *
      * @param context 대화 종료 시점의 UserContext
-     * @param existingMemories 기존에 저장된 장기기억 목록 (null 허용)
      * @return 컴파일된 기억 추출 프롬프트 문자열
      * @throws IllegalStateException 활성화된 MEMORY 템플릿이 없을 경우
      */
-    public String buildMemoryPrompt(UserContext context, List<Memory> existingMemories) {
+    public String buildMemoryPrompt(UserContext context) {
         PromptTemplate template = getActiveTemplate(PromptType.MEMORY);
 
         UserPreferences preferences = context.getPreferences();
 
         Map<String, Object> variables = new HashMap<>();
         variables.put("userName", preferences != null ? preferences.getName() : "사용자");
-        variables.put("existingMemories", buildExistingMemoriesText(existingMemories));
         variables.put("conversationHistory", buildConversationHistoryText(context.getConversationHistory()));
         variables.put("topicVocabulary", String.join(", ", RecallTopicRotationService.TOPICS));
 
@@ -372,24 +370,53 @@ public class PromptService {
     }
 
     /**
-     * 기존 장기기억 목록을 프롬프트용 텍스트로 변환
+     * 장기기억 병합 판단 프롬프트 생성
+     *
+     * 대화 종료 시 MemoryService가 후보가 붙은 새 사실이 있을 때만 호출
+     *
+     * 템플릿 변수 (v1):
+     * - {{userName}}: 사용자 이름
+     * - {{mergeItems}}: 새 사실마다 비슷한 기존 기억 후보를 묶은 목록
+     *
+     * @param context 대화 종료 시점의 UserContext
+     * @param items 새 사실과 후보 묶음. 목록에서의 위치가 AI 응답의 index가 된다
+     * @return 컴파일된 병합 판단 프롬프트 문자열
+     * @throws IllegalStateException 활성화된 MEMORY_MERGE 템플릿이 없을 경우
      */
-    private String buildExistingMemoriesText(List<Memory> memories) {
-        if (memories == null || memories.isEmpty()) {
-            return "(없음)";
-        }
+    public String buildMemoryMergePrompt(UserContext context, List<MemoryMergeItem> items) {
+        PromptTemplate template = getActiveTemplate(PromptType.MEMORY_MERGE);
 
+        UserPreferences preferences = context.getPreferences();
+
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("userName", preferences != null ? preferences.getName() : "사용자");
+        variables.put("mergeItems", buildMergeItemsText(items));
+
+        return template.compile(variables);
+    }
+
+    /**
+     * 병합 판단용 목록을 프롬프트 텍스트로 변환
+     *
+     * 새 사실 0: [유년기/부모형제] 어머니가 시장에서 떡장사를 하셨다
+     *   - 기존 #12: [유년기/부모형제] 어머니가 떡을 만들어 파셨다
+     *
+     * 기존 기억은 DB id로 표시한다. AI가 targetId로 돌려주면 그대로 행을 찾는다.
+     */
+    private String buildMergeItemsText(List<MemoryMergeItem> items) {
         StringBuilder sb = new StringBuilder();
-        memories.forEach(memory -> {
-            sb.append("- [").append(memory.getLifePeriod()).append("/").append(memory.getTopic()).append("] ")
-                    .append(memory.getContent());
-            if (memory.getTags() != null && !memory.getTags().isBlank()) {
-                sb.append(" (태그: ").append(memory.getTags()).append(")");
-            }
+        for (int i = 0; i < items.size(); i++) {
+            MemoryMergeItem item = items.get(i);
+            sb.append("새 사실 ").append(i).append(": ").append(describeMemory(item.newFact())).append("\n");
+            item.candidates().forEach(candidate -> sb.append("  - 기존 #").append(candidate.getId()).append(": ")
+                    .append(describeMemory(candidate)).append("\n"));
             sb.append("\n");
-        });
-
+        }
         return sb.toString().trim();
+    }
+
+    private String describeMemory(Memory memory) {
+        return "[" + memory.getLifePeriod() + "/" + memory.getTopic() + "] " + memory.getContent();
     }
 
     /**

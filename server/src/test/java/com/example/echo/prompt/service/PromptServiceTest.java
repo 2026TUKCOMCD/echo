@@ -17,7 +17,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.example.echo.memory.dto.MemoryMergeItem;
 import com.example.echo.memory.entity.Memory;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalTime;
 import java.util.List;
@@ -659,10 +661,37 @@ class PromptServiceTest {
         when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.MEMORY))
                 .thenReturn(Optional.of(template));
 
-        String result = promptService.buildMemoryPrompt(context, List.of());
+        String result = promptService.buildMemoryPrompt(context);
 
         assertThat(result).contains("고향").contains("나들이");
         assertThat(result).doesNotContain("{{topicVocabulary}}");
+    }
+
+    // ===== buildMemoryMergePrompt 테스트 =====
+
+    @Test
+    @DisplayName("buildMemoryMergePrompt - 새 사실마다 번호를 매기고, 그 아래에 후보를 DB id로 표시함")
+    void buildMemoryMergePrompt_listsFactsWithCandidateIds() {
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.MEMORY_MERGE)
+                .content("{{userName}}\n{{mergeItems}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.MEMORY_MERGE))
+                .thenReturn(Optional.of(template));
+
+        Memory candidate = Memory.builder().lifePeriod("유년기").topic("부모형제").content("어머니가 떡을 만들어 파셨다").build();
+        ReflectionTestUtils.setField(candidate, "id", 12L);
+        Memory newFact = Memory.builder().lifePeriod("유년기").topic("부모형제").content("어머니가 시장에서 떡장사를 하셨다").build();
+        Memory otherFact = Memory.builder().lifePeriod("청년기").topic("일").content("부산에서 배를 탔다").build();
+
+        String result = promptService.buildMemoryMergePrompt(context, List.of(
+                new MemoryMergeItem(newFact, List.of(candidate)),
+                new MemoryMergeItem(otherFact, List.of(candidate))));
+
+        assertThat(result).startsWith("홍길동");
+        assertThat(result).contains("새 사실 0: [유년기/부모형제] 어머니가 시장에서 떡장사를 하셨다\n"
+                + "  - 기존 #12: [유년기/부모형제] 어머니가 떡을 만들어 파셨다");
+        assertThat(result).contains("새 사실 1: [청년기/일] 부산에서 배를 탔다");
     }
 
 }

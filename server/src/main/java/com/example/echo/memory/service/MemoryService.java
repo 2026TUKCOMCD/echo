@@ -3,8 +3,11 @@ package com.example.echo.memory.service;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.ai.service.AIService;
+import com.example.echo.memory.dto.MemoryMergeItem;
 import com.example.echo.memory.entity.Memory;
 import com.example.echo.memory.repository.MemoryRepository;
+import com.example.echo.memory.support.EmbeddingCodec;
+import com.example.echo.memory.support.VectorMath;
 import com.example.echo.prompt.service.PromptService;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -14,33 +17,53 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 장기기억 서비스
  *
- * 대화 종료 시 대화 원문에서 영구 유효한 자전적 기억을 추출해 저장한다.
+ * 대화 종료 시 대화 원문에서 영구 유효한 자전적 사실을 추출해 누적한다.
  * - 대화 원문은 finalizeContext()에서 삭제되므로, 대화 종료 시점이 추출 가능한 유일한 타이밍
- * - [기존 기억 전체 + 이번 대화]를 AI에 넘겨 통합 목록을 받아 전량 교체 (병합·구체화가 여기서 일어남)
+ * - 한 행에 사실 하나. 기존 행은 지우지 않고, 새 사실을 추가하거나 같은 사실의 기존 행을 보강한다
  * - 일기 생성과 독립적인 LLM 호출이며, 실패해도 대화 종료/일기에 영향을 주지 않는다
  *
- * 전량 교체 전략의 유실 방어:
- * AI가 기존 기억을 누락한 목록을 반환할 수 있으므로 빈 응답·개수 급감 시 교체를 중단하고 기존을 유지한다.
+ * 처리 순서:
+ * 1. LLM #1(MEMORY)로 이번 대화의 사실 추출
+ * 2. 새 사실을 한 번에 임베딩
+ * 3. 새 사실마다 기존 기억과 유사도를 계산해 병합 후보를 붙임
+ * 4. 후보가 붙은 사실만 모아 LLM #2(MEMORY_MERGE)로 ADD / UPDATE / NOOP 판단 (후보가 하나도 없으면 호출 생략)
+ * 5. UPDATE로 문장이 바뀐 행은 다시 임베딩
+ * 6. 추가·보강된 행만 저장
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class MemoryService {
 
-    /** 시스템 프롬프트에 주입할 수 있는 현실적인 상한 */
-    private static final int MAX_MEMORIES = 20;
+    /**
+     * 병합 후보 유사도 하한
+     * RAG1 실측: 같은 뜻 0.654 / 관련 이야기 0.599 / 무관 0.178.
+     * 최종 판단은 LLM이 하므로 후보를 넉넉히 넘기는 쪽이 손해가 작다(후보를 놓치면 중복 행이 생긴다).
+     */
+    static final double MERGE_CANDIDATE_THRESHOLD = 0.5;
 
-    /** 이 개수 이상일 때만 급감 가드를 적용 (기억이 적을 땐 정상적인 병합도 큰 비율 감소로 보임) */
-    private static final int SHRINK_GUARD_MIN_EXISTING = 4;
-    private static final double SHRINK_GUARD_RATIO = 0.5;
+    /** 새 사실 하나에 붙이는 병합 후보 최대 개수 */
+    static final int MERGE_CANDIDATE_LIMIT = 3;
+
+    /**
+     * 임베딩 타임아웃 - 대화 종료 뒤 비동기로 돌아 아무도 기다리지 않으므로 대화용 설정값(500ms)을 쓰지 않는다.
+     * 500ms면 JVM 첫 호출(0.7~0.9초)에 걸려 병합 판단 없이 전부 추가되고, 같은 이야기가 중복 행으로 쌓인다.
+     */
+    static final Duration EMBEDDING_TIMEOUT = Duration.ofSeconds(10);
 
     private static final int CONTENT_MAX_LENGTH = 500;
     private static final int FIELD_MAX_LENGTH = 30;
@@ -49,19 +72,19 @@ public class MemoryService {
     private final MemoryRepository memoryRepository;
     private final PromptService promptService;
     private final AIService aiService;
+    private final EmbeddingService embeddingService;
     private final ObjectMapper objectMapper;
 
     /** 초기화 이전에 시작된 대화의 추출 결과가 비동기로 뒤늦게 저장되어 기억이 되살아나는 것을 막는 기준 시각 */
     private final Map<Long, LocalDateTime> resetAtByUser = new ConcurrentHashMap<>();
 
     /**
-     * 대화 종료 시 장기기억 추출 및 갱신
+     * 대화 종료 시 장기기억 추출 및 누적
      *
-     * AI 호출·파싱 실패는 내부에서 삼키고 기존 기억을 유지한다(쓰기 전 단계라 무손상).
-     * 반면 저장 단계의 예외는 전파시켜 트랜잭션을 롤백한다
-     * (삭제만 커밋되고 저장이 실패해 기억이 통째로 사라지는 상황을 막기 위함).
+     * AI 호출·파싱·임베딩 실패는 내부에서 삼키고, 저장할 수 있는 것만 저장한다.
+     * 메서드 전체를 트랜잭션으로 묶지 않는다 - 외부 호출(LLM 최대 2회 + 임베딩 최대 2회) 동안
+     * DB 커넥션을 쥐지 않기 위함이다. 기존 행을 지우지 않으므로 여러 단계를 한 번에 커밋할 이유도 없다.
      */
-    @Transactional
     public void extractAndSaveMemories(UserContext context) {
         Long userId = context.getUserId();
 
@@ -71,35 +94,26 @@ public class MemoryService {
             return;
         }
 
-        List<Memory> existing = memoryRepository.findByUserIdOrderByIdAsc(userId);
-
-        List<MemoryItem> items;
+        List<Memory> newFacts;
         try {
-            String prompt = promptService.buildMemoryPrompt(context, existing);
-            String raw = aiService.generateMemoryExtraction(prompt);
-            items = parseMemories(raw);
+            String prompt = promptService.buildMemoryPrompt(context);
+            newFacts = parseJsonArray(aiService.generateMemoryExtraction(prompt), new TypeReference<List<MemoryItem>>() {})
+                    .stream()
+                    .filter(item -> item != null && item.content() != null && !item.content().isBlank())
+                    .map(item -> toEntity(userId, item))
+                    .toList();
         } catch (Exception e) {
-            log.warn("장기기억 추출 실패 - 기존 기억 {}건 유지 - userId: {}", existing.size(), userId, e);
+            log.warn("장기기억 추출 실패 - 기존 기억 유지 - userId: {}", userId, e);
             return;
         }
 
-        if (items.isEmpty()) {
-            log.info("장기기억 추출 결과 없음 - 기존 기억 {}건 유지 - userId: {}", existing.size(), userId);
+        if (newFacts.isEmpty()) {
+            log.info("장기기억 추출 결과 없음 - userId: {}", userId);
             return;
         }
+        log.debug("장기기억 추출 - userId: {}, 사실: {}", userId, newFacts.stream().map(Memory::getContent).toList());
 
-        // AI가 기존 기억을 대량 누락한 것으로 보이면 교체하지 않음
-        if (existing.size() >= SHRINK_GUARD_MIN_EXISTING
-                && items.size() < existing.size() * SHRINK_GUARD_RATIO) {
-            log.warn("장기기억 개수 급감 감지 - 유실 의심으로 교체 중단 - userId: {}, 기존 {}건 → 추출 {}건",
-                    userId, existing.size(), items.size());
-            return;
-        }
-
-        List<Memory> replacement = items.stream()
-                .limit(MAX_MEMORIES)
-                .map(item -> toEntity(userId, item))
-                .toList();
+        Changes changes = resolveChanges(context, newFacts);
 
         // AI 호출 중에 초기화될 수 있으므로 호출 전이 아니라 쓰기 직전에 확인한다
         if (startedBeforeReset(context)) {
@@ -107,10 +121,15 @@ public class MemoryService {
             return;
         }
 
-        memoryRepository.deleteByUserId(userId);
-        memoryRepository.saveAll(replacement);
+        List<Memory> toSave = new ArrayList<>(changes.added());
+        toSave.addAll(changes.updated());
+        if (!toSave.isEmpty()) {
+            memoryRepository.saveAll(toSave);
+        }
 
-        log.info("장기기억 갱신 완료 - userId: {}, {}건 → {}건", userId, existing.size(), replacement.size());
+        log.info("장기기억 갱신 완료 - userId: {}, 추출 {}건 → 추가 {}건, 보강 {}건, 반영 안 함 {}건",
+                userId, newFacts.size(), changes.added().size(), changes.updated().size(),
+                newFacts.size() - changes.added().size() - changes.updated().size());
     }
 
     /**
@@ -128,6 +147,156 @@ public class MemoryService {
     public void deleteAllMemories(Long userId, LocalDateTime resetAt) {
         resetAtByUser.put(userId, resetAt);
         memoryRepository.deleteByUserId(userId);
+    }
+
+    /**
+     * 새 사실을 기존 기억과 비교해 추가할 행과 보강할 행을 정한다 (저장은 하지 않음)
+     */
+    private Changes resolveChanges(UserContext context, List<Memory> newFacts) {
+        Long userId = context.getUserId();
+
+        List<float[]> vectors = embeddingService.embedAll(newFacts.stream().map(Memory::getContent).toList(), EMBEDDING_TIMEOUT);
+        if (vectors.isEmpty()) {
+            // 후보를 찾을 수 없어 전부 추가한다. 중복 행이 생길 수 있지만 내용을 버리지 않는 쪽을 택한다
+            // (벡터는 다음 부팅 백필이 채운다)
+            log.warn("장기기억 임베딩 실패 - 병합 판단 없이 {}건 추가 - userId: {}", newFacts.size(), userId);
+            return new Changes(newFacts, List.of());
+        }
+
+        String modelTag = embeddingService.modelTag();
+        for (int i = 0; i < newFacts.size(); i++) {
+            newFacts.get(i).assignEmbedding(EmbeddingCodec.encode(vectors.get(i)), modelTag);
+        }
+
+        List<StoredVector> stored = loadComparableVectors(userId, modelTag);
+
+        List<Memory> added = new ArrayList<>();
+        List<MemoryMergeItem> mergeItems = new ArrayList<>();
+        for (int i = 0; i < newFacts.size(); i++) {
+            List<VectorMath.Scored<StoredVector>> hits = VectorMath.topK(
+                    vectors.get(i), stored, StoredVector::vector, MERGE_CANDIDATE_LIMIT, MERGE_CANDIDATE_THRESHOLD);
+            if (hits.isEmpty()) {
+                added.add(newFacts.get(i));
+                continue;
+            }
+            log.info("장기기억 병합 후보 - userId: {}, 새 사실 {} → {}", userId, mergeItems.size(), describeScores(hits));
+            mergeItems.add(new MemoryMergeItem(newFacts.get(i), hits.stream().map(hit -> hit.item().memory()).toList()));
+        }
+
+        if (mergeItems.isEmpty()) {
+            return new Changes(added, List.of());
+        }
+
+        Changes merged = applyMergeDecisions(context, mergeItems);
+        added.addAll(merged.added());
+        reembed(merged.updated(), modelTag);
+        return new Changes(added, merged.updated());
+    }
+
+    /**
+     * 병합 후보 검색 대상 - 현재 설정과 같은 모델·차원으로 만든 벡터만 (다른 차원이 섞이면 비교할 수 없다)
+     *
+     * 세션에 캐시하지 않고 매번 DB에서 읽는다. 사용자당 수백 건 수준이라 전수 계산으로 충분하다.
+     */
+    private List<StoredVector> loadComparableVectors(Long userId, String modelTag) {
+        return memoryRepository.findByUserIdOrderByIdAsc(userId).stream()
+                .filter(memory -> memory.getEmbedding() != null && modelTag.equals(memory.getEmbeddingModel()))
+                .map(memory -> new StoredVector(memory, EmbeddingCodec.decode(memory.getEmbedding())))
+                .toList();
+    }
+
+    /**
+     * 후보가 붙은 새 사실을 LLM #2로 판단해 적용한다
+     *
+     * 판단을 받지 못했거나 판단이 잘못된 사실은 폐기한다. 후보가 붙었다는 것은 비슷한 기억이 이미 있다는 뜻이라,
+     * 확인 없이 추가하면 중복 행이 생긴다.
+     */
+    private Changes applyMergeDecisions(UserContext context, List<MemoryMergeItem> items) {
+        Long userId = context.getUserId();
+
+        List<MergeDecision> decisions;
+        try {
+            String prompt = promptService.buildMemoryMergePrompt(context, items);
+            decisions = parseJsonArray(aiService.generateMemoryMerge(prompt), new TypeReference<List<MergeDecision>>() {});
+        } catch (Exception e) {
+            log.warn("장기기억 병합 판단 실패 - 후보가 붙은 새 사실 {}건 폐기 - userId: {}", items.size(), userId, e);
+            return new Changes(List.of(), List.of());
+        }
+
+        Map<Integer, MergeDecision> byIndex = new HashMap<>();
+        decisions.stream()
+                .filter(decision -> decision != null && decision.index() != null)
+                .forEach(decision -> byIndex.putIfAbsent(decision.index(), decision));
+
+        List<Memory> added = new ArrayList<>();
+        List<Memory> updated = new ArrayList<>();
+        Set<Long> updatedIds = new HashSet<>();
+        for (int i = 0; i < items.size(); i++) {
+            MemoryMergeItem item = items.get(i);
+            MergeDecision decision = byIndex.get(i);
+            String action = decision == null || decision.action() == null ? "" : decision.action().trim().toUpperCase();
+
+            switch (action) {
+                case "ADD" -> added.add(item.newFact());
+                case "NOOP" -> {
+                }
+                case "UPDATE" -> {
+                    Memory target = findCandidate(item, decision.targetId());
+                    if (target == null || decision.content() == null || decision.content().isBlank()) {
+                        log.warn("장기기억 병합 판단 무효 - 새 사실 {} 폐기 (targetId: {}) - userId: {}",
+                                i, decision.targetId(), userId);
+                    } else if (!updatedIds.add(target.getId())) {
+                        // 나중 판단이 먼저 보강한 내용을 덮어쓰면 정보가 사라진다
+                        log.warn("장기기억 중복 보강 - 새 사실 {} 폐기 (#{}은 이미 보강됨) - userId: {}",
+                                i, target.getId(), userId);
+                    } else {
+                        target.updateContent(truncate(decision.content().trim(), CONTENT_MAX_LENGTH));
+                        updated.add(target);
+                    }
+                }
+                default -> log.warn("장기기억 병합 판단 누락 - 새 사실 {} 폐기 (action: {}) - userId: {}",
+                        i, decision == null ? null : decision.action(), userId);
+            }
+        }
+        return new Changes(added, updated);
+    }
+
+    /**
+     * 모델이 준 targetId가 이 사실에 붙은 후보일 때만 인정한다 (다른 사실의 후보나 없는 id를 고치지 않게)
+     */
+    private Memory findCandidate(MemoryMergeItem item, Long targetId) {
+        if (targetId == null) {
+            return null;
+        }
+        return item.candidates().stream()
+                .filter(candidate -> targetId.equals(candidate.getId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * 보강으로 문장이 바뀐 행을 다시 임베딩 - 빠뜨리면 저장된 내용과 검색 기준이 조용히 어긋난다
+     *
+     * 실패하면 updateContent가 비워 둔 벡터 그대로 저장되어 다음 부팅 백필이 채운다.
+     */
+    private void reembed(List<Memory> updated, String modelTag) {
+        if (updated.isEmpty()) {
+            return;
+        }
+        List<float[]> vectors = embeddingService.embedAll(updated.stream().map(Memory::getContent).toList(), EMBEDDING_TIMEOUT);
+        if (vectors.isEmpty()) {
+            log.warn("보강된 장기기억 재임베딩 실패 - {}건은 벡터 없이 저장, 다음 부팅 백필이 채운다", updated.size());
+            return;
+        }
+        for (int i = 0; i < updated.size(); i++) {
+            updated.get(i).assignEmbedding(EmbeddingCodec.encode(vectors.get(i)), modelTag);
+        }
+    }
+
+    private String describeScores(List<VectorMath.Scored<StoredVector>> hits) {
+        return hits.stream()
+                .map(hit -> "#" + hit.item().memory().getId() + String.format("(%.3f)", hit.score()))
+                .collect(Collectors.joining(", "));
     }
 
     private boolean startedBeforeReset(UserContext context) {
@@ -149,19 +318,13 @@ public class MemoryService {
      * 모델이 매일 로테이션되어 출력 형식이 흔들릴 수 있으므로,
      * 첫 [ 부터 마지막 ] 까지만 잘라내어 코드 블록 표시와 앞뒤 설명문을 함께 방어한다.
      */
-    private List<MemoryItem> parseMemories(String raw) throws Exception {
+    private <T> List<T> parseJsonArray(String raw, TypeReference<List<T>> type) throws Exception {
         int start = raw.indexOf('[');
         int end = raw.lastIndexOf(']');
         if (start < 0 || end <= start) {
             throw new IllegalArgumentException("JSON 배열을 찾을 수 없습니다: " + raw);
         }
-
-        List<MemoryItem> items = objectMapper.readValue(
-                raw.substring(start, end + 1), new TypeReference<List<MemoryItem>>() {});
-
-        return items.stream()
-                .filter(item -> item != null && item.content() != null && !item.content().isBlank())
-                .toList();
+        return objectMapper.readValue(raw.substring(start, end + 1), type);
     }
 
     private Memory toEntity(Long userId, MemoryItem item) {
@@ -189,9 +352,22 @@ public class MemoryService {
     }
 
     /**
-     * AI가 반환하는 기억 항목 (JSON 파싱용)
+     * AI가 반환하는 추출 항목 (JSON 파싱용)
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record MemoryItem(String lifePeriod, String topic, String content, List<String> tags) {
+    }
+
+    /**
+     * AI가 반환하는 병합 판단 (JSON 파싱용) - targetId·content는 UPDATE일 때만 쓴다
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record MergeDecision(Integer index, String action, Long targetId, String content) {
+    }
+
+    private record StoredVector(Memory memory, float[] vector) {
+    }
+
+    private record Changes(List<Memory> added, List<Memory> updated) {
     }
 }
