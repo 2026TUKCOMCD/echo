@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -43,6 +44,8 @@ import java.util.stream.Collectors;
  * 4. 후보가 붙은 사실만 모아 LLM #2(MEMORY_MERGE)로 ADD / UPDATE / NOOP 판단 (후보가 하나도 없으면 호출 생략)
  * 5. UPDATE로 문장이 바뀐 행은 다시 임베딩
  * 6. 추가·보강된 행만 저장
+ *
+ * 대화 중에는 search()로 질의 문장과 비슷한 기억을 찾는다 (MemoryRecallService가 호출).
  */
 @Slf4j
 @Service
@@ -50,11 +53,15 @@ import java.util.stream.Collectors;
 public class MemoryService {
 
     /**
-     * 병합 후보 유사도 하한
-     * RAG1 실측: 같은 뜻 0.654 / 관련 이야기 0.599 / 무관 0.178.
+     * 병합 후보 유사도 하한 (text-embedding-3-large@1024 기준 - 모델을 바꾸면 다시 잰다)
+     * 합성 평가 세트 실측: 같은 사실을 다른 말로 하거나 세부를 더한 새 사실 20건이 모두 대상 기억을 1등으로 찾았고,
+     * 그 최저점이 0.497이라 여유를 두고 0.45.
      * 최종 판단은 LLM이 하므로 후보를 넉넉히 넘기는 쪽이 손해가 작다(후보를 놓치면 중복 행이 생긴다).
      */
-    static final double MERGE_CANDIDATE_THRESHOLD = 0.5;
+    static final double MERGE_CANDIDATE_THRESHOLD = 0.45;
+
+    /** 검색할 때 점수를 로그로 남기는 상위 건수 - 임계값 아래도 남겨야 임계값을 조정할 근거가 된다 */
+    private static final int SEARCH_SCORE_LOG_SIZE = 3;
 
     /** 새 사실 하나에 붙이는 병합 후보 최대 개수 */
     static final int MERGE_CANDIDATE_LIMIT = 3;
@@ -133,11 +140,39 @@ public class MemoryService {
     }
 
     /**
-     * 대화 시작 시 시스템 프롬프트 주입용 조회
+     * 질의 문장과 비슷한 기억 검색 - 유사도가 threshold 이상인 것 중 상위 limit건 (유사도 내림차순)
+     *
+     * 이미 대화에 붙어 있는 기억(excludeIds)은 후보에서 빼서 자리를 차지하지 않게 한다.
+     * 임베딩·DB 조회가 실패하면 빈 목록을 반환한다 - 기억 없이도 대화는 이어져야 한다.
+     * 대화 원문이 로그에 남지 않도록 질의 문장은 기록하지 않고 기억 번호와 점수만 남긴다.
      */
-    @Transactional(readOnly = true)
-    public List<Memory> getMemories(Long userId) {
-        return memoryRepository.findByUserIdOrderByIdAsc(userId);
+    public List<Memory> search(Long userId, String query, Set<Long> excludeIds, int limit, double threshold) {
+        Optional<float[]> queryVector = embeddingService.embed(query);
+        if (queryVector.isEmpty()) {
+            return List.of();
+        }
+
+        List<VectorMath.Scored<StoredVector>> top;
+        try {
+            List<StoredVector> candidates = loadComparableVectors(userId, embeddingService.modelTag()).stream()
+                    .filter(stored -> !excludeIds.contains(stored.memory().getId()))
+                    .toList();
+            top = VectorMath.topK(queryVector.get(), candidates, StoredVector::vector,
+                    Math.max(limit, SEARCH_SCORE_LOG_SIZE), Double.NEGATIVE_INFINITY);
+        } catch (Exception e) {
+            log.warn("장기기억 검색 실패 - 기억 없이 진행 - userId: {}", userId, e);
+            return List.of();
+        }
+
+        List<Memory> found = top.stream()
+                .filter(hit -> hit.score() >= threshold)
+                .limit(limit)
+                .map(hit -> hit.item().memory())
+                .toList();
+        log.info("장기기억 검색 - userId: {}, 상위: [{}] → 붙임: {}", userId,
+                describeScores(top.subList(0, Math.min(top.size(), SEARCH_SCORE_LOG_SIZE))),
+                found.stream().map(memory -> "#" + memory.getId()).toList());
+        return found;
     }
 
     /**

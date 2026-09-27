@@ -55,6 +55,7 @@ public class MemoryEmbeddingBackfillRunner implements ApplicationRunner {
         List<Memory> targets = memoryRepository.findEmbeddingTargets(modelTag);
         if (targets.isEmpty()) {
             log.info("장기기억 임베딩 백필 - 대상 없음 (모델: {})", modelTag);
+            warmUp();
             return;
         }
 
@@ -78,5 +79,15 @@ public class MemoryEmbeddingBackfillRunner implements ApplicationRunner {
             log.warn("장기기억 임베딩 백필 일부 실패 - {}/{}건 완료, 나머지는 다음 부팅에 재시도 (모델: {})",
                     filled, targets.size(), modelTag);
         }
+    }
+
+    /**
+     * 백필할 것이 없을 때 임베딩 호출을 한 번 해 두어 첫 대화의 기억 검색이 JVM 첫 호출 지연에 걸리지 않게 한다.
+     * 데워지지 않으면 부팅 후 첫 1~2회 검색이 대화용 타임아웃(500ms)을 넘겨 기억 없이 진행된다(로컬 실측 2회 재현).
+     * 백필이 돈 부팅은 이미 호출을 했으므로 따로 데우지 않는다.
+     */
+    private void warmUp() {
+        boolean warmed = !embeddingService.embedAll(List.of("임베딩 연결 준비"), TIMEOUT).isEmpty();
+        log.info("장기기억 임베딩 워밍업 - {}", warmed ? "완료" : "실패 (첫 대화의 기억 검색이 늦을 수 있음)");
     }
 }

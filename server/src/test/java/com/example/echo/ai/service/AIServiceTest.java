@@ -12,6 +12,7 @@ import com.example.echo.ai.exception.AIException;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.ai.stream.ChatCompletionStream;
+import com.example.echo.memory.entity.Memory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import feign.FeignException;
 import feign.Request;
@@ -159,7 +160,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse(systemPrompt, history, userMessage);
+        String result = aiService.generateResponse(systemPrompt, history, List.of(), userMessage);
 
         // Then
         assertThat(result).isEqualTo("좋은 질문이네요!");
@@ -167,7 +168,7 @@ class AIServiceTest {
         // 메시지 구조 검증: system(1) + history(user+assistant)(2) + current user(1) = 4
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
         when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
-        aiService.generateResponse(systemPrompt, history, userMessage);
+        aiService.generateResponse(systemPrompt, history, List.of(), userMessage);
 
         ChatCompletionRequest capturedRequest = captor.getValue();
         assertThat(capturedRequest.getMessages()).hasSize(4);
@@ -193,13 +194,52 @@ class AIServiceTest {
         when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
 
         // When
-        aiService.generateResponse(systemPrompt, history, userMessage);
+        aiService.generateResponse(systemPrompt, history, List.of(), userMessage);
 
         // Then: system(1) + current user(1) = 2. 단계 안내용 추가 system 메시지는 붙지 않는다
         assertThat(captor.getValue().getMessages()).hasSize(2);
         assertThat(captor.getValue().getMessages())
                 .filteredOn(message -> "system".equals(message.getRole()))
                 .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("generateResponse - 떠올린 장기기억은 현재 발화 바로 앞에 블록 하나로 들어가고, 시스템 프롬프트·대화 기록은 그대로다")
+    void generateResponse_insertsRecalledMemoriesRightBeforeCurrentMessage() {
+        // Given
+        String systemPrompt = "시스템 프롬프트";
+        List<ConversationTurn> history = List.of(ConversationTurn.builder()
+                .userMessage("시장에 다녀왔어")
+                .aiResponse("시장에 다녀오셨군요. 거기서 무엇을 보셨어요?")
+                .timestamp(LocalDateTime.now())
+                .build());
+        List<Memory> recalled = List.of(
+                Memory.builder().lifePeriod("유년기").topic("부모형제").content("어머니가 시장에서 떡 장사를 하셨다").build(),
+                Memory.builder().lifePeriod("청년기").topic("일").content("젊을 때 시내버스 운전을 30년 했다").build());
+        String userMessage = "떡집 지나니까 엄마 생각이 나더라고";
+        ChatCompletionResponse response = createMockResponse("응답");
+
+        ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
+        when(openRouterClient.createChatCompletion(captor.capture())).thenReturn(response);
+
+        // When
+        aiService.generateResponse(systemPrompt, history, recalled, userMessage);
+
+        // Then: system + (user, assistant) + 기억 블록 + 현재 user.
+        // 블록이 앞쪽에 있으면 매 턴 앞부분이 달라져 프롬프트 캐싱이 깨진다
+        List<ChatCompletionRequest.Message> messages = captor.getValue().getMessages();
+        assertThat(messages).hasSize(5);
+        assertThat(messages.get(0).getContent()).isEqualTo(systemPrompt);
+        assertThat(messages.get(1).getContent()).isEqualTo("시장에 다녀왔어");
+        assertThat(messages.get(2).getContent()).isEqualTo("시장에 다녀오셨군요. 거기서 무엇을 보셨어요?");
+        assertThat(messages.get(3).getRole()).isEqualTo("system");
+        assertThat(messages.get(3).getContent())
+                .startsWith("[어르신의 지난 이야기]")
+                .contains("- [유년기/부모형제] 어머니가 시장에서 떡 장사를 하셨다\n"
+                        + "- [청년기/일] 젊을 때 시내버스 운전을 30년 했다\n")
+                .contains("참고용입니다");
+        assertThat(messages.get(4).getRole()).isEqualTo("user");
+        assertThat(messages.get(4).getContent()).isEqualTo(userMessage);
     }
 
     @Test
@@ -218,7 +258,7 @@ class AIServiceTest {
                 .thenThrow(feignException);
 
         // When & Then
-        assertThatThrownBy(() -> aiService.generateResponse(systemPrompt, history, userMessage))
+        assertThatThrownBy(() -> aiService.generateResponse(systemPrompt, history, List.of(), userMessage))
                 .isInstanceOf(AIException.class)
                 .hasMessageContaining("AI 응답 생성 실패")
                 .hasCause(feignException);
@@ -262,7 +302,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse(systemPrompt, history, userMessage);
+        String result = aiService.generateResponse(systemPrompt, history, List.of(), userMessage);
 
         // Then
         assertThat(result).isEqualTo(aiResponseContent);
@@ -293,7 +333,7 @@ class AIServiceTest {
                 .thenReturn(nullChoicesResponse);
 
         // When
-        String result1 = aiService.generateResponse(systemPrompt, history, userMessage);
+        String result1 = aiService.generateResponse(systemPrompt, history, List.of(), userMessage);
 
         // Then
         assertThat(result1).isEmpty();
@@ -306,7 +346,7 @@ class AIServiceTest {
                 .thenReturn(emptyChoicesResponse);
 
         // When
-        String result2 = aiService.generateResponse(systemPrompt, history, userMessage);
+        String result2 = aiService.generateResponse(systemPrompt, history, List.of(), userMessage);
 
         // Then
         assertThat(result2).isEmpty();
@@ -325,7 +365,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse("시스템 프롬프트", new ArrayList<>(), "테스트");
+        String result = aiService.generateResponse("시스템 프롬프트", new ArrayList<>(), List.of(), "테스트");
 
         // Then - 공백으로 구분된 토큰 단위 치환이라 토큰에 붙어있던 "서"까지 "거기"에 흡수된다
         // ("거기 무엇을 하셨어요?"도 구어체로는 자연스러움 - 드문 안전망 케이스라 문법적 완전성보다
@@ -349,7 +389,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        String result = aiService.generateResponse("시스템 프롬프트", new ArrayList<>(), "테스트");
+        String result = aiService.generateResponse("시스템 프롬프트", new ArrayList<>(), List.of(), "테스트");
 
         // Then
         assertThat(result).isEqualTo(normalContent);
@@ -377,7 +417,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        aiService.generateResponse(systemPrompt, history, userMessage);
+        aiService.generateResponse(systemPrompt, history, List.of(), userMessage);
 
         // Then
         List<String> logMessages = capturedLogMessages();
@@ -398,7 +438,7 @@ class AIServiceTest {
                 .thenReturn(response);
 
         // When
-        aiService.generateResponse(systemPrompt, history, userMessage);
+        aiService.generateResponse(systemPrompt, history, List.of(), userMessage);
 
         // Then
         List<String> logMessages = capturedLogMessages();
@@ -425,7 +465,7 @@ class AIServiceTest {
 
         // When
         String first;
-        try (ChatCompletionStream stream = aiService.openResponseStream("시스템", history, "산책했어요")) {
+        try (ChatCompletionStream stream = aiService.openResponseStream("시스템", history, List.of(), "산책했어요")) {
             first = stream.nextDelta();
         }
 
@@ -458,7 +498,7 @@ class AIServiceTest {
         ChatCompletionResponse response = createMockResponse("응답");
         when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class))).thenReturn(response);
 
-        aiService.generateResponse("시스템", List.of(), "안녕");
+        aiService.generateResponse("시스템", List.of(), List.of(), "안녕");
 
         ArgumentCaptor<ChatCompletionRequest> captor = ArgumentCaptor.forClass(ChatCompletionRequest.class);
         org.mockito.Mockito.verify(openRouterClient).createChatCompletion(captor.capture());

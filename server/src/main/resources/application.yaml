@@ -54,10 +54,23 @@ openai:
     logprob-threshold: -1.0
     compression-ratio-threshold: 2.4
   # 장기기억 임베딩 - model/dimensions를 바꾸면 부팅 백필이 저장된 벡터를 전부 다시 만든다
+  # small@512는 대화 발화와 기억을 거의 가르지 못해(합성 평가 세트 실측) large@1024로 바꿈. 지연은 같다
   embedding:
-    model: text-embedding-3-small
-    dimensions: 512
+    model: text-embedding-3-large
+    dimensions: 1024
     timeout-ms: 500  # 대화 중 호출. 정상 100~300ms, 넘으면 기억 없이 진행
+
+# 장기기억 검색 - 대화 중 어르신 발화와 이어지는 기억을 찾아 대화에 붙인다 (세션 동안 누적)
+memory:
+  recall:
+    # 유사도 하한. large@1024 합성 평가 세트 실측: 안부·오늘 활동에 엉뚱한 기억이 붙는 경우를 모두 막는 값.
+    # 실제 대화 로그를 보고 다시 조정한다
+    threshold: 0.50
+    top-k: 2              # 한 번 검색에 붙이는 최대 건수
+    skip-user-turns: 1    # 첫 사용자 발화(날씨·안부에 대한 대답)는 검색하지 않는다
+    # 맞장구 - 공백·문장부호를 뺀 발화가 이 중 하나와 같으면 검색하지 않는다.
+    # 글자 수로 거르지 않는다: "부산", "떡집" 같은 짧은 고유명사를 함께 버리게 된다
+    backchannels: [응, 어, 네, 예, 아, 음, 응응, 네네, 그래, 그래요, 그렇지, 그렇죠, 그럼, 그럼요, 맞아, 맞아요, 아니, 아니요, 아뇨, 몰라, 몰라요, 모르겠어, 모르겠어요, 글쎄, 글쎄요]
 
 # OpenRouter (채팅 전용) - 단일 모델(terra)로 고정
 openrouter:

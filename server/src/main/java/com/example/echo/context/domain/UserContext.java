@@ -3,6 +3,7 @@ package com.example.echo.context.domain;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.location.dto.LocationData;
+import com.example.echo.memory.entity.Memory;
 import com.example.echo.routineplace.dto.RoutinePlaceInfo;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.AllArgsConstructor;
@@ -26,6 +27,14 @@ public class UserContext {
 
     @Builder.Default
     private List<ConversationTurn> conversationHistory = new CopyOnWriteArrayList<>();
+
+    /**
+     * 이번 대화에서 떠올린 장기기억 (MemoryRecallService가 검색으로 채움)
+     * 세션 동안 누적되어 매 턴 AI 요청의 [어르신의 지난 이야기] 블록이 된다. 대화 기록과 섞지 않는 별개 목록이며,
+     * 장기기억 추출 스냅샷에는 넣지 않는다.
+     */
+    @Builder.Default
+    private List<Memory> recalledMemories = new CopyOnWriteArrayList<>();
 
     private EnrichedHealthData enrichedHealthData;
     private UserPreferences preferences;

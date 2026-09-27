@@ -22,6 +22,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -490,19 +492,86 @@ class MemoryServiceTest {
         assertThat(savedMemories()).extracting(Memory::getContent).containsExactly("새 방문객의 기억");
     }
 
+    // ===== 검색 (대화 중) =====
+
     @Test
-    @DisplayName("getMemories는 저장 순서대로 조회한다")
-    void getMemories_returnsInStoredOrder() {
-        // given
-        List<Memory> stored = List.of(
-                stored(1, "첫 번째", FAR, MODEL_TAG),
-                stored(2, "두 번째", FAR, MODEL_TAG));
-        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(stored);
+    @DisplayName("search는 임계값 이상인 기억만 유사도 높은 순으로 최대 limit건 반환한다")
+    void search_returnsTopMatchesAboveThreshold() {
+        // given: 질의(NEAR)와의 유사도 #1 0.6 / #2 1.0 / #3 0.8 / #4 0
+        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
+                stored(1, "조금 비슷함", new float[]{0.6f, 0.8f, 0f}, MODEL_TAG),
+                stored(2, "같은 이야기", NEAR, MODEL_TAG),
+                stored(3, "꽤 비슷함", new float[]{0.8f, 0.6f, 0f}, MODEL_TAG),
+                stored(4, "무관한 이야기", FAR, MODEL_TAG)));
 
         // when
-        List<Memory> result = memoryService.getMemories(TEST_USER_ID);
+        List<Memory> result = memoryService.search(TEST_USER_ID, "질의", Set.of(), 2, 0.5);
 
         // then
-        assertThat(result).containsExactlyElementsOf(stored);
+        assertThat(result).extracting(Memory::getId).containsExactly(2L, 3L);
+    }
+
+    @Test
+    @DisplayName("search는 이미 대화에 붙은 기억을 빼고 찾아, 다음으로 비슷한 기억이 그 자리를 채운다")
+    void search_excludesAlreadyRecalled() {
+        // given
+        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
+                stored(1, "조금 비슷함", new float[]{0.6f, 0.8f, 0f}, MODEL_TAG),
+                stored(2, "같은 이야기", NEAR, MODEL_TAG),
+                stored(3, "꽤 비슷함", new float[]{0.8f, 0.6f, 0f}, MODEL_TAG)));
+
+        // when
+        List<Memory> result = memoryService.search(TEST_USER_ID, "질의", Set.of(2L), 2, 0.5);
+
+        // then
+        assertThat(result).extracting(Memory::getId).containsExactly(3L, 1L);
+    }
+
+    @Test
+    @DisplayName("search는 다른 모델·차원으로 만든 벡터와 벡터가 없는 기억은 비교하지 않는다")
+    void search_skipsIncomparableVectors() {
+        // given
+        Memory withoutEmbedding = Memory.builder().userId(TEST_USER_ID).content("백필 전 기억").build();
+        ReflectionTestUtils.setField(withoutEmbedding, "id", 2L);
+        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
+                stored(1, "옛 모델로 만든 기억", NEAR, "text-embedding-3-small@1536"),
+                withoutEmbedding));
+
+        // when
+        List<Memory> result = memoryService.search(TEST_USER_ID, "질의", Set.of(), 2, 0.5);
+
+        // then
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("search는 질의 임베딩에 실패하면 DB를 조회하지 않고 빈 목록을 반환한다")
+    void search_returnsEmptyWhenEmbeddingFails() {
+        // given
+        when(embeddingService.embed("질의")).thenReturn(Optional.empty());
+
+        // when
+        List<Memory> result = memoryService.search(TEST_USER_ID, "질의", Set.of(), 2, 0.5);
+
+        // then
+        assertThat(result).isEmpty();
+        verify(memoryRepository, never()).findByUserIdOrderByIdAsc(anyLong());
+    }
+
+    @Test
+    @DisplayName("search는 DB 조회에 실패해도 예외를 던지지 않고 빈 목록을 반환한다 (기억 없이 대화 진행)")
+    void search_returnsEmptyWhenRepositoryFails() {
+        // given
+        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenThrow(new RuntimeException("DB 연결 끊김"));
+
+        // when
+        List<Memory> result = memoryService.search(TEST_USER_ID, "질의", Set.of(), 2, 0.5);
+
+        // then
+        assertThat(result).isEmpty();
     }
 }
