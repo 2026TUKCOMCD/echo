@@ -123,7 +123,7 @@ object WavConverter {
     /**
      * 16-bit PCM 프레임 구간의 RMS 에너지를 dBFS로 계산
      */
-    private fun frameDbfs(data: ByteArray, start: Int, end: Int): Double {
+    internal fun frameDbfs(data: ByteArray, start: Int, end: Int): Double {
         var sumOfSquares = 0.0
         var sampleCount = 0
         var i = start
