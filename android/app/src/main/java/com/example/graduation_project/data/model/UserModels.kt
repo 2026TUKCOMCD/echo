@@ -54,6 +54,9 @@ data class FamilyInfoUpdateRequest(val familyInfo: String?)
 data class GuardianEmailUpdateRequest(val guardianEmail: String?)
 
 @Serializable
+data class NameUpdateRequest(val name: String)
+
+@Serializable
 data class OccupationUpdateRequest(val occupation: String?)
 
 @Serializable

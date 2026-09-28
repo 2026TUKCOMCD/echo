@@ -3,6 +3,8 @@ package com.example.echo.context.domain;
 import com.example.echo.common.dto.WeatherData;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.location.dto.LocationData;
+import com.example.echo.memory.entity.Memory;
+import com.example.echo.routineplace.dto.RoutinePlaceInfo;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,14 +23,27 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class UserContext {
     private Long userId;
     private LocalDate date;
+    private LocalDateTime startedAt;
 
     @Builder.Default
     private List<ConversationTurn> conversationHistory = new CopyOnWriteArrayList<>();
+
+    /**
+     * 이번 대화에서 떠올린 장기기억 (MemoryRecallService가 검색으로 채움)
+     * 세션 동안 누적되어 매 턴 AI 요청의 [어르신의 지난 이야기] 블록이 된다. 대화 기록과 섞지 않는 별개 목록이며,
+     * 장기기억 추출 스냅샷에는 넣지 않는다.
+     */
+    @Builder.Default
+    private List<Memory> recalledMemories = new CopyOnWriteArrayList<>();
 
     private EnrichedHealthData enrichedHealthData;
     private UserPreferences preferences;
     private WeatherData todayWeather;
     private LocationData locationData;
+
+    /** 사용자가 확정한 루틴 방문 장소 전체 목록 (오늘 방문 여부와 무관, 대화 배경지식용) */
+    @Builder.Default
+    private List<RoutinePlaceInfo> confirmedRoutinePlaces = List.of();
 
     /**
      * 캐싱된 시스템 프롬프트

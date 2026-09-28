@@ -62,7 +62,7 @@ class LocationDataManager(
             Log.w(TAG, "현재 위치를 가져올 수 없음 - null 반환")
             return null
         }
-        Log.d(TAG, "현재 위치: lat=${currentLocation.latitude}, lon=${currentLocation.longitude}")
+        Log.d(TAG, "현재 위치 획득 완료")
 
         // 2. Room DB에서 오늘 수집된 GPS 좌표 로드
         Log.d(TAG, "--- Room DB에서 오늘 GPS 좌표 조회 ---")
@@ -70,7 +70,7 @@ class LocationDataManager(
         Log.d(TAG, "오늘 수집된 GPS 좌표: ${todayLocations.size}개")
 
         todayLocations.take(5).forEachIndexed { index, loc ->
-            Log.d(TAG, "  [$index] lat=${loc.latitude}, lon=${loc.longitude}, time=${loc.timestamp}")
+            Log.d(TAG, "  [$index] time=${loc.timestamp}")
         }
         if (todayLocations.size > 5) {
             Log.d(TAG, "  ... (${todayLocations.size - 5}개 더)")
@@ -80,8 +80,7 @@ class LocationDataManager(
         val stayPoints = stayPointDetector.detect(todayLocations)
         Log.d(TAG, "감지된 StayPoint: ${stayPoints.size}개")
         stayPoints.forEachIndexed { index, sp ->
-            Log.d(TAG, "  StayPoint[$index]: lat=${sp.latitude}, lon=${sp.longitude}, " +
-                    "duration=${sp.durationMinutes}분, time=${sp.startTime}~${sp.endTime}")
+            Log.d(TAG, "  StayPoint[$index]: duration=${sp.durationMinutes}분, time=${sp.startTime}~${sp.endTime}")
         }
 
         // 4. 총 이동 거리 계산
@@ -96,12 +95,9 @@ class LocationDataManager(
         )
 
         Log.d(TAG, "========== 최종 RawLocationData ==========")
-        Log.d(TAG, "  currentLatitude: ${result.currentLatitude}")
-        Log.d(TAG, "  currentLongitude: ${result.currentLongitude}")
         Log.d(TAG, "  visitedPlaces: ${result.visitedPlaces.size}개")
         result.visitedPlaces.forEachIndexed { index, place ->
-            Log.d(TAG, "    [$index] lat=${place.latitude}, lon=${place.longitude}, " +
-                    "time=${place.visitStartTime}~${place.visitEndTime}, stay=${place.stayDurationMinutes}분")
+            Log.d(TAG, "    [$index] time=${place.visitStartTime}~${place.visitEndTime}, stay=${place.stayDurationMinutes}분")
         }
         Log.d(TAG, "  totalDistanceKm: ${result.totalDistanceKm}")
         Log.d(TAG, "==========================================")

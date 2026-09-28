@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
  *
  * 어르신이 대화 중 들려주신 영구 유효한 자전적 기억(옛날 이야기, 가족 사실, 반복 습관)을 저장
  * - 일기(Diary)가 "오늘 무슨 일이 있었나"라면, 이 엔티티는 "이 분은 어떤 분인가"를 담는다
- * - 대화 종료 시마다 [기존 기억 전체 + 이번 대화]를 AI가 통합해 전량 교체 (병합/구체화 포함)
+ * - 한 행에 사실 하나. 대화 종료 시마다 새 사실을 누적하고, 같은 사실이면 기존 행을 보강한다 (행 삭제 없음)
  * - 대화 시작 시 시스템 프롬프트 뒤에 주입되어 회상 대화의 앵커로 사용됨
  *
  * lifePeriod/topic을 enum이 아닌 String으로 둔 이유:
@@ -58,6 +58,20 @@ public class Memory {
     @Column(name = "tags", length = 200)
     private String tags;
 
+    /**
+     * content의 임베딩 벡터 (float32 리틀엔디안 직렬화, EmbeddingCodec 참조)
+     * - null이면 아직 임베딩이 없는 행 → 부팅 백필(MemoryEmbeddingBackfillRunner)이 채운다
+     */
+    @Column(name = "embedding", columnDefinition = "BLOB")
+    private byte[] embedding;
+
+    /**
+     * embedding을 만든 모델·차원 (예: text-embedding-3-small@512)
+     * - 설정과 다르면 백필이 다시 만든다 (모델·차원 교체 시 기존 벡터와 비교 불가)
+     */
+    @Column(name = "embedding_model", length = 40)
+    private String embeddingModel;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -82,5 +96,22 @@ public class Memory {
         this.topic = topic;
         this.content = content;
         this.tags = tags;
+    }
+
+    /**
+     * 병합 판단의 UPDATE - 같은 사실을 새로 알게 된 내용으로 보강
+     *
+     * 내용이 바뀌면 기존 벡터는 더 이상 이 내용을 나타내지 않으므로 함께 비운다.
+     * 새 벡터는 assignEmbedding으로 넣고, 재임베딩에 실패하면 비운 채로 저장되어 부팅 백필이 채운다.
+     */
+    public void updateContent(String content) {
+        this.content = content;
+        this.embedding = null;
+        this.embeddingModel = null;
+    }
+
+    public void assignEmbedding(byte[] embedding, String embeddingModel) {
+        this.embedding = embedding;
+        this.embeddingModel = embeddingModel;
     }
 }

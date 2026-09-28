@@ -37,7 +37,7 @@ class LocationStorageManager(
         )
 
         locationPointDao.insert(entity)
-        Log.d(TAG, "위치 저장: lat=$latitude, lon=$longitude, date=$today")
+        Log.d(TAG, "위치 저장 완료: date=$today")
     }
 
     /**

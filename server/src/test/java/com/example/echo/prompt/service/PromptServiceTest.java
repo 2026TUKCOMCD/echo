@@ -17,7 +17,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.example.echo.memory.dto.MemoryMergeItem;
 import com.example.echo.memory.entity.Memory;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalTime;
 import java.util.List;
@@ -97,53 +99,6 @@ class PromptServiceTest {
 
         // Then
         assertThat(result).isEqualTo("홍길동님은 65세입니다.");
-    }
-
-    @Test
-    @DisplayName("buildSystemPrompt - 장기기억이 {{lifeMemories}} 자리에 치환됨")
-    void buildSystemPrompt_lifeMemoriesSubstituted() {
-        // Given
-        PromptTemplate template = PromptTemplate.builder()
-                .type(PromptType.SYSTEM)
-                .content("[지난 이야기]\n{{lifeMemories}}")
-                .build();
-        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
-                .thenReturn(Optional.of(template));
-
-        List<Memory> memories = List.of(
-                Memory.builder().userId(TEST_USER_ID).lifePeriod("청년기").topic("직업")
-                        .content("30대에 부산에서 어부로 일했다").tags("부산,어부").build(),
-                Memory.builder().userId(TEST_USER_ID).lifePeriod("중년기").topic("가족")
-                        .content("손주 이름은 민준이다").build());
-
-        // When
-        String result = promptService.buildSystemPrompt(context, memories);
-
-        // Then
-        assertThat(result).contains("- [청년기/직업] 30대에 부산에서 어부로 일했다 (태그: 부산,어부)");
-        // 태그가 없으면 태그 표기를 붙이지 않음
-        assertThat(result).contains("- [중년기/가족] 손주 이름은 민준이다");
-        assertThat(result).doesNotContain("태그: null");
-        assertThat(result).doesNotContain("{{lifeMemories}}");
-    }
-
-    @Test
-    @DisplayName("buildSystemPrompt - 저장된 장기기억이 없으면 없다고 명시해 AI가 아는 척하지 않게 함")
-    void buildSystemPrompt_noLifeMemories() {
-        // Given
-        PromptTemplate template = PromptTemplate.builder()
-                .type(PromptType.SYSTEM)
-                .content("{{lifeMemories}}")
-                .build();
-        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
-                .thenReturn(Optional.of(template));
-
-        // When (기존 단일 인자 호출은 기억 없음과 동일하게 동작해야 함)
-        String result = promptService.buildSystemPrompt(context);
-
-        // Then
-        assertThat(result).contains("아직 들려주신 옛 이야기가 없습니다");
-        assertThat(result).doesNotContain("{{lifeMemories}}");
     }
 
     @Test
@@ -526,127 +481,6 @@ class PromptServiceTest {
         assertThat(result).contains("장소를 절대 언급하지 말고");
     }
 
-    // ===== {{recallGuide}} 치환 테스트 =====
-
-    @Test
-    @DisplayName("buildSystemPrompt - 전달한 recallGuide가 {{recallGuide}} 자리에 치환됨")
-    void buildSystemPrompt_recallGuideSubstituted() {
-        // Given
-        String recallGuide = "[오늘의 회상 주제] 고향\n[발굴 모드] 이 주제로는 아직 들려주신 이야기가 없습니다.";
-
-        PromptTemplate template = PromptTemplate.builder()
-                .type(PromptType.SYSTEM)
-                .content("주제: {{recallGuide}}")
-                .build();
-
-        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
-                .thenReturn(Optional.of(template));
-
-        // When
-        String result = promptService.buildSystemPrompt(context, List.of(), recallGuide);
-
-        // Then
-        assertThat(result).contains(recallGuide);
-        assertThat(result).doesNotContain("{{recallGuide}}");
-    }
-
-    @Test
-    @DisplayName("buildSystemPrompt - recallGuide가 null이어도 플레이스홀더가 새지 않고 폴백 문구로 치환됨")
-    void buildSystemPrompt_nullRecallGuide_fallbackText() {
-        // Given
-        PromptTemplate template = PromptTemplate.builder()
-                .type(PromptType.SYSTEM)
-                .content("주제: {{recallGuide}}")
-                .build();
-
-        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
-                .thenReturn(Optional.of(template));
-
-        // When: recallGuide 없이 호출하는 오버로드 (buildRecallGuide가 null을 반환한 경우와 동일)
-        String result = promptService.buildSystemPrompt(context, List.of());
-
-        // Then
-        assertThat(result).doesNotContain("{{recallGuide}}");
-        assertThat(result).contains("오늘 지정된 회상 주제가 없습니다");
-    }
-
-    // ===== buildRecallGuide 테스트 =====
-
-    @Test
-    @DisplayName("buildRecallGuide - topic이 null이면 null 반환")
-    void buildRecallGuide_nullTopic() {
-        assertThat(promptService.buildRecallGuide(null, List.of())).isNull();
-    }
-
-    @Test
-    @DisplayName("buildRecallGuide - topic이 blank이면 null 반환")
-    void buildRecallGuide_blankTopic() {
-        assertThat(promptService.buildRecallGuide("   ", List.of())).isNull();
-    }
-
-    @Test
-    @DisplayName("buildRecallGuide - 저장된 기억이 없으면 발굴 모드")
-    void buildRecallGuide_emptyMemories_discoveryMode() {
-        String guide = promptService.buildRecallGuide("고향", List.of());
-
-        assertThat(guide).contains("[오늘의 회상 주제] 고향");
-        assertThat(guide).contains("[발굴 모드]");
-    }
-
-    @Test
-    @DisplayName("buildRecallGuide - 같은 topic의 기억이 없으면(다른 주제만 있음) 발굴 모드")
-    void buildRecallGuide_noMatchingTopic_discoveryMode() {
-        List<Memory> memories = List.of(
-                Memory.builder().userId(TEST_USER_ID).lifePeriod("청년기").topic("일")
-                        .content("30대에 부산에서 어부로 일했다").build());
-
-        String guide = promptService.buildRecallGuide("고향", memories);
-
-        assertThat(guide).contains("[발굴 모드]");
-    }
-
-    @Test
-    @DisplayName("buildRecallGuide - 같은 topic의 기억이 있으면 심화 모드로 그 내용을 포함")
-    void buildRecallGuide_matchingTopic_deepeningMode() {
-        List<Memory> memories = List.of(
-                Memory.builder().userId(TEST_USER_ID).lifePeriod("유년기").topic("고향")
-                        .content("전라도 시골 마을에서 자랐다").build());
-
-        String guide = promptService.buildRecallGuide("고향", memories);
-
-        assertThat(guide).contains("[오늘의 회상 주제] 고향");
-        assertThat(guide).contains("[심화 모드]");
-        assertThat(guide).contains("전라도 시골 마을에서 자랐다");
-    }
-
-    @Test
-    @DisplayName("buildRecallGuide - MEMORY v1 시절의 옛 topic 어휘만 저장돼 있으면 발굴 모드로 폴백")
-    void buildRecallGuide_legacyTopicVocabulary_fallsBackToDiscoveryMode() {
-        // Given: MEMORY v2 이전 어휘(가족/직업/장소/사건/취미/습관/기타)로 저장된 기억
-        // 다음 대화 종료 시 extractAndSaveMemories가 새 어휘로 재분류(self-healing)하기 전 상태
-        List<Memory> legacyMemories = List.of(
-                Memory.builder().userId(TEST_USER_ID).lifePeriod("청년기").topic("직업")
-                        .content("30대에 부산에서 어부로 일했다").build(),
-                Memory.builder().userId(TEST_USER_ID).lifePeriod("중년기").topic("가족")
-                        .content("손주 이름은 민준이다").build());
-
-        // When: 오늘의 회상 주제가 새 카탈로그의 "일"이어도 옛 어휘 "직업"과는 매칭되지 않음
-        String guide = promptService.buildRecallGuide("일", legacyMemories);
-
-        // Then: 예외 없이 발굴 모드로 안전하게 떨어져야 함
-        assertThat(guide).contains("[오늘의 회상 주제] 일");
-        assertThat(guide).contains("[발굴 모드]");
-        assertThat(guide).doesNotContain("[심화 모드]");
-    }
-
-    @Test
-    @DisplayName("buildRecallGuide - 기억 목록이 null이어도 예외 없이 발굴 모드")
-    void buildRecallGuide_nullMemories_discoveryMode() {
-        String guide = promptService.buildRecallGuide("고향", null);
-
-        assertThat(guide).contains("[발굴 모드]");
-    }
-
     // ===== buildMemoryPrompt 테스트 =====
 
     @Test
@@ -659,10 +493,37 @@ class PromptServiceTest {
         when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.MEMORY))
                 .thenReturn(Optional.of(template));
 
-        String result = promptService.buildMemoryPrompt(context, List.of());
+        String result = promptService.buildMemoryPrompt(context);
 
         assertThat(result).contains("고향").contains("나들이");
         assertThat(result).doesNotContain("{{topicVocabulary}}");
+    }
+
+    // ===== buildMemoryMergePrompt 테스트 =====
+
+    @Test
+    @DisplayName("buildMemoryMergePrompt - 새 사실마다 번호를 매기고, 그 아래에 후보를 DB id로 표시함")
+    void buildMemoryMergePrompt_listsFactsWithCandidateIds() {
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.MEMORY_MERGE)
+                .content("{{userName}}\n{{mergeItems}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.MEMORY_MERGE))
+                .thenReturn(Optional.of(template));
+
+        Memory candidate = Memory.builder().lifePeriod("유년기").topic("부모형제").content("어머니가 떡을 만들어 파셨다").build();
+        ReflectionTestUtils.setField(candidate, "id", 12L);
+        Memory newFact = Memory.builder().lifePeriod("유년기").topic("부모형제").content("어머니가 시장에서 떡장사를 하셨다").build();
+        Memory otherFact = Memory.builder().lifePeriod("청년기").topic("일").content("부산에서 배를 탔다").build();
+
+        String result = promptService.buildMemoryMergePrompt(context, List.of(
+                new MemoryMergeItem(newFact, List.of(candidate)),
+                new MemoryMergeItem(otherFact, List.of(candidate))));
+
+        assertThat(result).startsWith("홍길동");
+        assertThat(result).contains("새 사실 0: [유년기/부모형제] 어머니가 시장에서 떡장사를 하셨다\n"
+                + "  - 기존 #12: [유년기/부모형제] 어머니가 떡을 만들어 파셨다");
+        assertThat(result).contains("새 사실 1: [청년기/일] 부산에서 배를 탔다");
     }
 
 }

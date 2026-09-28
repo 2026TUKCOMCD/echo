@@ -37,7 +37,7 @@ public class PromptTemplate {
     private Long id;
 
     /**
-     * 프롬프트 타입 (SYSTEM, CONVERSATION, DIARY, MEMORY)
+     * 프롬프트 타입 (SYSTEM, DIARY, MEMORY)
      * DB에는 문자열로 저장됨 (EnumType.STRING)
      *
      * columnDefinition을 지정하지 않으면 Hibernate가 네이티브 ENUM 컬럼을 만들어

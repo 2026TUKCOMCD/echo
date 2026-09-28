@@ -47,6 +47,7 @@ enum class AnimationMode {
  * Ended                → null (이미지 사용)
  * 오류 상태 전체        → ai_video_listen  (루프)
  */
+@Suppress("UnsafeOptInUsageError") // media3 ExoPlayer 버퍼/로드 설정 API가 @UnstableApi
 class CharacterAnimationManager(
     private val context: Context,
     private val mode: AnimationMode = AnimationMode.NEW_VIDEO

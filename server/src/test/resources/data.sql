@@ -23,32 +23,6 @@ INSERT INTO prompt_templates (template_type, template_content, version, is_activ
     true
 );
 
--- CONVERSATION 프롬프트
-INSERT INTO prompt_templates (template_type, template_content, version, is_active) VALUES (
-    'CONVERSATION',
-    '{{systemPrompt}}
-
-## 오늘의 정보 (대화에 적극 활용하세요)
-{{todayContext}}
-
-## 이전 대화
-{{conversationHistory}}
-
-## 사용자 발화
-{{userMessage}}
-
-## 응답 지침
-1. 위 "오늘의 정보"를 자연스럽게 대화에 활용하세요.
-2. 사용자의 발화에 공감하면서, 건강 데이터나 날씨를 연결해 후속 질문을 하세요.
-3. 응답은 1-2문장으로 짧게 해주세요.
-
-예시:
-- 사용자가 "좋아요"라고 하면 → "다행이네요! 오늘 5,000보나 걸으셨던데, 산책하셨나요?"
-- 사용자가 "산책했어요"라고 하면 → "좋은 운동이시네요! 날씨도 맑아서 기분 좋으셨겠어요."',
-    1,
-    true
-);
-
 -- DIARY 프롬프트
 INSERT INTO prompt_templates (template_type, template_content, version, is_active) VALUES (
     'DIARY',

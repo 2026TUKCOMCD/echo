@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
@@ -258,6 +259,24 @@ public class VoiceServiceImpl implements VoiceService {
             throw e;
         } catch (Exception e) {
             log.error("TTS 처리 중 오류 발생: {}", e.getMessage(), e);
+            throw new VoiceProcessingException("텍스트를 음성으로 변환하는 중 오류가 발생했습니다.", e);
+        }
+    }
+
+    /**
+     * 스트리밍 TTS - textToSpeech와 같은 검증/프로바이더 선택을 거치되, 전체 합성이 끝나기 전에
+     * 첫 오디오 바이트가 도착하는 즉시 스트림을 반환한다.
+     */
+    @Override
+    public InputStream textToSpeechStream(String text, VoiceSettings voiceSettings) {
+        validateText(text);
+
+        try {
+            return resolveProvider().synthesizeStream(text, voiceSettings);
+        } catch (VoiceProcessingException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("TTS 스트리밍 처리 중 오류 발생: {}", e.getMessage(), e);
             throw new VoiceProcessingException("텍스트를 음성으로 변환하는 중 오류가 발생했습니다.", e);
         }
     }

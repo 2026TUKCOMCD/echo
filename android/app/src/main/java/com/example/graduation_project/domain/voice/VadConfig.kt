@@ -74,7 +74,18 @@ data class VadConfig(
      * 무음 트리밍 시 마지막 유효 프레임 뒤에 남겨둘 여유 시간 (ms)
      * 어미가 잘리지 않도록 약간의 여유를 둠
      */
-    val silenceTrimPaddingMs: Int = DEFAULT_SILENCE_TRIM_PADDING_MS
+    val silenceTrimPaddingMs: Int = DEFAULT_SILENCE_TRIM_PADDING_MS,
+
+    /**
+     * 발화 시작 전 미리 보관해둘 오디오 길이 (pre-roll, ms)
+     *
+     * VAD는 프레임 몇 개를 관찰해야 "음성 시작"으로 확정하므로, 판정이 나기 전
+     * 몇 프레임(frameSize 기준 프레임당 약 32ms)만큼의 발화 초반부가 유실될 수 있다.
+     * 긴 문장에서는 체감이 적지만 "네"/"아니오" 같은 매우 짧은 발화는 이 초반 손실이
+     * 단어 전체를 다른 소리로 들리게 만들 수 있어(STT 오인식), Listening 상태에서도
+     * 최근 이 길이만큼의 프레임을 순환 버퍼에 담아뒀다가 발화 시작 시 앞에 이어붙인다.
+     */
+    val preRollMs: Int = DEFAULT_PRE_ROLL_MS
 ) {
     companion object {
         // 샘플 레이트
@@ -110,6 +121,9 @@ data class VadConfig(
 
         /** 기본 무음 트리밍 여유 시간: 300ms (어미 보존) */
         const val DEFAULT_SILENCE_TRIM_PADDING_MS = 300
+
+        /** 기본 pre-roll 길이: 300ms (초성/발화 시작부 보존) */
+        const val DEFAULT_PRE_ROLL_MS = 300
     }
 }
 

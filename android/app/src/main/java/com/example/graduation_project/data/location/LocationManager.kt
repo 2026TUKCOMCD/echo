@@ -57,7 +57,7 @@ class LocationManager @VisibleForTesting internal constructor(
                     Priority.PRIORITY_HIGH_ACCURACY,
                     cancellationToken.token
                 ).addOnSuccessListener { loc ->
-                    Log.d(TAG, "getCurrentLocation success: ${loc?.let { "(${it.latitude}, ${it.longitude})" } ?: "null"}")
+                    Log.d(TAG, "getCurrentLocation ${if (loc != null) "success" else "null"}")
                     continuation.resume(loc)
                 }.addOnFailureListener { e ->
                     Log.w(TAG, "getCurrentLocation failed", e)
@@ -115,7 +115,7 @@ class LocationManager @VisibleForTesting internal constructor(
         suspendCancellableCoroutine { continuation ->
             fusedLocationClient.lastLocation
                 .addOnSuccessListener { loc ->
-                    Log.d(TAG, "lastLocation: ${loc?.let { "(${it.latitude}, ${it.longitude})" } ?: "null"}")
+                    Log.d(TAG, "lastLocation ${if (loc != null) "success" else "null"}")
                     continuation.resume(loc)
                 }
                 .addOnFailureListener { e ->

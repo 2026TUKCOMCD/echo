@@ -9,12 +9,13 @@ import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
+import com.example.echo.memory.service.MemoryRecallService;
 import com.example.echo.memory.service.MemoryService;
-import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.service.PromptService;
 import com.example.echo.user.dto.UserPreferences;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.service.VoiceService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,7 +55,7 @@ class ConversationServiceTest {
     private MemoryService memoryService;
 
     @Mock
-    private RecallTopicRotationService recallTopicRotationService;
+    private MemoryRecallService memoryRecallService;
 
     //@InjectMocks-제거
     private ConversationService conversationService;
@@ -73,8 +74,10 @@ class ConversationServiceTest {
                 diaryService,
                 healthDataService,
                 memoryService,
-                recallTopicRotationService,
-                Runnable::run
+                memoryRecallService,
+                Runnable::run,
+                new SimpleMeterRegistry(),
+                null // 스트리밍 경로는 이 테스트에서 다루지 않음 (ConversationServiceTest2, SpeechStreamPipelineTest 참고)
         );
         mockContext = createMockContext();
     }
@@ -88,7 +91,7 @@ class ConversationServiceTest {
         byte[] audioData = "mock-audio-data".getBytes();
 
         when(contextService.initializeContext(eq(TEST_USER_ID), any(), any())).thenReturn(mockContext);
-        when(promptService.buildSystemPrompt(eq(mockContext), any(), any())).thenReturn(systemPrompt);
+        when(promptService.buildSystemPrompt(eq(mockContext))).thenReturn(systemPrompt);
         when(aiService.generateGreeting(systemPrompt, mockContext)).thenReturn(greeting);
         when(voiceService.textToSpeech(eq(greeting), any(VoiceSettings.class))).thenReturn(audioData);
 
@@ -110,7 +113,7 @@ class ConversationServiceTest {
         byte[] audioData = "audio".getBytes();
 
         when(contextService.initializeContext(eq(TEST_USER_ID), any(), any())).thenReturn(mockContext);
-        when(promptService.buildSystemPrompt(eq(mockContext), any(), any())).thenReturn(systemPrompt);
+        when(promptService.buildSystemPrompt(eq(mockContext))).thenReturn(systemPrompt);
         when(aiService.generateGreeting(systemPrompt, mockContext)).thenReturn(greeting);
         when(voiceService.textToSpeech(eq(greeting), any(VoiceSettings.class))).thenReturn(audioData);
 
@@ -120,7 +123,7 @@ class ConversationServiceTest {
         // Then - 순서 검증
         InOrder inOrder = inOrder(contextService, promptService, aiService, voiceService);
         inOrder.verify(contextService).initializeContext(eq(TEST_USER_ID), any(), any());
-        inOrder.verify(promptService).buildSystemPrompt(eq(mockContext), any(), any());
+        inOrder.verify(promptService).buildSystemPrompt(eq(mockContext));
         inOrder.verify(aiService).generateGreeting(eq(systemPrompt), eq(mockContext));
         inOrder.verify(voiceService).textToSpeech(eq(greeting), any(VoiceSettings.class));
     }
@@ -130,7 +133,7 @@ class ConversationServiceTest {
     void startConversation_verifyEachDependencyCalledOnce() {
         // Given
         when(contextService.initializeContext(eq(TEST_USER_ID), any(), any())).thenReturn(mockContext);
-        when(promptService.buildSystemPrompt(any(), any(), any())).thenReturn("prompt");
+        when(promptService.buildSystemPrompt(any())).thenReturn("prompt");
         when(aiService.generateGreeting(any(), any())).thenReturn("greeting");
         when(voiceService.textToSpeech(any(), any())).thenReturn("audio".getBytes());
 
@@ -139,7 +142,7 @@ class ConversationServiceTest {
 
         // Then
         verify(contextService, times(1)).initializeContext(eq(TEST_USER_ID), any(), any());
-        verify(promptService, times(1)).buildSystemPrompt(eq(mockContext), any(), any());
+        verify(promptService, times(1)).buildSystemPrompt(eq(mockContext));
         verify(aiService, times(1)).generateGreeting(any(), any());
         verify(voiceService, times(1)).textToSpeech(any(), any());
     }

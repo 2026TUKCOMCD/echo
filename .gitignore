@@ -9,7 +9,9 @@
 nul
 
 ### Claude Code ###
-.claude/
+# 개인 설정은 제외하고, 팀 공유 스킬(.claude/skills/)만 커밋한다
+**/.claude/*
+!/.claude/skills/
 
 ### Local config (contains secrets) ###
 local.properties

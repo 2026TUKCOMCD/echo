@@ -15,11 +15,13 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.location.dto.LocationData;
 import com.example.echo.location.dto.VisitedPlace;
+import com.example.echo.memory.dto.MemoryMergeItem;
 import com.example.echo.memory.entity.Memory;
 import com.example.echo.memory.service.RecallTopicRotationService;
 import com.example.echo.prompt.entity.PromptTemplate;
 import com.example.echo.prompt.entity.PromptType;
 import com.example.echo.prompt.repository.PromptTemplateRepository;
+import com.example.echo.routineplace.dto.RoutinePlaceInfo;
 import com.example.echo.user.dto.UserPreferences;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,42 +67,20 @@ public class PromptService {
      * - 건강 데이터: {{steps}}, {{exerciseDistance}}, {{exerciseActivity}}, {{activityList}}
      * - 수면 상세: {{sleepDuration}}, {{sleepStartTime}}, {{wakeUpTime}}
      * - 평가 데이터: {{sleepEvaluation}}, {{stepsEvaluation}}, {{wakeTimeEvaluation}}
-     * - 장기기억: {{lifeMemories}}, {{recallGuide}}
-     *
-     * @param context ContextService에서 전달받은 UserContext
-     * @return 컴파일된 시스템 프롬프트 문자열
-     * @throws IllegalStateException 활성화된 SYSTEM 템플릿이 없을 경우
-     */
-    public String buildSystemPrompt(UserContext context) {
-        return buildSystemPrompt(context, List.of(), null);
-    }
-
-    /**
-     * 시스템 프롬프트 생성 (장기기억 포함, 오늘의 회상 주제 없음)
-     */
-    public String buildSystemPrompt(UserContext context, List<Memory> lifeMemories) {
-        return buildSystemPrompt(context, lifeMemories, null);
-    }
-
-    /**
-     * 시스템 프롬프트 생성 (장기기억 + 오늘의 회상 주제 포함)
-     *
-     * v9부터 {{lifeMemories}} 변수로 이전 대화에서 추출된 자전적 기억을 주입한다.
-     * 오늘의 방문 장소(단서)와 옛 기억을 엮는 회상 대화의 재료가 된다.
      *
      * v10부터 {{todayActivityGuide}} 변수로 오늘 활동 질문 방식을 서버가 확정해 내려준다.
      * 유효한 장소명(역지오코딩 성공)이 하나라도 있으면 장소를 언급하는 질문 지시문을,
      * 없으면 장소 언급 없이 오늘 활동을 묻는 지시문을 준다. 위치 유무는 서버만 알 수 있는
      * 사실이므로 AI가 추측하지 않도록 완성된 문장으로 확정해 내려준다.
      *
-     * v11부터 {{recallGuide}} 변수로 오늘의 회상 주제(날짜 기반 로테이션)를 주입한다.
-     * 하루 한 주제라 세션 내내 고정이므로 시스템 프롬프트에 함께 구워 넣는다.
+     * 장기기억은 v18부터 시스템 프롬프트에 넣지 않는다. 대화 중 검색된 기억만 AIService가
+     * 매 턴 현재 발화 바로 앞에 [어르신의 지난 이야기]로 붙인다(MemoryRecallService 참고).
      *
-     * @param context      ContextService에서 전달받은 UserContext
-     * @param lifeMemories 저장된 장기기억 목록 (비어 있어도 됨)
-     * @param recallGuide  buildRecallGuide()로 만든 오늘의 회상 주제 안내 (null 허용)
+     * @param context ContextService에서 전달받은 UserContext
+     * @return 컴파일된 시스템 프롬프트 문자열
+     * @throws IllegalStateException 활성화된 SYSTEM 템플릿이 없을 경우
      */
-    public String buildSystemPrompt(UserContext context, List<Memory> lifeMemories, String recallGuide) {
+    public String buildSystemPrompt(UserContext context) {
         // 1. 템플릿 조회 (캐싱 적용)
         PromptTemplate template = getActiveTemplate(PromptType.SYSTEM);
 
@@ -172,22 +152,17 @@ public class PromptService {
         variables.put("visitedPlacesText", buildVisitedPlacesText(outings, daytimeHomeStays));
         variables.put("todayActivityGuide", buildTodayActivityGuide(outings, daytimeHomeStays));
 
+        // 4-7-1. 확정된 루틴 방문 장소 (v17~) - 오늘 방문 여부와 무관하게, 사용자가 미리 확정해둔
+        // 반복 방문 장소(회사/병원 등)를 배경지식으로 제공. 오늘 실제로 다녀온 곳 판단은
+        // 위 outings/daytimeHomeStays(=[오늘의 위치·활동])를 따르도록 프롬프트에서 안내한다.
+        variables.put("routinePlacesText", buildRoutinePlacesText(context.getConfirmedRoutinePlaces()));
+
         if (namedPlaces.isEmpty()) {
             log.info("[프롬프트] 위치 데이터 없음 - locationData 존재: {}", locationData != null);
         } else {
             log.debug("[프롬프트] currentCity: {}", variables.get("currentCity"));
             log.debug("[프롬프트] visitedPlacesText:\n{}", variables.get("visitedPlacesText"));
         }
-
-        // 4-8. 장기기억 (v9~) - 이전 대화들에서 추출·저장된 자전적 기억
-        variables.put("lifeMemories", buildLifeMemoriesText(lifeMemories));
-
-        // 4-9. 오늘의 회상 주제 (v11~) - 날짜 기반 로테이션으로 매일 다른 주제를 지정
-        // 키를 반드시 넣어야 한다: compile()은 맵에 없는 키의 {{placeholder}}를 원문 그대로
-        // 남기므로, 빠뜨리면 "{{recallGuide}}" 문자열이 그대로 모델에 전달된다
-        variables.put("recallGuide", recallGuide != null && !recallGuide.isBlank()
-                ? recallGuide
-                : "오늘 지정된 회상 주제가 없습니다. [어르신의 지난 이야기]를 실마리로 삼으세요.");
 
         // 5. 템플릿 컴파일 (변수 치환) 후 반환
         return template.compile(variables);
@@ -208,6 +183,8 @@ public class PromptService {
         if (hasOuting) {
             return "오늘 외출하신 곳이 확인되었습니다. [오늘의 위치·활동]의 [외출한 곳] 중 체류 시간이 가장 긴 장소를 "
                     + "언급하며, 그곳에서 무엇을 하셨는지 여쭤보세요. 주소는 동/도로명 정도로 짧게 줄여 말하세요. "
+                    + "장소명은 문장에서 딱 한 번만 말하고, 같은 문장 안에서 다시 가리킬 때는 장소명을 반복하지 말고 "
+                    + "반드시 \"거기\"/\"그쪽\" 같은 대명사만 쓰세요. "
                     + "거주지(집)는 다녀온 곳으로 언급하지 마세요. "
                     + "예: \"오늘 신길로 쪽에 다녀오셨네요. 거기서 어떤 일 보셨어요?\"";
         }
@@ -221,81 +198,18 @@ public class PromptService {
     }
 
     /**
-     * 오늘의 장기기억 회상 주제 안내 생성 (3단계용)
+     * 역지오코딩에 성공해 장소명이 있거나, 루틴 방문 장소로 매칭돼 카테고리를 아는 방문 장소만 추림
      *
-     * RecallTopicRotationService가 날짜 기반으로 확정한 topic과 저장된 장기기억을 대조해,
-     * 같은 topic의 기억이 이미 있으면 "심화 모드"(더 깊이 파고들기)를,
-     * 없으면 "발굴 모드"(새로 이끌어내기)를 지시한다.
-     *
-     * 참고 단서를 하드코딩하지 않는 이유: 특정 삶의 궤적(시골 출신·취학·임금노동·자녀 유무 등)을
-     * 전제하면 그 궤적에서 벗어난 어르신에게는 편향된 질문이 된다. 그래서 AI가 그 사람의
-     * 데이터(선호도·지난 이야기)로 직접 구체화하도록 원칙만 안내한다.
-     *
-     * 결과는 buildSystemPrompt의 {{recallGuide}} 변수로 시스템 프롬프트에 구워진다.
-     * 하루 한 주제라 세션 내내 고정이므로 턴별로 다시 만들 필요가 없다.
-     *
-     * @param topic     RecallTopicRotationService.currentTopic()이 반환한 오늘의 회상 주제
-     * @param memories  대화 시작 시 조회한 장기기억 목록 (null/빈 목록 허용)
-     * @return 시스템 프롬프트에 주입할 회상 주제 안내 문자열 (topic이 없으면 null)
-     */
-    public String buildRecallGuide(String topic, List<Memory> memories) {
-        if (topic == null || topic.isBlank()) {
-            return null;
-        }
-
-        Memory matched = memories == null ? null : memories.stream()
-                .filter(memory -> topic.equals(memory.getTopic()))
-                .findFirst()
-                .orElse(null);
-
-        if (matched != null) {
-            return "[오늘의 회상 주제] " + topic + "\n"
-                    + "[심화 모드] 아래는 어르신께서 이 주제로 전에 들려주신 기억입니다. "
-                    + "이미 아는 내용으로 자연스럽게 받아, 아직 여쭙지 못한 부분(그때의 감정, 함께한 사람, 그 시절의 의미)을 더 여쭤보세요.\n"
-                    + "- [" + matched.getLifePeriod() + "] " + matched.getContent();
-        }
-
-        return "[오늘의 회상 주제] " + topic + "\n"
-                + "[발굴 모드] 이 주제로는 아직 들려주신 이야기가 없습니다. "
-                + "특정 삶의 배경(시골 출신, 취학 여부, 직장 생활, 자녀 유무 등)을 전제하지 말고, "
-                + "누구에게나 자연스러운 범용적인 질문으로 이 주제에 대한 기억을 새로 여쭤보세요.";
-    }
-
-    /**
-     * 역지오코딩에 성공해 장소명이 있는 방문 장소만 추림
-     *
-     * placeName이 없으면(역지오코딩 실패) "오늘 활동" 판단·표시 대상에서 제외한다.
+     * 둘 다 없으면(역지오코딩 실패이고 루틴 매칭도 안 됨) "오늘 활동" 판단·표시 대상에서 제외한다.
      */
     private List<VisitedPlace> extractNamedPlaces(LocationData locationData) {
         if (locationData == null || locationData.getVisitedPlaces() == null) {
             return List.of();
         }
         return locationData.getVisitedPlaces().stream()
-                .filter(place -> place.getPlaceName() != null && !place.getPlaceName().isBlank())
+                .filter(place -> (place.getPlaceName() != null && !place.getPlaceName().isBlank())
+                        || place.getRoutineCategory() != null)
                 .toList();
-    }
-
-    /**
-     * 장기기억 목록을 시스템 프롬프트용 텍스트로 변환
-     *
-     * 저장된 기억이 없으면 AI가 "아는 이야기"로 착각하지 않도록 명시적으로 없음을 알린다.
-     */
-    private String buildLifeMemoriesText(List<Memory> memories) {
-        if (memories == null || memories.isEmpty()) {
-            return "아직 들려주신 옛 이야기가 없습니다. 오늘 새로 여쭤보세요.";
-        }
-
-        StringBuilder sb = new StringBuilder();
-        memories.forEach(memory -> {
-            sb.append("- [").append(memory.getLifePeriod()).append("/").append(memory.getTopic()).append("] ")
-                    .append(memory.getContent());
-            if (memory.getTags() != null && !memory.getTags().isBlank()) {
-                sb.append(" (태그: ").append(memory.getTags()).append(")");
-            }
-            sb.append("\n");
-        });
-
-        return sb.toString().trim();
     }
 
     /**
@@ -334,28 +248,24 @@ public class PromptService {
      * 장기기억 추출 프롬프트 생성
      *
      * 대화 종료 시 MemoryService가 호출
-     * [기존 기억 전체 + 이번 세션 대화]를 함께 전달해 통합된 전체 목록을 재생성하게 함
+     * 이번 세션 대화만 넘겨 사실을 한 문장씩 뽑게 한다. 기존 기억과의 중복 정리는 병합 판단(buildMemoryMergePrompt)이 맡는다
      *
-     * 템플릿 변수 (v2):
+     * 템플릿 변수 (v3):
      * - {{userName}}: 사용자 이름
-     * - {{existingMemories}}: 기존에 저장된 기억 목록 (없으면 "(없음)")
      * - {{conversationHistory}}: 이번 세션의 대화 내용
-     * - {{topicVocabulary}}: topic 필드에 허용되는 어휘 목록 (RecallTopicRotationService.TOPICS와 동일해야
-     *   3단계 회상 주제 로테이션의 발굴/심화 모드 매칭이 어긋나지 않음)
+     * - {{topicVocabulary}}: topic 필드에 허용되는 어휘 목록 (RecallTopicRotationService.TOPICS)
      *
      * @param context 대화 종료 시점의 UserContext
-     * @param existingMemories 기존에 저장된 장기기억 목록 (null 허용)
      * @return 컴파일된 기억 추출 프롬프트 문자열
      * @throws IllegalStateException 활성화된 MEMORY 템플릿이 없을 경우
      */
-    public String buildMemoryPrompt(UserContext context, List<Memory> existingMemories) {
+    public String buildMemoryPrompt(UserContext context) {
         PromptTemplate template = getActiveTemplate(PromptType.MEMORY);
 
         UserPreferences preferences = context.getPreferences();
 
         Map<String, Object> variables = new HashMap<>();
         variables.put("userName", preferences != null ? preferences.getName() : "사용자");
-        variables.put("existingMemories", buildExistingMemoriesText(existingMemories));
         variables.put("conversationHistory", buildConversationHistoryText(context.getConversationHistory()));
         variables.put("topicVocabulary", String.join(", ", RecallTopicRotationService.TOPICS));
 
@@ -363,24 +273,53 @@ public class PromptService {
     }
 
     /**
-     * 기존 장기기억 목록을 프롬프트용 텍스트로 변환
+     * 장기기억 병합 판단 프롬프트 생성
+     *
+     * 대화 종료 시 MemoryService가 후보가 붙은 새 사실이 있을 때만 호출
+     *
+     * 템플릿 변수 (v1):
+     * - {{userName}}: 사용자 이름
+     * - {{mergeItems}}: 새 사실마다 비슷한 기존 기억 후보를 묶은 목록
+     *
+     * @param context 대화 종료 시점의 UserContext
+     * @param items 새 사실과 후보 묶음. 목록에서의 위치가 AI 응답의 index가 된다
+     * @return 컴파일된 병합 판단 프롬프트 문자열
+     * @throws IllegalStateException 활성화된 MEMORY_MERGE 템플릿이 없을 경우
      */
-    private String buildExistingMemoriesText(List<Memory> memories) {
-        if (memories == null || memories.isEmpty()) {
-            return "(없음)";
-        }
+    public String buildMemoryMergePrompt(UserContext context, List<MemoryMergeItem> items) {
+        PromptTemplate template = getActiveTemplate(PromptType.MEMORY_MERGE);
 
+        UserPreferences preferences = context.getPreferences();
+
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("userName", preferences != null ? preferences.getName() : "사용자");
+        variables.put("mergeItems", buildMergeItemsText(items));
+
+        return template.compile(variables);
+    }
+
+    /**
+     * 병합 판단용 목록을 프롬프트 텍스트로 변환
+     *
+     * 새 사실 0: [유년기/부모형제] 어머니가 시장에서 떡장사를 하셨다
+     *   - 기존 #12: [유년기/부모형제] 어머니가 떡을 만들어 파셨다
+     *
+     * 기존 기억은 DB id로 표시한다. AI가 targetId로 돌려주면 그대로 행을 찾는다.
+     */
+    private String buildMergeItemsText(List<MemoryMergeItem> items) {
         StringBuilder sb = new StringBuilder();
-        memories.forEach(memory -> {
-            sb.append("- [").append(memory.getLifePeriod()).append("/").append(memory.getTopic()).append("] ")
-                    .append(memory.getContent());
-            if (memory.getTags() != null && !memory.getTags().isBlank()) {
-                sb.append(" (태그: ").append(memory.getTags()).append(")");
-            }
+        for (int i = 0; i < items.size(); i++) {
+            MemoryMergeItem item = items.get(i);
+            sb.append("새 사실 ").append(i).append(": ").append(describeMemory(item.newFact())).append("\n");
+            item.candidates().forEach(candidate -> sb.append("  - 기존 #").append(candidate.getId()).append(": ")
+                    .append(describeMemory(candidate)).append("\n"));
             sb.append("\n");
-        });
-
+        }
         return sb.toString().trim();
+    }
+
+    private String describeMemory(Memory memory) {
+        return "[" + memory.getLifePeriod() + "/" + memory.getTopic() + "] " + memory.getContent();
     }
 
     /**
@@ -491,11 +430,56 @@ public class PromptService {
         return sb.toString().trim();
     }
 
+    private static final String NO_ROUTINE_PLACES_TEXT = "등록된 반복 방문 장소가 없습니다.";
+
+    private static final Map<String, String> WEEKDAY_KOREAN = Map.of(
+            "MONDAY", "월", "TUESDAY", "화", "WEDNESDAY", "수", "THURSDAY", "목",
+            "FRIDAY", "금", "SATURDAY", "토", "SUNDAY", "일");
+
+    /**
+     * 확정된 루틴 방문 장소 목록을 프롬프트용 텍스트로 변환.
+     * "- 회사 (월,화,수,목,금 / 오전 9시~오후 6시경)" 형식. 오늘 실제 방문 여부와는 무관한
+     * 배경지식이므로, 오늘 언급 여부 판단은 buildTodayActivityGuide(외출/집 체류)를 따르게 한다.
+     */
+    private String buildRoutinePlacesText(List<RoutinePlaceInfo> routinePlaces) {
+        if (routinePlaces == null || routinePlaces.isEmpty()) {
+            return NO_ROUTINE_PLACES_TEXT;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (RoutinePlaceInfo place : routinePlaces) {
+            sb.append(String.format("- %s", place.getCategory()));
+
+            String days = place.getRoutineDays() == null ? "" : place.getRoutineDays().stream()
+                    .map(day -> WEEKDAY_KOREAN.getOrDefault(day, day))
+                    .collect(java.util.stream.Collectors.joining(","));
+            boolean hasTimeRange = place.getRoutineTimeRangeStart() != null && place.getRoutineTimeRangeEnd() != null;
+
+            if (!days.isBlank() || hasTimeRange) {
+                sb.append(" (").append(days);
+                if (hasTimeRange) {
+                    if (!days.isBlank()) sb.append(" / ");
+                    sb.append(formatTime(place.getRoutineTimeRangeStart()))
+                            .append("~")
+                            .append(formatTime(place.getRoutineTimeRangeEnd()))
+                            .append("경");
+                }
+                sb.append(")");
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
     /**
      * 외출 장소 한 줄 포맷: "- 장소명 (시간~시간, N분 체류) (날씨: ...)"
+     *
+     * 루틴 방문 장소로 매칭된 곳은 역지오코딩된 상호명 대신 사용자가 붙인 카테고리 라벨을
+     * 우선 표시한다(예: "스타벅스 강남점" 대신 "회사").
      */
     private void appendOutingLine(StringBuilder sb, VisitedPlace place) {
-        sb.append(String.format("- %s", place.getPlaceName()));
+        String displayName = place.getRoutineCategory() != null ? place.getRoutineCategory() : place.getPlaceName();
+        sb.append(String.format("- %s", displayName));
 
         if (place.getVisitStartTime() != null && place.getVisitEndTime() != null) {
             sb.append(String.format(" (%s~%s",
@@ -572,7 +556,7 @@ public class PromptService {
     /**
      * 활성화된 프롬프트 템플릿 조회 (캐싱 적용)
      *
-     * @param type 프롬프트 타입 (SYSTEM, CONVERSATION, DIARY)
+     * @param type 프롬프트 타입 (SYSTEM, DIARY, MEMORY)
      * @return 활성화된 프롬프트 템플릿
      * @throws IllegalStateException 활성화된 템플릿이 없을 경우
      */

@@ -16,6 +16,9 @@ public class ElevenLabsTtsRequest {
     @JsonProperty("model_id")
     private String modelId;
 
+    @JsonProperty("language_code")
+    private String languageCode;
+
     @JsonProperty("voice_settings")
     private VoiceParams voiceSettings;
 

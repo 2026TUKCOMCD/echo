@@ -12,6 +12,7 @@ package com.example.echo.ai.client;
 import com.example.echo.ai.config.OpenRouterFeignConfig;
 import com.example.echo.ai.dto.ChatCompletionRequest;
 import com.example.echo.ai.dto.ChatCompletionResponse;
+import feign.Response;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,4 +32,12 @@ public interface OpenRouterClient {
      */
     @PostMapping("/chat/completions")
     ChatCompletionResponse createChatCompletion(@RequestBody ChatCompletionRequest request);
+
+    /**
+     * 스트리밍 호출(request.stream=true) - 응답 본문은 SSE이며 버퍼링되지 않는다.
+     * 반환 타입이 Response라 HTTP 오류도 예외 없이 그대로 돌아오므로 호출자가 상태 코드를 확인하고,
+     * 반드시 close() 해야 한다.
+     */
+    @PostMapping("/chat/completions")
+    Response createChatCompletionStream(@RequestBody ChatCompletionRequest request);
 }

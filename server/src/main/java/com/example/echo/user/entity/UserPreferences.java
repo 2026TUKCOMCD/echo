@@ -1,5 +1,7 @@
 package com.example.echo.user.entity;
 
+import com.example.echo.common.crypto.EncryptedLocalDateConverter;
+import com.example.echo.common.crypto.EncryptedStringConverter;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -20,10 +22,12 @@ public class UserPreferences {
     @Column(name = "user_id")
     private Long userId;
 
-    @Column(name = "birthday")
+    @Convert(converter = EncryptedLocalDateConverter.class)
+    @Column(name = "birthday", columnDefinition = "TEXT")
     private LocalDate birthday;
 
-    @Column(name = "location", length = 100)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "location", columnDefinition = "TEXT")
     private String location;
 
     /** 거주지(집) 위도 - "현재 위치를 집으로 등록"으로 저장. 방문 장소를 집/외출로 분류하는 기준 */
@@ -34,19 +38,34 @@ public class UserPreferences {
     @Column(name = "home_longitude")
     private Double homeLongitude;
 
-    @Column(name = "family_info", length = 500)
+    /**
+     * 루틴 방문 장소(반복 방문 패턴 감지·저장) 기능 동의 여부.
+     * false면 VisitOccurrenceRecordingService가 방문 이력을 저장하지 않는다(서버가 직접 게이트).
+     */
+    @Column(name = "routine_place_consent", nullable = false)
+    private boolean routinePlaceConsent = false;
+
+    @Column(name = "routine_place_consent_at")
+    private LocalDateTime routinePlaceConsentAt;
+
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "family_info", columnDefinition = "TEXT")
     private String familyInfo;
 
-    @Column(name = "guardian_email", length = 255)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "guardian_email", columnDefinition = "TEXT")
     private String guardianEmail;
 
-    @Column(name = "occupation", length = 100)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "occupation", columnDefinition = "TEXT")
     private String occupation;
 
-    @Column(name = "hobbies", length = 500)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "hobbies", columnDefinition = "TEXT")
     private String hobbies;
 
-    @Column(name = "preferred_topics", length = 500)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "preferred_topics", columnDefinition = "TEXT")
     private String preferredTopics;
 
     @Column(name = "voice_speed")
@@ -133,6 +152,17 @@ public class UserPreferences {
     public void updateHomeLocation(Double homeLatitude, Double homeLongitude) {
         this.homeLatitude = homeLatitude;
         this.homeLongitude = homeLongitude;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 루틴 방문 장소 기능 동의/철회.
+     * 철회 시(consent=false) 저장된 방문 이력·루틴 장소는 RoutinePlaceService가 별도로 파기한다
+     * (이 메서드는 동의 플래그만 갱신).
+     */
+    public void updateRoutinePlaceConsent(boolean consent) {
+        this.routinePlaceConsent = consent;
+        this.routinePlaceConsentAt = consent ? LocalDateTime.now() : null;
         this.updatedAt = LocalDateTime.now();
     }
 
