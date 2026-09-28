@@ -189,12 +189,11 @@ class ConversationServiceTest2 {
         }
 
         @Test
-        @DisplayName("성공: 오늘 외출한 곳으로 장기기억을 검색해 기억 블록의 초기값으로 둔다 (시스템 프롬프트에는 넣지 않음)")
-        void success_recallsMemoriesForGreeting() {
+        @DisplayName("성공: 대화 시작은 장기기억을 검색하지도 시스템 프롬프트에 넣지도 않는다 - 기억은 발화마다 검색해 붙인다")
+        void success_doesNotTouchMemoriesOnGreeting() {
             // given
             given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
             given(promptService.buildSystemPrompt(eq(mockContext))).willReturn("시스템 프롬프트");
-            given(memoryRecallService.greetingQuery(mockContext)).willReturn(Optional.of("자갈치시장"));
             given(aiService.generateGreeting(anyString(), eq(mockContext))).willReturn("안녕하세요!");
             given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
 
@@ -202,43 +201,8 @@ class ConversationServiceTest2 {
             conversationService.startConversation(userId, null, null);
 
             // then
-            then(memoryRecallService).should().recallInto(mockContext, "자갈치시장");
+            then(memoryRecallService).shouldHaveNoInteractions();
             then(memoryService).shouldHaveNoInteractions();
-        }
-
-        @Test
-        @DisplayName("성공: 외출 기록이 없으면 대화 시작 검색을 하지 않는다")
-        void noOutings_skipsGreetingRecall() {
-            // given
-            given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
-            given(promptService.buildSystemPrompt(eq(mockContext))).willReturn("시스템 프롬프트");
-            given(memoryRecallService.greetingQuery(mockContext)).willReturn(Optional.empty());
-            given(aiService.generateGreeting(anyString(), eq(mockContext))).willReturn("안녕하세요!");
-            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
-
-            // when
-            conversationService.startConversation(userId, null, null);
-
-            // then
-            then(memoryRecallService).should(never()).recallInto(any(), any());
-        }
-
-        @Test
-        @DisplayName("성공: 대화 시작 기억 검색이 실패해도 인사는 정상 반환한다")
-        void greetingRecallFailure_stillReturnsGreeting() {
-            // given
-            given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
-            given(promptService.buildSystemPrompt(eq(mockContext))).willReturn("시스템 프롬프트");
-            given(memoryRecallService.greetingQuery(mockContext)).willReturn(Optional.of("자갈치시장"));
-            given(memoryRecallService.recallInto(any(), any())).willThrow(new RuntimeException("DB 연결 끊김"));
-            given(aiService.generateGreeting(anyString(), eq(mockContext))).willReturn("안녕하세요!");
-            given(voiceService.textToSpeech(anyString(), eq(mockVoiceSettings))).willReturn("audio".getBytes());
-
-            // when
-            ConversationStartResponse result = conversationService.startConversation(userId, null, null);
-
-            // then
-            assertThat(result.getMessage()).isEqualTo("안녕하세요!");
         }
     }
 
@@ -768,12 +732,11 @@ class ConversationServiceTest2 {
         }
 
         @Test
-        @DisplayName("성공: 스트리밍 시작도 오늘 외출한 곳으로 장기기억을 검색해 기억 블록 초기값으로 둔다")
-        void success_recallsMemoriesForGreeting() {
+        @DisplayName("성공: 스트리밍 시작도 장기기억을 검색하지 않는다")
+        void success_doesNotTouchMemoriesOnGreeting() {
             // given
             given(contextService.initializeContext(eq(userId), any(), any())).willReturn(mockContext);
             given(promptService.buildSystemPrompt(eq(mockContext))).willReturn("시스템 프롬프트");
-            given(memoryRecallService.greetingQuery(mockContext)).willReturn(Optional.of("자갈치시장"));
             given(speechStreamPipeline.start(any(), any(), any(), any(), any())).willReturn(
                     new SpeechStreamPipeline.Started("안녕하세요!", SpeechSegmentSource.single(
                             new SpeechSegment("안녕하세요!", new ByteArrayInputStream("a".getBytes()))),
@@ -783,7 +746,8 @@ class ConversationServiceTest2 {
             conversationService.startConversationStream(userId, null, null);
 
             // then
-            then(memoryRecallService).should().recallInto(mockContext, "자갈치시장");
+            then(memoryRecallService).shouldHaveNoInteractions();
+            then(memoryService).shouldHaveNoInteractions();
         }
     }
 

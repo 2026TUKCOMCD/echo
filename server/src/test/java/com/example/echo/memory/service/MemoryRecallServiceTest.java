@@ -2,8 +2,6 @@ package com.example.echo.memory.service;
 
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
-import com.example.echo.location.dto.LocationData;
-import com.example.echo.location.dto.VisitedPlace;
 import com.example.echo.memory.config.MemoryRecallProperties;
 import com.example.echo.memory.entity.Memory;
 import org.junit.jupiter.api.BeforeEach;
@@ -69,14 +67,14 @@ class MemoryRecallServiceTest {
     }
 
     @Test
-    @DisplayName("두 번째 발화부터는 직전 AI 발화와 어르신 발화를 이어 질의로 만든다")
-    void turnQuery_joinsPreviousAiResponseAndUserMessage() {
+    @DisplayName("두 번째 발화부터는 직전 AI 응답의 마지막 문장(질문)과 어르신 발화를 이어 질의로 만든다 - 앞의 공감 문장은 뺀다")
+    void turnQuery_joinsLastSentenceOfPreviousAiResponseAndUserMessage() {
         UserContext context = contextWith(
                 turn(null, "지금 날씨가 맑네요. 잘 주무셨어요?"),
-                turn("응 잘 잤어", "오늘 시장에 다녀오셨네요. 거기서 어떤 일 보셨어요?"));
+                turn("응 잘 잤어", "푹 주무셨다니 다행이에요. 오늘 시장에 다녀오셨네요, 거기서 어떤 일 보셨어요?"));
 
         assertThat(memoryRecallService.turnQuery(context, "떡집 지나니까 엄마 생각이 나더라고"))
-                .contains("오늘 시장에 다녀오셨네요. 거기서 어떤 일 보셨어요?\n떡집 지나니까 엄마 생각이 나더라고");
+                .contains("오늘 시장에 다녀오셨네요, 거기서 어떤 일 보셨어요?\n떡집 지나니까 엄마 생각이 나더라고");
     }
 
     @Test
@@ -103,35 +101,6 @@ class MemoryRecallServiceTest {
         UserContext context = contextWith(turn(null, "인사"), turn(null, "죄송해요, 잘 못 들었어요."));
 
         assertThat(memoryRecallService.turnQuery(context, "응 잘 잤어")).isEmpty();
-    }
-
-    // ===== 대화 시작 질의 =====
-
-    @Test
-    @DisplayName("대화 시작 질의는 집을 뺀 외출 장소 이름만 쉼표로 잇고, 루틴 장소는 카테고리 라벨을 쓴다")
-    void greetingQuery_joinsOutingPlaceNames() {
-        UserContext context = UserContext.builder().userId(USER_ID).locationData(LocationData.builder()
-                .visitedPlaces(List.of(
-                        VisitedPlace.builder().placeName("우리집").isHome(true).build(),
-                        VisitedPlace.builder().placeName("자갈치시장").build(),
-                        VisitedPlace.builder().placeName("서울대학교병원").routineCategory("병원").build(),
-                        VisitedPlace.builder().build(),
-                        VisitedPlace.builder().placeName("자갈치시장").build()))
-                .build()).build();
-
-        assertThat(memoryRecallService.greetingQuery(context)).contains("자갈치시장, 병원");
-    }
-
-    @Test
-    @DisplayName("외출 기록이 없으면(위치 없음·집만 있음) 대화 시작 검색을 하지 않는다")
-    void greetingQuery_emptyWithoutOutings() {
-        UserContext noLocation = UserContext.builder().userId(USER_ID).build();
-        UserContext homeOnly = UserContext.builder().userId(USER_ID).locationData(LocationData.builder()
-                .visitedPlaces(List.of(VisitedPlace.builder().placeName("우리집").isHome(true).build()))
-                .build()).build();
-
-        assertThat(memoryRecallService.greetingQuery(noLocation)).isEmpty();
-        assertThat(memoryRecallService.greetingQuery(homeOnly)).isEmpty();
     }
 
     // ===== 기억 블록 누적 =====
