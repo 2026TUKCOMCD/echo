@@ -16,7 +16,8 @@ import java.util.concurrent.Executor;
  * Executor 타입 빈으로 등록하지 않고 감싸 두는 이유: Executor 빈이 하나 더 생기면 Spring Boot가
  * applicationTaskExecutor 자동 구성을 건너뛰거나, 타입으로 주입받는 곳이 모호해질 수 있다.
  *
- * 한 대화 턴당 동시에 최대 2개(LLM 읽기, 나머지 TTS 열기)를 쓴다. 큐가 가득 차면 요청을 거절(예외)해
+ * 한 대화 턴당 동시에 최대 2개(LLM 읽기, 나머지 TTS 열기)를 쓴다. 실시간 메시지(/message-live)는 commit 뒤 처리
+ * (전사 대기 → 응답 프레임 전송)에 하나를 더 쓴다. 큐가 가득 차면 요청을 거절(예외)해
  * 무한정 쌓이지 않게 한다.
  */
 @Component

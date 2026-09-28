@@ -298,7 +298,25 @@ public class ConversationService {
      */
     public StreamedConversation processUserMessageStream(Long userId, MultipartFile audioFile) {
         long turnStart = System.currentTimeMillis();
-        TranscribedTurn turn = transcribe(userId, audioFile);
+        return respondStream(userId, transcribe(userId, audioFile), turnStart);
+    }
+
+    /**
+     * 실시간 전사(/message-live)의 말 끝 이후 처리. STT는 사용자가 말하는 동안 이미 진행됐으므로, 여기서는 말 끝(commit)
+     * 이후 최종 전사를 기다린 뒤 {@link #processUserMessageStream}과 같은 방식으로 응답 조각을 연다.
+     *
+     * @param awaitTranscript 최종 전사를 기다려 돌려준다(환각 필터에 걸렸거나 무음이면 ""). 실패하면 예외를 던진다
+     */
+    public StreamedConversation processLiveMessageStream(Long userId, Supplier<String> awaitTranscript) {
+        long turnStart = System.currentTimeMillis();
+        UserContext context = contextService.getContext(userId);
+        String userMessage = timed("stt_live_commit_to_final", userId, context.getConversationHistory().size(),
+                awaitTranscript);
+        return respondStream(userId, new TranscribedTurn(context, userMessage, userMessage.isBlank()), turnStart);
+    }
+
+    /** STT가 끝난 턴의 응답 조각을 연다 (/message-stream, /message-live 공통) */
+    private StreamedConversation respondStream(Long userId, TranscribedTurn turn, long turnStart) {
         UserContext context = turn.context();
         int historyTurns = context.getConversationHistory().size();
         VoiceSettings voiceSettings = context.getPreferences().getVoiceSettings();
