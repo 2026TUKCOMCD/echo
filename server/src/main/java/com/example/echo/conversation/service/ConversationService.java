@@ -137,7 +137,6 @@ public class ConversationService {
     public ConversationStartResponse startConversation(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         long turnStart = System.currentTimeMillis();
         UserContext context = prepareGreetingContext(userId, healthData, rawLocationData);
-        CompletableFuture<Void> greetingRecall = recallForGreeting(userId, context);
 
         // 4. 첫 인사 생성
         String firstMessage = timed("llm_greeting", userId, context.getConversationHistory().size(),
@@ -150,7 +149,6 @@ public class ConversationService {
         // 6. 히스토리 추가 (동기 - tts-retry에서 히스토리 조회 보장)
         contextService.addConversationTurn(userId, null, firstMessage);
 
-        greetingRecall.join();
         recordTotal("start_total", userId, turnStart, context.getConversationHistory().size());
 
         return ConversationStartResponse.builder()
@@ -169,7 +167,6 @@ public class ConversationService {
     public StreamedConversation startConversationStream(Long userId, HealthData healthData, RawLocationData rawLocationData) {
         long turnStart = System.currentTimeMillis();
         UserContext context = prepareGreetingContext(userId, healthData, rawLocationData);
-        CompletableFuture<Void> greetingRecall = recallForGreeting(userId, context);
         int historyTurns = context.getConversationHistory().size();
 
         SpeechStreamPipeline.Started started = speechStreamPipeline.start(
@@ -179,7 +176,6 @@ public class ConversationService {
                 (stage, elapsedMs) -> recordElapsed(stage, userId, elapsedMs, historyTurns),
                 greeting -> contextService.addConversationTurn(userId, null, greeting));
 
-        greetingRecall.join();
         recordTotal("start_first_audio", userId, turnStart, historyTurns);
 
         return new StreamedConversation(
@@ -228,26 +224,10 @@ public class ConversationService {
 
         // 3. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
         // 최근 7일 일기는 뒤에 덧붙여 AI가 이전 대화를 기억하는 것처럼 이어가게 함.
-        // 장기기억은 시스템 프롬프트에 넣지 않는다 - 검색으로 찾은 것만 매 턴 따로 붙인다(recallForGreeting 참고)
+        // 장기기억은 시스템 프롬프트에 넣지 않는다 - 발화마다 검색으로 찾은 것만 따로 붙인다(recallForTurn 참고)
         String systemPrompt = appendRecentDiaries(promptService.buildSystemPrompt(context), recentDiaries);
         context.setSystemPrompt(systemPrompt);
         return context;
-    }
-
-    /**
-     * 대화 시작 장기기억 검색 - 오늘 외출한 곳과 이어지는 기억을 찾아 기억 블록의 초기값으로 둔다.
-     *
-     * 첫 인사는 기억 블록을 쓰지 않으므로 인사 생성과 병렬로 돌리고, 호출자는 응답을 반환하기 직전에 합류한다
-     * (다음 발화가 들어오기 전에 초기값이 채워져 있도록). 검색이 실패해도 대화 시작을 막지 않는다 - 빈 블록으로 진행.
-     */
-    private CompletableFuture<Void> recallForGreeting(Long userId, UserContext context) {
-        return CompletableFuture.runAsync(() -> memoryRecallService.greetingQuery(context).ifPresent(query ->
-                        timed("start_memory_recall", userId, 0, () -> memoryRecallService.recallInto(context, query))),
-                        taskExecutor)
-                .exceptionally(e -> {
-                    log.warn("대화 시작 장기기억 검색 실패 - 기억 없이 진행 - userId: {}", userId, e);
-                    return null;
-                });
     }
 
     /**

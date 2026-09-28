@@ -58,7 +58,9 @@ openai:
   embedding:
     model: text-embedding-3-large
     dimensions: 1024
-    timeout-ms: 500  # 대화 중 호출. 정상 100~300ms, 넘으면 기억 없이 진행
+    # 대화 중 호출(어르신이 응답을 기다림). 넘으면 기억 없이 진행. 정상 150~250ms지만 OpenAI가 일시적으로 느린 구간이 있어
+    # 500ms에서는 검색 6/41(약 15%)이 사라졌다(RAG4 로컬 실측, 성공 호출 최대 430ms)
+    timeout-ms: 1000
 
 # 장기기억 검색 - 대화 중 어르신 발화와 이어지는 기억을 찾아 대화에 붙인다 (세션 동안 누적)
 memory:

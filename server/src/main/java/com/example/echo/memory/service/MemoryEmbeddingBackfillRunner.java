@@ -32,8 +32,9 @@ public class MemoryEmbeddingBackfillRunner implements ApplicationRunner {
     static final int BATCH_SIZE = 100;
 
     /**
-     * 백필 타임아웃 - 대화용(500ms)을 쓰면 안 된다.
-     * 부팅 직후 JVM의 첫 호출은 TLS·클라이언트 초기화로 0.7~0.9초 걸려(실측) 매 배포마다 백필이 전부 실패한다.
+     * 백필 타임아웃 - 대화용(1초)을 쓰면 안 된다.
+     * 부팅 직후 JVM의 첫 호출은 TLS·클라이언트 초기화로 0.7~0.9초 걸리고(실측) 배치는 문장이 많아 더 걸려서,
+     * 짧게 잡으면 매 배포마다 백필이 전부 실패한다(대화용이 500ms이던 때 실제로 그랬다).
      * 아무도 기다리지 않는 작업이라 넉넉히 둔다.
      */
     static final Duration TIMEOUT = Duration.ofSeconds(10);
@@ -83,7 +84,8 @@ public class MemoryEmbeddingBackfillRunner implements ApplicationRunner {
 
     /**
      * 백필할 것이 없을 때 임베딩 호출을 한 번 해 두어 첫 대화의 기억 검색이 JVM 첫 호출 지연에 걸리지 않게 한다.
-     * 데워지지 않으면 부팅 후 첫 1~2회 검색이 대화용 타임아웃(500ms)을 넘겨 기억 없이 진행된다(로컬 실측 2회 재현).
+     * 데워지지 않으면 부팅 후 첫 1~2회 검색이 JVM 첫 호출 지연(0.7~0.9초)을 그대로 떠안는다 - 대화용 타임아웃이
+     * 500ms이던 때는 이 때문에 기억 없이 진행됐다(로컬 실측 2회 재현).
      * 백필이 돈 부팅은 이미 호출을 했으므로 따로 데우지 않는다.
      */
     private void warmUp() {

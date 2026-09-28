@@ -67,8 +67,9 @@ public class MemoryService {
     static final int MERGE_CANDIDATE_LIMIT = 3;
 
     /**
-     * 임베딩 타임아웃 - 대화 종료 뒤 비동기로 돌아 아무도 기다리지 않으므로 대화용 설정값(500ms)을 쓰지 않는다.
-     * 500ms면 JVM 첫 호출(0.7~0.9초)에 걸려 병합 판단 없이 전부 추가되고, 같은 이야기가 중복 행으로 쌓인다.
+     * 임베딩 타임아웃 - 대화 종료 뒤 비동기로 돌아 아무도 기다리지 않으므로 대화용 설정값(1초)을 쓰지 않는다.
+     * 대화용은 어르신이 기다리는 만큼 짧게 잡는 값이다 - 500ms이던 때 JVM 첫 호출(0.7~0.9초)에 걸려 병합 판단 없이
+     * 전부 추가되고, 같은 이야기가 중복 행으로 쌓였다.
      */
     static final Duration EMBEDDING_TIMEOUT = Duration.ofSeconds(10);
 

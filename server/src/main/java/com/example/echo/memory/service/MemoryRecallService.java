@@ -2,7 +2,6 @@ package com.example.echo.memory.service;
 
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
-import com.example.echo.location.dto.LocationData;
 import com.example.echo.memory.config.MemoryRecallProperties;
 import com.example.echo.memory.entity.Memory;
 import lombok.RequiredArgsConstructor;
@@ -18,9 +17,12 @@ import java.util.stream.Collectors;
 /**
  * 대화 중 장기기억 검색 - 언제 검색할지(게이트), 무엇으로 검색할지(질의), 찾은 기억을 세션 블록에 쌓는 일을 맡는다.
  *
- * 대화 시작 시 오늘 외출한 곳으로 한 번, 이후 어르신 발화마다 조건부로 검색해 UserContext.recalledMemories에
- * 덧붙인다. 이 목록은 세션 동안 누적되고, AIService가 매 턴 현재 발화 바로 앞에 [어르신의 지난 이야기]로 넣는다.
+ * 어르신 발화마다 조건부로 검색해 UserContext.recalledMemories에 덧붙인다. 이 목록은 세션 동안 누적되고,
+ * AIService가 매 턴 현재 발화 바로 앞에 [어르신의 지난 이야기]로 넣는다.
  * 한 번 붙은 기억을 빼면 AI가 몇 턴 전에 자기가 꺼낸 이야기를 이어가지 못한다.
+ *
+ * 대화 시작 시 오늘 외출한 곳 이름으로 하던 검색은 없앴다 - 장소명이 역지오코딩 건물명·주소라 기억 속 단어와
+ * 맞지 않아 실제 대화 8번에 한 번도 붙지 않았고, 오히려 "대구" 같은 지명 글자에 끌려 무관한 기억 점수만 올렸다(RAG4).
  *
  * 대화 단계를 판단하지 않는다. 검색 결과(유사도 임계값) 자체가 게이트이고, 앞단에서는 명백히 무의미한 발화
  * (첫 안부 대답, 맞장구)만 거른다 - 검색할 것을 건너뛰는 손해(기억을 놓침)가 거를 것을 검색하는 손해
@@ -34,33 +36,18 @@ public class MemoryRecallService {
     /** 맞장구 비교 전에 빼는 공백·문장부호·기호 ("네~", "응, 그래." 등) */
     private static final Pattern NON_WORD = Pattern.compile("[\\s\\p{P}\\p{S}]");
 
+    /** 문장 끝(마침표·물음표·느낌표) 뒤의 공백 - AI 응답에서 마지막 문장을 떼어 낼 때 나누는 자리 */
+    private static final Pattern SENTENCE_END = Pattern.compile("(?<=[.?!])\\s+");
+
     private final MemoryService memoryService;
     private final MemoryRecallProperties properties;
 
     /**
-     * 대화 시작 검색 질의 - 오늘 외출한 곳 이름 (집 제외). 외출 기록이 없으면 비어 있다
+     * 발화 검색 질의 - 직전 AI 응답의 마지막 문장(보통 질문) + 어르신 발화. 게이트에 걸리면 비어 있다
      *
-     * "오늘 다녀온 곳:" 같은 머리말이나 활동명(걷기 등)은 붙이지 않는다 - 실측에서 엉뚱한 기억의 점수만 올렸다.
-     */
-    public Optional<String> greetingQuery(UserContext context) {
-        LocationData location = context.getLocationData();
-        if (location == null || location.getVisitedPlaces() == null) {
-            return Optional.empty();
-        }
-        String places = location.getVisitedPlaces().stream()
-                .filter(place -> !place.isHome())
-                // PromptService가 장소를 부를 때와 같은 이름 (루틴 장소는 카테고리 라벨이 우선)
-                .map(place -> place.getRoutineCategory() != null ? place.getRoutineCategory() : place.getPlaceName())
-                .filter(name -> name != null && !name.isBlank())
-                .distinct()
-                .collect(Collectors.joining(", "));
-        return places.isEmpty() ? Optional.empty() : Optional.of(places);
-    }
-
-    /**
-     * 발화 검색 질의 - 직전 AI 발화 + 어르신 발화. 게이트에 걸리면 비어 있다
-     *
-     * AI 발화는 직전 것 하나만 넣는다 - 더 넓히면 AI의 긴 발화가 질의를 지배한다.
+     * AI 응답은 직전 것의 마지막 문장만 넣는다. 앞의 공감 문장은 앞 주제를 되풀이해 질의를 흐려서, 어르신이 다른
+     * 이야기로 넘어갈 때 특히 크게 놓쳤다(RAG4 실제 대화 재생: 관련 6/13 → 7/13, 무관 오검색 0 그대로).
+     * 임계값도 이 모양(AI 질문 한 문장 + 발화)의 합성 평가 세트로 정한 값이다.
      * 짧은 대답("부산")은 AI 질문("고향이 어디세요?")과 함께여야 뜻이 산다.
      * 대화 원문이 로그에 남지 않도록 건너뛴 이유만 기록한다.
      *
@@ -80,7 +67,13 @@ public class MemoryRecallService {
             return Optional.empty();
         }
         String previousAi = history.isEmpty() ? null : history.get(history.size() - 1).getAiResponse();
-        return Optional.of(previousAi == null ? userMessage : previousAi + "\n" + userMessage);
+        return Optional.of(previousAi == null ? userMessage : lastSentence(previousAi) + "\n" + userMessage);
+    }
+
+    /** 문장 끝 뒤 공백에서 나눈 마지막 문장. 나눌 자리가 없으면 전체 */
+    private static String lastSentence(String text) {
+        String[] sentences = SENTENCE_END.split(text.strip());
+        return sentences[sentences.length - 1];
     }
 
     /**
