@@ -17,8 +17,11 @@ import java.util.function.Function;
  *   AUDIO(0x02): mp3 바이트 조각                     - 0개 이상
  *   END(0x00):   길이 0                              - 정상 종료 표시(마지막에 1개)
  *
- * 예) META → TEXT(첫 조각) → AUDIO... → TEXT(나머지) → AUDIO... → END
+ * 예) META → TEXT(첫 조각) → AUDIO... → TEXT(나머지) → AUDIO(무음) → AUDIO... → END
  * </pre>
+ *
+ * 조각은 따로 합성되어 앞뒤 무음이 거의 없으므로, 두 번째 조각부터는 오디오 앞에 무음 MP3 프레임을 넣어
+ * 앞 문장의 마침표 뒤에 쉬는 틈을 만든다({@link Mp3Silence}). 앞 조각에서 MP3 헤더를 찾지 못하면 넣지 않는다.
  *
  * AI 응답은 LLM이 생성하는 대로 조각 단위로 TTS를 시작하므로, 첫 소리가 나갈 때는 전체 텍스트를 모른다.
  * 그래서 텍스트도 조각마다 TEXT 프레임으로 보낸다.
@@ -38,6 +41,8 @@ public final class ConversationStreamWriter {
     public static final int TYPE_TEXT = 0x03;
 
     private static final int CHUNK_BYTES = 8 * 1024;
+    /** MP3 헤더를 찾기 위해 조각 앞부분을 모아 보는 최대 크기 */
+    private static final int HEADER_PROBE_BYTES = 16 * 1024;
     private static final byte[] EMPTY = new byte[0];
 
     public enum Result {
@@ -52,15 +57,22 @@ public final class ConversationStreamWriter {
     private ConversationStreamWriter() {
     }
 
+    /** 조각 사이 무음 없이 쓴다 */
+    public static Result write(OutputStream out, byte[] metaJson, SpeechSegmentSource segments,
+                               Function<String, byte[]> textEncoder) {
+        return write(out, metaJson, segments, textEncoder, 0);
+    }
+
     /**
      * META → (TEXT → AUDIO...)* → END 순으로 프레임을 쓰고, 프레임마다 flush 한다.
      * 받은 조각의 오디오는 여기서 닫는다(원천 자체는 호출자가 닫는다).
      * 어떤 실패도 예외로 던지지 않고 결과로 알린다(응답이 이미 시작된 뒤라 오류 본문을 쓸 수 없으므로).
      *
      * @param textEncoder 조각 텍스트 → TEXT 프레임 payload(JSON)
+     * @param segmentGapMs 두 번째 조각부터 오디오 앞에 넣을 무음 길이(ms), 0 이하면 넣지 않는다
      */
     public static Result write(OutputStream out, byte[] metaJson, SpeechSegmentSource segments,
-                               Function<String, byte[]> textEncoder) {
+                               Function<String, byte[]> textEncoder, int segmentGapMs) {
         try {
             writeFrame(out, TYPE_META, metaJson, 0, metaJson.length);
         } catch (IOException e) {
@@ -68,6 +80,8 @@ public final class ConversationStreamWriter {
         }
 
         byte[] buffer = new byte[CHUNK_BYTES];
+        HeaderProbe probe = new HeaderProbe();
+        boolean firstSegment = true;
         while (true) {
             SpeechSegment segment;
             try {
@@ -79,8 +93,10 @@ public final class ConversationStreamWriter {
             if (segment == null) {
                 break;
             }
+            byte[] gap = firstSegment ? EMPTY : probe.silence(segmentGapMs);
+            firstSegment = false;
             try (InputStream audio = segment.audio()) {
-                Result result = writeSegment(out, segment.text(), audio, buffer, textEncoder);
+                Result result = writeSegment(out, segment.text(), gap, audio, buffer, probe, textEncoder);
                 if (result != null) {
                     return result;
                 }
@@ -98,11 +114,14 @@ public final class ConversationStreamWriter {
     }
 
     /** @return 실패하면 그 결과, 조각을 끝까지 보냈으면 null */
-    private static Result writeSegment(OutputStream out, String text, InputStream audio, byte[] buffer,
-                                       Function<String, byte[]> textEncoder) {
+    private static Result writeSegment(OutputStream out, String text, byte[] gap, InputStream audio, byte[] buffer,
+                                       HeaderProbe probe, Function<String, byte[]> textEncoder) {
         byte[] textJson = textEncoder.apply(text);
         try {
             writeFrame(out, TYPE_TEXT, textJson, 0, textJson.length);
+            if (gap.length > 0) {
+                writeFrame(out, TYPE_AUDIO, gap, 0, gap.length);
+            }
         } catch (IOException e) {
             return Result.CLIENT_DISCONNECTED;
         }
@@ -118,6 +137,7 @@ public final class ConversationStreamWriter {
             if (read == -1) {
                 return null;
             }
+            probe.feed(buffer, read);
             try {
                 writeFrame(out, TYPE_AUDIO, buffer, 0, read);
             } catch (IOException e) {
@@ -139,5 +159,34 @@ public final class ConversationStreamWriter {
             out.write(payload, offset, length);
         }
         out.flush();
+    }
+
+    /** 앞 조각 오디오의 앞부분을 모아 MP3 프레임 헤더를 한 번 찾아 둔다 */
+    private static final class HeaderProbe {
+
+        private final byte[] data = new byte[HEADER_PROBE_BYTES];
+        private int length;
+        private Mp3Silence.FrameHeader header;
+        private boolean done;
+
+        void feed(byte[] chunk, int read) {
+            if (done) {
+                return;
+            }
+            int copy = Math.min(read, data.length - length);
+            System.arraycopy(chunk, 0, data, length, copy);
+            length += copy;
+            header = Mp3Silence.findHeader(data, length);
+            if (header != null || length == data.length) {
+                done = true;
+                if (header == null) {
+                    log.warn("TTS 오디오에서 MP3 프레임 헤더를 찾지 못해 조각 사이 무음을 넣지 않습니다");
+                }
+            }
+        }
+
+        byte[] silence(int durationMs) {
+            return header == null || durationMs <= 0 ? EMPTY : Mp3Silence.silence(header, durationMs);
+        }
     }
 }
