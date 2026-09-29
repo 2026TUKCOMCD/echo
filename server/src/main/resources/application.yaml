@@ -53,6 +53,16 @@ openai:
     no-speech-threshold: 0.6
     logprob-threshold: -1.0
     compression-ratio-threshold: 2.4
+  # 실시간 전사 (/message-live) - 말하는 동안 소리를 OpenAI Realtime으로 중계해 말 끝 이후 STT 대기를 줄인다
+  realtime:
+    url: wss://api.openai.com/v1/realtime?intent=transcription
+    model: gpt-live-transcribe
+    language: ko
+    connect-timeout-seconds: 10
+    transcript-timeout-seconds: 15   # 말 끝(commit) → 최종 전사 최대 대기
+    include-logprobs: true           # 신뢰도 기록용(필터 미사용). 모델이 거절하면 false로 끈다
+    noise-reduction: ""              # 빈 값 = 끔. near_field / far_field (한국어 비교는 끈 상태로 검증됨)
+    keywords: []                     # 인식 힌트 단어 - 비어 있으면 보내지 않음
   # 장기기억 임베딩 - model/dimensions를 바꾸면 부팅 백필이 저장된 벡터를 전부 다시 만든다
   # small@512는 대화 발화와 기억을 거의 가르지 못해(합성 평가 세트 실측) large@1024로 바꿈. 지연은 같다
   embedding:

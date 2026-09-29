@@ -215,6 +215,51 @@ END
 
 ---
 
+### 2-2. 메시지 전송 (실시간 음성, WebSocket)
+
+사용자가 **말하는 동안** 소리를 서버로 흘려보내, 서버가 OpenAI Realtime 전사(`gpt-live-transcribe`)로 미리 인식하게 합니다. 말 끝 이후에는 남은 인식만 마치고 바로 `/message-stream`과 같은 응답을 시작하므로, 말 끝 → 첫 소리 대기에서 STT 시간이 줄어듭니다. **한 연결 = 한 발화(턴)** 이며, 응답이 끝나면 서버가 닫습니다.
+
+- **URL:** `wss://{host}/api/conversations/message-live` (로컬은 `ws://`)
+- **인증:** 핸드셰이크 요청의 `Authorization: Bearer {accessToken}` 헤더 (다른 API와 같음, URL 쿼리에 싣지 않음)
+- **nginx:** WebSocket 업그레이드를 위해 이 경로에 `proxy_http_version 1.1`, `Upgrade`/`Connection` 헤더 전달이 필요합니다. 설정 전에는 핸드셰이크가 실패하고, 앱은 같은 발화를 `/message-stream`으로 보냅니다.
+
+#### 메시지 순서
+
+| 방향 | 종류 | 내용 |
+|---|---|---|
+| 앱 → 서버 | 텍스트 | 연결 직후 1번: `{"type":"start","sampleRate":16000,"encoding":"pcm16le","channels":1}` — 이 형식만 지원 |
+| 앱 → 서버 | 바이너리 | 말하는 동안: 16kHz 16-bit 모노 PCM 조각 (말 끝의 무음 꼬리는 앱이 걸러서 보냄, 최대 약 70초) |
+| 앱 → 서버 | 텍스트 | 말 끝: `{"type":"commit"}` |
+| 서버 → 앱 | 바이너리 | `/message-stream`과 같은 프레임(META → TEXT → AUDIO… → END). **메시지 1개 = 프레임 1개.** END 뒤 1000으로 닫음 |
+| 서버 → 앱 | 텍스트 | 첫 프레임 전 실패만: `{"type":"error","code":"...","message":"..."}` 뒤 닫음 |
+
+#### 오류 code와 앱의 처리 — "서버가 이 턴을 처리하기 시작했는가"
+
+| code / 상황 | close | 앱 처리 |
+|---|---|---|
+| 핸드셰이크 실패 (404/405, nginx 미설정, 네트워크) | — | 같은 WAV를 `/message-stream`으로 폴백 (404/405면 앱이 켜져 있는 동안 다시 시도 안 함) |
+| `UPSTREAM_UNAVAILABLE` — commit 전 OpenAI 실패 | 1011 | 서버가 아무것도 기록하지 않았으므로 WAV로 폴백 |
+| `STT_FAILED` — commit 뒤 전사 실패/시간 초과 | 1011 | 재전송 없이 오류 안내 (기록 중복 방지) |
+| `PROCESSING_FAILED` — LLM/TTS 시작 실패 | 1011 | 재전송 없이 오류 안내 |
+| `BAD_REQUEST` — 규격 위반 | 1008 | 재전송 없이 오류 안내 |
+| 오류 메시지 없이 끊김 | — | commit을 보내기 전이면 폴백, 보낸 뒤면 오류 안내 |
+| 첫 소리 뒤 END 없이 끝남 | 1011 | `/message-stream`과 같이 `/tts-retry` |
+
+`message`에는 개발용 짧은 설명만 들어가며 발화 내용이나 서버 내부 원문은 싣지 않습니다. 히스토리 규칙은 2-1과 같습니다.
+
+#### 환각 방지
+
+- 모은 PCM이 짧고 조용하면(`openai.whisper.min-duration-ms`·`min-energy-dbfs`) 전사를 기다리지 않고 빈 발화로 처리합니다(재요청 안내).
+- 알려진 환각 문구와 반복 문장(compression ratio > `compression-ratio-threshold`)은 빈 발화로 처리합니다.
+- logprobs는 `[STT 신뢰도]` 로그로 평균만 기록하고 필터에는 쓰지 않습니다 (기준값은 실기기 데이터로 정할 예정).
+- 설정: `openai.realtime.*` (모델, 대기 시간, `include-logprobs`, `noise-reduction`·`keywords`는 기본 꺼짐)
+
+#### 지연 측정 로그
+
+2-1의 stage에 더해 `stt_live_commit_to_final`(말 끝 commit ~ 최종 전사)을 기록합니다. `message_first_audio`는 commit 수신 시점부터 잽니다.
+
+---
+
 ### 3. 대화 종료
 
 대화 세션을 종료하고 일기를 생성합니다.

@@ -388,6 +388,61 @@ class VoiceServiceImplTest {
         }
     }
 
+    // ========== 실시간 전사 환각 방지 테스트 ==========
+
+    @Nested
+    @DisplayName("실시간 전사용 환각 방지 (/message-live)")
+    class LiveTranscriptGuardTest {
+
+        private byte[] pcm(int sampleRate, int durationMs, short amplitude) {
+            byte[] wav = buildWavBytes(sampleRate, durationMs, amplitude);
+            byte[] pcm = new byte[wav.length - 44];
+            System.arraycopy(wav, 44, pcm, 0, pcm.length);
+            return pcm;
+        }
+
+        @Test
+        @DisplayName("PCM이 짧고 조용하면 사실상 빈 오디오 - WAV 판정과 같은 기준")
+        void shortAndQuietPcm_isSilent() {
+            assertThat(voiceService.isEffectivelySilent(pcm(16000, 200, (short) 10), 16000)).isTrue();
+            assertThat(voiceService.isEffectivelySilent(new byte[0], 16000)).isTrue();
+        }
+
+        @Test
+        @DisplayName("짧아도 또렷하거나, 조용해도 길면 빈 오디오가 아니다 (AND 조건)")
+        void shortButLoud_orLongButQuiet_isNotSilent() {
+            assertThat(voiceService.isEffectivelySilent(pcm(16000, 200, (short) 8000), 16000)).isFalse();
+            assertThat(voiceService.isEffectivelySilent(pcm(16000, 1000, (short) 10), 16000)).isFalse();
+        }
+
+        @Test
+        @DisplayName("정상 발화는 그대로 통과한다")
+        void normalTranscript_passes() {
+            assertThat(voiceService.filterLiveTranscript("오늘 아침에 공원에 다녀왔어요")).isEqualTo("오늘 아침에 공원에 다녀왔어요");
+        }
+
+        @Test
+        @DisplayName("알려진 환각 문구는 빈 문자열")
+        void knownHallucination_filtered() {
+            assertThat(voiceService.filterLiveTranscript("시청해주셔서 감사합니다.")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("같은 말이 반복되면(compression ratio > 2.4) 빈 문자열")
+        void repetitive_filtered() {
+            String repeated = "감사합니다 ".repeat(30);
+            assertThat(VoiceServiceImpl.compressionRatio(repeated)).isGreaterThan(2.4);
+            assertThat(voiceService.filterLiveTranscript(repeated)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("빈 전사는 빈 문자열")
+        void blank_isEmpty() {
+            assertThat(voiceService.filterLiveTranscript("  ")).isEmpty();
+            assertThat(voiceService.filterLiveTranscript(null)).isEmpty();
+        }
+    }
+
     // ========== TTS 스트리밍 테스트 ==========
 
     @Nested

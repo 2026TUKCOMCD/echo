@@ -685,6 +685,71 @@ class ConversationServiceTest2 {
     }
 
     @Nested
+    @DisplayName("processLiveMessageStream 메서드")
+    class ProcessLiveMessageStream {
+
+        @Test
+        @DisplayName("성공: 최종 전사를 사용자 발화로 /message-stream과 같은 파이프라인을 열고, 전사 대기 시간을 기록한다")
+        @SuppressWarnings("unchecked")
+        void success_usesTranscriptAsUserMessage() {
+            // given
+            String userMessage = "오늘 산책했어요";
+            mockContext.setSystemPrompt("시스템 프롬프트");
+            SpeechSegmentSource segments = SpeechSegmentSource.single(
+                    new SpeechSegment("첫 조각", new ByteArrayInputStream("a".getBytes())));
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(speechStreamPipeline.start(any(), eq(mockVoiceSettings), any(), any(), any()))
+                    .willReturn(new SpeechStreamPipeline.Started("첫 조각", segments, System.currentTimeMillis()));
+
+            // when
+            StreamedConversation result = conversationService.processLiveMessageStream(userId, () -> userMessage);
+
+            // then
+            assertThat(result.userMessage()).isEqualTo(userMessage);
+            assertThat(result.segments()).isSameAs(segments);
+            ArgumentCaptor<Supplier<ChatCompletionStream>> llmCaptor = ArgumentCaptor.forClass(Supplier.class);
+            then(speechStreamPipeline).should().start(llmCaptor.capture(), any(), any(), any(), any());
+            llmCaptor.getValue().get();
+            then(aiService).should().openResponseStream(eq("시스템 프롬프트"), any(), any(), eq(userMessage));
+            then(voiceService).should(never()).speechToText(any());
+            assertThat(meterRegistry.find("echo.conversation.stage").tag("stage", "stt_live_commit_to_final").timer())
+                    .isNotNull();
+        }
+
+        @Test
+        @DisplayName("성공: 전사가 비면(무음·환각 필터) AI 없이 재요청 안내 한 조각을 보낸다")
+        void success_emptyTranscript_streamsRetryGuidance() throws IOException {
+            // given
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(voiceService.textToSpeechStream(anyString(), eq(mockVoiceSettings)))
+                    .willReturn(new ByteArrayInputStream("a".getBytes()));
+
+            // when
+            StreamedConversation result = conversationService.processLiveMessageStream(userId, () -> "");
+
+            // then
+            then(aiService).shouldHaveNoInteractions();
+            then(speechStreamPipeline).shouldHaveNoInteractions();
+            assertThat(result.segments().next().text()).contains("다시 한 번 말씀해");
+            then(contextService).should().addConversationTurn(eq(userId), isNull(), anyString());
+        }
+
+        @Test
+        @DisplayName("실패: 전사 대기가 실패하면 예외가 전파되고 히스토리는 저장되지 않는다")
+        void fail_transcriptFails_propagates() {
+            // given
+            given(contextService.getContext(userId)).willReturn(mockContext);
+
+            // when & then
+            assertThatThrownBy(() -> conversationService.processLiveMessageStream(userId, () -> {
+                throw new IllegalStateException("전사 실패");
+            })).isInstanceOf(IllegalStateException.class);
+            then(speechStreamPipeline).shouldHaveNoInteractions();
+            then(contextService).should(never()).addConversationTurn(any(), any(), any());
+        }
+    }
+
+    @Nested
     @DisplayName("startConversationStream 메서드")
     class StartConversationStream {
 

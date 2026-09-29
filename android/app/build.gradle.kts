@@ -132,6 +132,7 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.okhttp.mockwebserver)
     // Room 마이그레이션 테스트에서 ApplicationProvider(Context) 제공
     testImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.junit)

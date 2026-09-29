@@ -5,6 +5,7 @@ import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.api.AudioFrameInputStream
 import com.example.graduation_project.data.api.ConversationStreamProtocol
+import com.example.graduation_project.data.api.LiveMessageSession
 import com.example.graduation_project.data.api.safeApiCall
 import com.example.graduation_project.data.api.ConversationApi
 import com.example.graduation_project.data.model.ConversationEndResponse
@@ -28,7 +29,8 @@ import java.io.IOException
 class ConversationRepository(
     private val conversationApi: ConversationApi = ApiClient.conversationApi,
     private val streamSupport: StreamSupport = StreamSupport.processWide,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val liveSessionFactory: () -> LiveMessageSession = { ApiClient.newLiveMessageSession() }
 ) {
 
     /**
@@ -45,6 +47,9 @@ class ConversationRepository(
 
         @Volatile
         var startUnsupported: Boolean = false
+
+        @Volatile
+        var liveUnsupported: Boolean = false
 
         companion object {
             val processWide = StreamSupport()
@@ -138,6 +143,37 @@ class ConversationRepository(
                 }
             }
             is ApiResult.Error -> result
+        }
+    }
+
+    /**
+     * 실시간 음성 메시지 턴(`/message-live`)을 연다. 말이 시작될 때 부르고, 말하는 동안 [LiveMessageSession.send]로
+     * 소리를 보낸 뒤 말 끝에 [finishLiveMessage]를 부른다.
+     * @return 서버에 경로가 없다고 이미 확인했으면 null - 기존처럼 WAV를 [sendMessageStreaming]으로 보낸다
+     */
+    fun openLiveMessage(): LiveMessageSession? {
+        if (streamSupport.liveUnsupported || streamSupport.messageUnsupported) return null
+        return liveSessionFactory()
+    }
+
+    /**
+     * 실시간 턴의 말 끝을 알리고 AI 응답을 받는다.
+     *
+     * 서버가 이 턴을 처리하기 **전에** 실패했을 때만(연결 실패, commit 전 실시간 전사 실패) 같은 발화의 WAV를
+     * [sendMessageStreaming]으로 다시 보낸다 - 서버가 아무것도 기록하지 않았으므로 중복되지 않는다.
+     * commit을 받은 뒤의 실패는 [sendMessageStreaming]의 5xx 규칙과 같은 이유로 다시 보내지 않는다.
+     *
+     * @param audio 폴백용 WAV (실시간으로 보낸 소리와 같은 내용)
+     */
+    suspend fun finishLiveMessage(session: LiveMessageSession, audio: MultipartBody.Part): ApiResult<MessageReply> {
+        return when (val outcome = session.commit()) {
+            is LiveMessageSession.Outcome.Reply -> ApiResult.Success(outcome.reply)
+            is LiveMessageSession.Outcome.Failed -> ApiResult.Error(outcome.exception)
+            is LiveMessageSession.Outcome.Fallback -> {
+                if (outcome.unsupported) streamSupport.liveUnsupported = true
+                Log.w(TAG, "실시간 메시지를 쓰지 못해 /message-stream으로 폴백 - ${outcome.reason}")
+                sendMessageStreaming(audio)
+            }
         }
     }
 
