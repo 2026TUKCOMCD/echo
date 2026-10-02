@@ -39,6 +39,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.local.AppDatabase
+import com.example.graduation_project.data.local.dao.ConversationDiaryLinkDao
+import com.example.graduation_project.data.local.dao.DiaryDao
+import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.DiaryEntity
 import com.example.graduation_project.presentation.model.ConversationSummary
 import com.example.graduation_project.ui.theme.LocalEchoColors
@@ -65,14 +68,13 @@ data class DiaryDetailUiState(
  */
 class DiaryDetailViewModel(
     application: Application,
-    private val date: String   // "yyyy-MM-dd"
-) : AndroidViewModel(application) {
-
-    private val database = AppDatabase.getInstance(application)
-    private val messageDao = database.messageDao()
-    private val diaryDao = database.diaryDao()
-    private val conversationDiaryLinkDao = database.conversationDiaryLinkDao()
+    private val date: String,   // "yyyy-MM-dd"
+    private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao(),
+    private val diaryDao: DiaryDao = AppDatabase.getInstance(application).diaryDao(),
+    private val conversationDiaryLinkDao: ConversationDiaryLinkDao =
+        AppDatabase.getInstance(application).conversationDiaryLinkDao(),
     private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(DiaryDetailUiState())
     val uiState: StateFlow<DiaryDetailUiState> = _uiState.asStateFlow()

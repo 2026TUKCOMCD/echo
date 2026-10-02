@@ -10,6 +10,8 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.AppDatabase
+import com.example.graduation_project.data.local.dao.ConversationDiaryLinkDao
+import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.dao.SessionRange
 import com.example.graduation_project.data.local.entity.DiaryEntity
 import com.example.graduation_project.data.repository.DiaryRepository
@@ -64,14 +66,14 @@ data class DiaryCalendarUiState(
  * 현재 보고 있는 달의 날짜별 상태 맵으로 제공.
  * 달 진입/이동 시 서버 동기화를 시도하고, 실패해도 캐시를 그대로 보여주며 에러를 배너로 노출
  */
-class DiaryViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val database = AppDatabase.getInstance(application)
-    private val messageDao = database.messageDao()
-    private val diaryDao = database.diaryDao()
-    private val conversationDiaryLinkDao = database.conversationDiaryLinkDao()
-    private val diaryRepository = DiaryRepository(diaryDao)
+class DiaryViewModel(
+    application: Application,
+    private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao(),
+    private val conversationDiaryLinkDao: ConversationDiaryLinkDao =
+        AppDatabase.getInstance(application).conversationDiaryLinkDao(),
+    private val diaryRepository: DiaryRepository = DiaryRepository(AppDatabase.getInstance(application).diaryDao()),
     private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
+) : AndroidViewModel(application) {
 
     private val currentMonth = MutableStateFlow(YearMonth.now(KST_ZONE))
     private val syncError = MutableStateFlow<String?>(null)
