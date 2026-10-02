@@ -7,6 +7,7 @@ import com.example.echo.memory.dto.EmbeddingResponse;
 import feign.Request;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -24,15 +25,18 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class EmbeddingService {
 
+    /** OpenAI가 응답 헤더로 알려 주는 서버 처리 시간 - 느린 호출이 OpenAI 계산 때문인지 전달 구간 때문인지 가르는 근거 */
+    private static final String PROCESSING_MS_HEADER = "openai-processing-ms";
+
     private final EmbeddingClient embeddingClient;
     private final EmbeddingProperties properties;
 
     /**
-     * 단건 임베딩
+     * 단건 임베딩 - 대화 중 검색용이라 검색 로그에 남길 OpenAI 처리 시간을 함께 반환한다
      */
-    public Optional<float[]> embed(String text) {
-        List<float[]> vectors = embedAll(List.of(text));
-        return vectors.isEmpty() ? Optional.empty() : Optional.of(vectors.get(0));
+    public Optional<QueryEmbedding> embed(String text) {
+        return request(List.of(text), Duration.ofMillis(properties.getTimeoutMs()))
+                .map(batch -> new QueryEmbedding(batch.vectors().get(0), batch.openaiProcessingMs()));
     }
 
     /**
@@ -48,25 +52,45 @@ public class EmbeddingService {
      * 타임아웃을 지정한 배치 임베딩 - 아무도 기다리지 않는 작업(부팅 백필)용
      */
     public List<float[]> embedAll(List<String> texts, Duration timeout) {
-        if (texts.isEmpty() || texts.stream().anyMatch(t -> t == null || t.isBlank())) {
-            log.warn("임베딩 입력에 빈 문장이 있어 건너뜀 - 개수: {}", texts.size());
-            return List.of();
-        }
-        try {
-            EmbeddingResponse response = embeddingClient.createEmbeddings(EmbeddingRequest.builder()
-                    .input(texts)
-                    .model(properties.getModel())
-                    .dimensions(properties.getDimensions())
-                    .build(), new Request.Options(timeout, timeout, true));
-            return toOrderedVectors(response, texts.size());
-        } catch (Exception e) {
-            log.warn("임베딩 실패 - 개수: {}, 원인: {}", texts.size(), e.getMessage());
-            return List.of();
-        }
+        return request(texts, timeout).map(Batch::vectors).orElse(List.of());
     }
 
     public String modelTag() {
         return properties.modelTag();
+    }
+
+    private Optional<Batch> request(List<String> texts, Duration timeout) {
+        if (texts.isEmpty() || texts.stream().anyMatch(t -> t == null || t.isBlank())) {
+            log.warn("임베딩 입력에 빈 문장이 있어 건너뜀 - 개수: {}", texts.size());
+            return Optional.empty();
+        }
+        long start = System.currentTimeMillis();
+        try {
+            ResponseEntity<EmbeddingResponse> response = embeddingClient.createEmbeddings(EmbeddingRequest.builder()
+                    .input(texts)
+                    .model(properties.getModel())
+                    .dimensions(properties.getDimensions())
+                    .build(), new Request.Options(timeout, timeout, true));
+            List<float[]> vectors = toOrderedVectors(response.getBody(), texts.size());
+            if (vectors.isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of(new Batch(vectors, parseProcessingMs(response.getHeaders().getFirst(PROCESSING_MS_HEADER))));
+        } catch (Exception e) {
+            log.warn("임베딩 실패 - 개수: {}, {}ms, 원인: {}", texts.size(), System.currentTimeMillis() - start, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private Integer parseProcessingMs(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private List<float[]> toOrderedVectors(EmbeddingResponse response, int expected) {
@@ -85,5 +109,16 @@ public class EmbeddingService {
             ordered[d.getIndex()] = vector;
         }
         return List.of(ordered);
+    }
+
+    /**
+     * 질의 임베딩 결과
+     *
+     * @param openaiProcessingMs OpenAI 서버 처리 시간(응답 헤더). 헤더가 없거나 숫자가 아니면 null
+     */
+    public record QueryEmbedding(float[] vector, Integer openaiProcessingMs) {
+    }
+
+    private record Batch(List<float[]> vectors, Integer openaiProcessingMs) {
     }
 }
