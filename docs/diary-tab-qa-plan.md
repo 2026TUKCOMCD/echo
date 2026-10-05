@@ -73,8 +73,8 @@
 | 2 | ⑦ | 달을 빠르게 넘기면 이전 달 요청 결과가 `syncError`를 덮어씀 | `DiaryViewModel.refreshCurrentMonth` | `fix/diary-sync-error` |
 | 2 | ⑥ | 동기화 실패 배너 문구 — 확인 결과 `ApiException`의 한국어 안내문("네트워크 연결을 확인해주세요" 등)이 표시되어 예외 원문 노출은 아님. 문구 다듬기만 검토 | `DiaryScreen` | 묶음 2에서 함께 검토 |
 | 3 | ① | 서버에서 지워진 일기(체험 데이터 초기화 등)가 다른 기기 캐시에 남음 — `upsertAll`만 하고 달 범위를 교체하지 않음 | `DiaryRepository.refreshMonth` | `fix/diary-cache-month-replace` |
-| 4 | ③ | 상세 화면이 일기를 `getByDate`로 한 번만 읽어 열려 있는 동안 갱신이 반영되지 않음 | `DiaryDetailViewModel.load` | `fix/diary-stale-display` |
-| 4 | ④ | 오늘 표시가 기기 시간대 기준(`LocalDate.now()`)이고 자정이 지나도 갱신되지 않음 | `DiaryScreen.CalendarGrid` | `fix/diary-stale-display` |
+| 4 | ③ | 상세 화면이 일기를 `getByDate`로 한 번만 읽어 열려 있는 동안 갱신이 반영되지 않음 | `DiaryDetailViewModel.load` | `fix/diary-stale-display` — 재현 테스트로 확정. 일기도 Room Flow(`DiaryDao.observeByDate`)로 관찰해 열려 있는 동안 캐시 갱신을 바로 반영 |
+| 4 | ④ | 오늘 표시가 기기 시간대 기준(`LocalDate.now()`)이고 자정이 지나도 갱신되지 않음 | `DiaryScreen.CalendarGrid` | `fix/diary-stale-display` — "오늘"을 `DiaryViewModel`이 KST 기준(`Clock` 주입)으로 제공하고 화면 ON_RESUME마다 다시 계산. 날짜가 바뀌며 달이 넘어가면 어제의 달을 보고 있던 경우에만 오늘의 달로 이동(직접 옮겨 둔 달은 유지). 화면을 켜 둔 채 자정을 넘기는 경우는 다음 ON_RESUME까지 이전 날짜로 남음(드문 경우라 타이머 미도입) |
 | 보류 | ② | 로그아웃 순간 진행 중이던 동기화가 `deleteAll()` 뒤에 끝나면 이전 계정 일기가 다시 저장될 수 있음(`diaries`에 userId 없음) | `AuthRepository.clearOtherAccountCache` | 알려진 위험으로 기록. 근본 수정은 DB v6(userId 컬럼) 필요 |
 | 보류 | ⑧ | 서버 `days<=0`이면 "endDate가 startDate보다 이전" 메시지로 400, `days`·범위 상한 없음, 날짜 하나만 오면 조용히 `days`로 조회 | `DiaryService.getDiaries`, `DiaryController` | 앱은 올바른 값만 보내므로 기록만 |
 

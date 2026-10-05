@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import java.time.Clock
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
@@ -36,7 +37,8 @@ private data class CalendarSources(
     val diaries: List<DiaryEntity>,
     val ranges: List<SessionRange>,
     val diaryDateByConversationId: Map<String, String>,
-    val syncError: String?
+    val syncError: String?,
+    val today: LocalDate
 )
 
 /**
@@ -56,7 +58,8 @@ data class DiaryCalendarUiState(
     val currentMonth: YearMonth = YearMonth.now(KST_ZONE),
     val cellsByDate: Map<LocalDate, DayCellState> = emptyMap(),
     val isLoading: Boolean = true,
-    val syncError: String? = null
+    val syncError: String? = null,
+    val today: LocalDate = LocalDate.now(KST_ZONE)   // 캘린더 "오늘" 표시 (기기 시간대와 무관하게 KST)
 )
 
 /**
@@ -72,10 +75,12 @@ class DiaryViewModel(
     private val conversationDiaryLinkDao: ConversationDiaryLinkDao =
         AppDatabase.getInstance(application).conversationDiaryLinkDao(),
     private val diaryRepository: DiaryRepository = DiaryRepository(AppDatabase.getInstance(application).diaryDao()),
-    private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
+    private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L,
+    private val clock: Clock = Clock.systemUTC()
 ) : AndroidViewModel(application) {
 
-    private val currentMonth = MutableStateFlow(YearMonth.now(KST_ZONE))
+    private val currentMonth = MutableStateFlow(YearMonth.from(todayInKst()))
+    private val today = MutableStateFlow(todayInKst())
     private val syncError = MutableStateFlow<String?>(null)
 
     private val _uiState = MutableStateFlow(DiaryCalendarUiState())
@@ -90,6 +95,29 @@ class DiaryViewModel(
      * 현재 보고 있는 달을 서버와 재동기화 (달 진입 시 / 수동 재시도)
      */
     fun refresh() = refreshCurrentMonth()
+
+    /**
+     * "오늘"을 다시 계산 - 화면이 다시 보일 때(ON_RESUME) 호출
+     * (앱을 백그라운드에 뒀다가 다음 날 열어도 어제가 오늘로 남지 않도록)
+     *
+     * 날짜가 바뀌며 달도 넘어갔다면, 어제가 속한 달을 보고 있던 경우에만 오늘의 달로 따라감
+     * (사용자가 직접 다른 달로 옮겨 둔 경우는 그대로 둠)
+     */
+    fun refreshToday() {
+        val previous = today.value
+        val now = todayInKst()
+        if (now == previous) return
+        today.value = now
+
+        val nowMonth = YearMonth.from(now)
+        if (currentMonth.value == YearMonth.from(previous) && currentMonth.value != nowMonth) {
+            currentMonth.value = nowMonth
+            refreshCurrentMonth()
+        }
+    }
+
+    // 서버·날짜 버킷과 같은 기준(Asia/Seoul)으로 계산 - 기기 시간대는 쓰지 않음
+    private fun todayInKst(): LocalDate = clock.instant().atZone(KST_ZONE).toLocalDate()
 
     /**
      * 이전/다음 달로 이동 (delta: -1 = 이전 달, +1 = 다음 달)
@@ -118,14 +146,16 @@ class DiaryViewModel(
                         diaryRepository.observeMonth(month),
                         messageDao.getSessionRanges(currentUserId),
                         conversationDiaryLinkDao.observeAll(),
-                        syncError
-                    ) { diaries, ranges, links, error ->
+                        syncError,
+                        today
+                    ) { diaries, ranges, links, error, today ->
                         CalendarSources(
                             month = month,
                             diaries = diaries,
                             ranges = ranges,
                             diaryDateByConversationId = links.associate { it.conversationId to it.diaryDate },
-                            syncError = error
+                            syncError = error,
+                            today = today
                         )
                     }
                 }
@@ -134,7 +164,8 @@ class DiaryViewModel(
                         currentMonth = sources.month,
                         cellsByDate = buildDayCellStates(sources),
                         isLoading = false,
-                        syncError = sources.syncError
+                        syncError = sources.syncError,
+                        today = sources.today
                     )
                 }
         }

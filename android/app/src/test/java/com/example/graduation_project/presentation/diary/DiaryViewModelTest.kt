@@ -28,9 +28,12 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
 /**
@@ -64,13 +67,21 @@ class DiaryViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = DiaryViewModel(
+    private fun viewModel(clock: Clock = Clock.systemUTC()) = DiaryViewModel(
         application = mockk<Application>(relaxed = true),
         messageDao = messageDao,
         conversationDiaryLinkDao = linkDao,
         diaryRepository = diaryRepository,
-        currentUserId = userId
+        currentUserId = userId,
+        clock = clock
     )
+
+    /** 테스트에서 시각을 옮길 수 있는 시계 */
+    private class MutableClock(var now: Instant) : Clock() {
+        override fun instant(): Instant = now
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+        override fun withZone(zone: ZoneId): Clock = this
+    }
 
     private fun diary(date: LocalDate, status: String = "SUCCESS") = DiaryEntity(
         date = date.toString(), serverId = 1L, title = "제목", content = "내용",
@@ -196,5 +207,71 @@ class DiaryViewModelTest {
         assertEquals(next, vm.uiState.value.currentMonth)
         assertTrue(vm.uiState.value.cellsByDate[day] is DayCellState.HasDiary)
         assertEquals(next.lengthOfMonth(), vm.uiState.value.cellsByDate.size)
+    }
+
+    @Test
+    fun `오늘은 기기 시간대가 아니라 KST 기준으로 계산한다`() = runTest(testDispatcher) {
+        // UTC 10월 4일 16:30 = KST 10월 5일 01:30 (UTC 기기에서는 아직 4일)
+        val clock = Clock.fixed(Instant.parse("2026-10-04T16:30:00Z"), ZoneOffset.UTC)
+
+        val vm = viewModel(clock)
+        advanceUntilIdle()
+
+        assertEquals(LocalDate.of(2026, 10, 5), vm.uiState.value.today)
+        assertEquals(YearMonth.of(2026, 10), vm.uiState.value.currentMonth)
+    }
+
+    @Test
+    fun `다음 날 다시 열면 오늘을 다시 계산하고, 어제의 달을 보고 있었다면 오늘의 달로 따라간다`() = runTest(testDispatcher) {
+        val clock = MutableClock(Instant.parse("2026-09-30T14:00:00Z"))   // KST 9월 30일 23:00
+        val october = YearMonth.of(2026, 10)
+        every { diaryRepository.observeMonth(any()) } returns flowOf(emptyList())
+
+        val vm = viewModel(clock)
+        advanceUntilIdle()
+        assertEquals(LocalDate.of(2026, 9, 30), vm.uiState.value.today)
+        assertEquals(YearMonth.of(2026, 9), vm.uiState.value.currentMonth)
+
+        clock.now = Instant.parse("2026-09-30T23:00:00Z")   // KST 10월 1일 08:00, 다음 날 아침 앱을 다시 엶
+        vm.refreshToday()
+        advanceUntilIdle()
+
+        assertEquals(LocalDate.of(2026, 10, 1), vm.uiState.value.today)
+        assertEquals(october, vm.uiState.value.currentMonth)
+        coVerify { diaryRepository.refreshMonth(october) }
+    }
+
+    @Test
+    fun `직접 다른 달로 옮겨 둔 경우에는 날짜가 바뀌어도 보고 있는 달을 그대로 둔다`() = runTest(testDispatcher) {
+        val clock = MutableClock(Instant.parse("2026-09-30T14:00:00Z"))   // KST 9월 30일
+        every { diaryRepository.observeMonth(any()) } returns flowOf(emptyList())
+
+        val vm = viewModel(clock)
+        advanceUntilIdle()
+        vm.changeMonth(-1)   // 8월을 보고 있음
+        advanceUntilIdle()
+
+        clock.now = Instant.parse("2026-09-30T23:00:00Z")   // KST 10월 1일
+        vm.refreshToday()
+        advanceUntilIdle()
+
+        assertEquals(LocalDate.of(2026, 10, 1), vm.uiState.value.today)
+        assertEquals(YearMonth.of(2026, 8), vm.uiState.value.currentMonth)
+    }
+
+    @Test
+    fun `같은 달 안에서 날짜만 바뀌면 오늘만 갱신하고 달은 그대로 둔다`() = runTest(testDispatcher) {
+        val clock = MutableClock(Instant.parse("2026-10-05T03:00:00Z"))   // KST 10월 5일
+        every { diaryRepository.observeMonth(any()) } returns flowOf(emptyList())
+
+        val vm = viewModel(clock)
+        advanceUntilIdle()
+
+        clock.now = Instant.parse("2026-10-06T03:00:00Z")   // KST 10월 6일
+        vm.refreshToday()
+        advanceUntilIdle()
+
+        assertEquals(LocalDate.of(2026, 10, 6), vm.uiState.value.today)
+        assertEquals(YearMonth.of(2026, 10), vm.uiState.value.currentMonth)
     }
 }
