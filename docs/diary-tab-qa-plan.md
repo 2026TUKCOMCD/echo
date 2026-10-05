@@ -72,7 +72,7 @@
 | 1 | ⑤ | 상태를 6dp 색 점으로만 표시(WCAG 1.4.1 색만으로 정보 전달), 셀 `contentDescription` 없음, 범례 12sp | `DiaryScreen.CalendarDayCell`·`CalendarLegend` | `fix/diary-calendar-accessibility` — 표시 방식은 착수 시 결정 |
 | 2 | ⑦ | 달을 빠르게 넘기면 이전 달 요청 결과가 `syncError`를 덮어씀 | `DiaryViewModel.refreshCurrentMonth` | `fix/diary-sync-error` |
 | 2 | ⑥ | 동기화 실패 배너 문구 — 확인 결과 `ApiException`의 한국어 안내문("네트워크 연결을 확인해주세요" 등)이 표시되어 예외 원문 노출은 아님. 문구 다듬기만 검토 | `DiaryScreen` | 묶음 2에서 함께 검토 |
-| 3 | ① | 서버에서 지워진 일기(체험 데이터 초기화 등)가 다른 기기 캐시에 남음 — `upsertAll`만 하고 달 범위를 교체하지 않음 | `DiaryRepository.refreshMonth` | `fix/diary-cache-month-replace` |
+| 3 | ① | 서버에서 지워진 일기(체험 데이터 초기화 등)가 다른 기기 캐시에 남음 — `upsertAll`만 하고 달 범위를 교체하지 않음 | `DiaryRepository.refreshMonth` | **재현 안 됨(2026-10-05)** — 근거가 된 체험 데이터 초기화(7739b3d)는 `16bd5bb`(2026-09-18)에서 팀 합의로 제거됨. 현재 서버에는 일기 삭제 경로가 없음(API·서비스는 생성/갱신만, `DiaryRepository.deleteByUserId`는 호출처 없음, `data.sql`은 프롬프트만 삭제, `ddl-auto: update`, 회원 탈퇴 없음). 달 범위 교체는 대화 종료 직후 `refresh()`로 저장된 일기를 늦게 도착한 달 응답이 지울 수 있어 도입하지 않음. **일기 삭제 기능이 다시 생기면** 범위 교체(+요청 순서 보호) 또는 서버 삭제 기록(tombstone)을 함께 설계할 것 |
 | 4 | ③ | 상세 화면이 일기를 `getByDate`로 한 번만 읽어 열려 있는 동안 갱신이 반영되지 않음 | `DiaryDetailViewModel.load` | `fix/diary-stale-display` |
 | 4 | ④ | 오늘 표시가 기기 시간대 기준(`LocalDate.now()`)이고 자정이 지나도 갱신되지 않음 | `DiaryScreen.CalendarGrid` | `fix/diary-stale-display` |
 | 보류 | ② | 로그아웃 순간 진행 중이던 동기화가 `deleteAll()` 뒤에 끝나면 이전 계정 일기가 다시 저장될 수 있음(`diaries`에 userId 없음) | `AuthRepository.clearOtherAccountCache` | 알려진 위험으로 기록. 근본 수정은 DB v6(userId 컬럼) 필요 |
