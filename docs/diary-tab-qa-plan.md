@@ -69,7 +69,7 @@
 
 | 묶음 | # | 의심 내용 | 위치 | 처리 |
 |---|---|---|---|---|
-| 1 | ⑤ | 상태를 6dp 색 점으로만 표시(WCAG 1.4.1 색만으로 정보 전달), 셀 `contentDescription` 없음, 범례 12sp | `DiaryScreen.CalendarDayCell`·`CalendarLegend` | `fix/diary-calendar-accessibility` — 표시 방식은 착수 시 결정 |
+| 1 | ⑤ | 상태를 6dp 색 점으로만 표시(WCAG 1.4.1 색만으로 정보 전달), 셀 `contentDescription` 없음, 범례 12sp | `DiaryScreen.CalendarDayCell`·`CalendarLegend` | `fix/diary-calendar-accessibility` — 칸 전체를 진한 단색(초록=일기, 파랑=대화만, 빨강=갱신·생성 실패, 흰색=기록 없음)으로 채우고 흰 숫자·24dp 표지판형 아이콘(✔/💬/❗) 병기, 셀 TalkBack 문구, 범례 14sp, 오늘은 진한 테두리. 에뮬레이터 캡처로 기본·고대비·글씨 1.3배 확인 |
 | 2 | ⑦ | 달을 빠르게 넘기면 이전 달 요청 결과가 `syncError`를 덮어씀 | `DiaryViewModel.refreshCurrentMonth` | `fix/diary-sync-error` |
 | 2 | ⑥ | 동기화 실패 배너 문구 — 확인 결과 `ApiException`의 한국어 안내문("네트워크 연결을 확인해주세요" 등)이 표시되어 예외 원문 노출은 아님. 문구 다듬기만 검토 | `DiaryScreen` | 묶음 2에서 함께 검토 |
 | 3 | ① | 서버에서 지워진 일기(체험 데이터 초기화 등)가 다른 기기 캐시에 남음 — `upsertAll`만 하고 달 범위를 교체하지 않음 | `DiaryRepository.refreshMonth` | `fix/diary-cache-month-replace` |
