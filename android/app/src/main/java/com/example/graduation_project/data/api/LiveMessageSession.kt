@@ -56,7 +56,8 @@ class LiveMessageSession internal constructor(
     }
 
     private val lock = Any()
-    private val incoming = MessageQueueInputStream(readTimeoutMs) { cancel() }
+    // 응답을 다 읽고 닫으면 close 핸드셰이크로 끝낸다 - cancel()로 끊으면 서버에는 EOFException으로 보인다
+    private val incoming = MessageQueueInputStream(readTimeoutMs) { failed -> if (failed) cancel() else close() }
 
     // 아래 상태는 lock으로 보호 (OkHttp 리스너 스레드 ↔ 호출 스레드)
     private var opened = false
@@ -153,6 +154,12 @@ class LiveMessageSession internal constructor(
         }
     }
 
+    /** 응답을 다 받은 턴을 정상 종료(1000)한다. 서버가 닫기에 답하지 않으면 OkHttp가 잠시 뒤 끊는다 */
+    private fun close() {
+        webSocket.close(NORMAL_CLOSURE, null)
+        incoming.finish()
+    }
+
     /** 턴을 버린다 (대화 종료, 녹음 중지 등). 여러 번 불러도 된다 */
     fun cancel() {
         webSocket.cancel()
@@ -181,10 +188,11 @@ class LiveMessageSession internal constructor(
  * WebSocket 바이너리 메시지들을 이어 붙인 바이트 스트림 - 기존 프레임 파서([ConversationStreamProtocol],
  * [AudioFrameInputStream])를 그대로 쓰기 위한 다리. 닫히면 끝(-1), 연결 실패면 IOException.
  * 메시지가 [readTimeoutMs] 동안 오지 않으면 IOException (HTTP 읽기 타임아웃과 같은 역할).
+ * [onClose]는 읽기가 IOException으로 끝났는지(failed)를 받는다.
  */
 internal class MessageQueueInputStream(
     private val readTimeoutMs: Long,
-    private val onClose: () -> Unit
+    private val onClose: (failed: Boolean) -> Unit
 ) : InputStream() {
 
     private sealed class Item {
@@ -197,6 +205,7 @@ internal class MessageQueueInputStream(
     private var current: ByteArray? = null
     private var position = 0
     private var terminal: Item? = null
+    @Volatile private var failed = false
 
     fun offer(bytes: ByteArray) {
         if (bytes.isNotEmpty()) queue.offer(Item.Data(bytes))
@@ -217,6 +226,15 @@ internal class MessageQueueInputStream(
 
     override fun read(b: ByteArray, off: Int, len: Int): Int {
         if (len == 0) return 0
+        try {
+            return readQueued(b, off, len)
+        } catch (e: IOException) {
+            failed = true
+            throw e
+        }
+    }
+
+    private fun readQueued(b: ByteArray, off: Int, len: Int): Int {
         while (true) {
             val chunk = current
             if (chunk != null && position < chunk.size) {
@@ -247,6 +265,6 @@ internal class MessageQueueInputStream(
     }
 
     override fun close() {
-        onClose()
+        onClose(failed)
     }
 }

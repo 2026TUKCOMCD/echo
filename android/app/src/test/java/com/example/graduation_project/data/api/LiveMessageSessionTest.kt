@@ -23,6 +23,8 @@ import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.Collections
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 
 /**
  * 실시간 음성 메시지 턴의 규격과 폴백 판단 검증 (가짜 WebSocket 서버).
@@ -33,6 +35,9 @@ class LiveMessageSessionTest {
     private lateinit var server: MockWebServer
     private val client = OkHttpClient()
     private val received: MutableList<Any> = Collections.synchronizedList(mutableListOf())
+
+    /** 서버 쪽에서 본 연결 종료 - 정상 닫기면 "closing:<code>", 끊김이면 "failure:<예외 이름>" */
+    private val serverSawEnd = CompletableFuture<String>()
 
     @Before
     fun setUp() {
@@ -74,19 +79,28 @@ class LiveMessageSessionTest {
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
                 received.add(bytes)
             }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                serverSawEnd.complete("closing:$code")
+                webSocket.close(code, null)
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                serverSawEnd.complete("failure:${t.javaClass.simpleName}")
+            }
         }))
     }
 
-    private fun replyNormally(webSocket: WebSocket, withEnd: Boolean = true) {
+    private fun replyNormally(webSocket: WebSocket, withEnd: Boolean = true, serverCloses: Boolean = true) {
         webSocket.send(frame(ConversationStreamProtocol.TYPE_META, """{"userMessage":"안녕하세요"}""".toByteArray()))
         webSocket.send(frame(ConversationStreamProtocol.TYPE_TEXT, """{"text":"반가워요"}""".toByteArray()))
         webSocket.send(frame(ConversationStreamProtocol.TYPE_AUDIO, audio))
         if (withEnd) webSocket.send(frame(ConversationStreamProtocol.TYPE_END, ByteArray(0)))
-        webSocket.close(if (withEnd) 1000 else 1011, null)
+        if (serverCloses) webSocket.close(if (withEnd) 1000 else 1011, null)
     }
 
-    private fun session() = LiveMessageSession(
-        client, server.url("/api/conversations/message-live").toString(), Dispatchers.IO, readTimeoutMs = 5_000
+    private fun session(readTimeoutMs: Long = 5_000) = LiveMessageSession(
+        client, server.url("/api/conversations/message-live").toString(), Dispatchers.IO, readTimeoutMs
     )
 
     @Test
@@ -166,5 +180,34 @@ class LiveMessageSessionTest {
             fail("잘린 스트림은 IOException이어야 함")
         } catch (expected: IOException) {
         }
+    }
+
+    @Test
+    fun `응답을 다 읽고 닫으면 끊지 않고 정상 종료(1000)한다 - 서버에 EOFException이 남지 않음`() = runBlocking {
+        // 서버가 END 뒤 닫기 전에 앱이 먼저 닫는 경우(실제로 EOFException 로그가 나던 순서)
+        serve { replyNormally(it, serverCloses = false) }
+
+        val reply = (session().commit() as LiveMessageSession.Outcome.Reply).reply
+        reply.audio.use { assertArrayEquals(audio, it.readBytes()) }
+
+        assertEquals("closing:1000", serverSawEnd.get(5, TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun `응답 읽기가 실패한 뒤 닫으면 기다리지 않고 연결을 끊는다`() = runBlocking {
+        // 첫머리만 보내고 멈춘 서버 - 오디오 읽기가 타임아웃난다
+        serve {
+            it.send(frame(ConversationStreamProtocol.TYPE_META, """{"userMessage":"안녕하세요"}""".toByteArray()))
+            it.send(frame(ConversationStreamProtocol.TYPE_TEXT, """{"text":"반가워요"}""".toByteArray()))
+        }
+
+        val reply = (session(readTimeoutMs = 300).commit() as LiveMessageSession.Outcome.Reply).reply
+        try {
+            reply.audio.use { it.readBytes() }
+            fail("응답이 멈추면 IOException이어야 함")
+        } catch (expected: IOException) {
+        }
+
+        assertTrue(serverSawEnd.get(5, TimeUnit.SECONDS).startsWith("failure:"))
     }
 }
