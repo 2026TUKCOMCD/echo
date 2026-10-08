@@ -1,6 +1,7 @@
 package com.example.graduation_project.presentation.diary
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -8,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.graduation_project.data.api.ApiClient
+import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.AppDatabase
 import com.example.graduation_project.data.local.dao.ConversationDiaryLinkDao
@@ -78,6 +80,9 @@ class DiaryViewModel(
     private val currentMonth = MutableStateFlow(YearMonth.now(KST_ZONE))
     private val syncError = MutableStateFlow<String?>(null)
 
+    // 동기화 요청 번호 - 가장 마지막 요청의 결과만 배너에 반영 (last request wins)
+    private var latestRefreshId = 0
+
     private val _uiState = MutableStateFlow(DiaryCalendarUiState())
     val uiState: StateFlow<DiaryCalendarUiState> = _uiState.asStateFlow()
 
@@ -96,15 +101,29 @@ class DiaryViewModel(
      */
     fun changeMonth(delta: Int) {
         currentMonth.value = currentMonth.value.plusMonths(delta.toLong())
+        // 이전 달의 오류는 새 달과 무관하므로 새 달 결과를 기다리지 않고 바로 지움
+        syncError.value = null
         refreshCurrentMonth()
     }
 
+    /**
+     * 요청은 취소하지 않고 끝까지 진행해 받은 일기를 캐시에 저장하되,
+     * 그 사이 달 이동·재시도로 더 새 요청이 생겼다면 오래된 결과는 배너에 반영하지 않음
+     * (늦게 끝난 이전 요청이 지금 화면의 오류를 띄우거나 지우는 것을 방지)
+     */
     private fun refreshCurrentMonth() {
         val month = currentMonth.value
+        val refreshId = ++latestRefreshId
         viewModelScope.launch {
-            when (val result = diaryRepository.refreshMonth(month)) {
-                is ApiResult.Success -> syncError.value = null
-                is ApiResult.Error -> syncError.value = result.exception.message
+            val result = diaryRepository.refreshMonth(month)
+            if (refreshId != latestRefreshId) return@launch
+            syncError.value = when (result) {
+                is ApiResult.Success -> null
+                is ApiResult.Error -> {
+                    // 원인(HTTP 코드 등)은 로그로만 남기고 화면에는 어르신이 할 수 있는 행동만 안내
+                    Log.w(TAG, "일기 동기화 실패 ($month)", result.exception)
+                    syncErrorMessage(result.exception)
+                }
             }
         }
     }
@@ -172,6 +191,8 @@ class DiaryViewModel(
     }
 
     companion object {
+        private const val TAG = "DiaryViewModel"
+
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -180,4 +201,13 @@ class DiaryViewModel(
             }
         }
     }
+}
+
+/**
+ * 동기화 실패 배너 문구 - 어르신이 할 수 있는 행동 기준으로 두 가지만 구분
+ * (공통 ApiException 문구는 "~습니다" 말투·HTTP 코드가 섞여 있어 이 화면에서만 바꿔 표시)
+ */
+internal fun syncErrorMessage(exception: ApiException): String = when (exception) {
+    is ApiException.NetworkError -> "인터넷 연결을 확인해 주세요."
+    else -> "잠시 후 다시 시도해 주세요."
 }
