@@ -2,6 +2,21 @@ package com.example.graduation_project.presentation.conversation
 
 import android.app.Activity
 import android.content.res.Configuration
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.example.graduation_project.presentation.component.BreathingAnimation
+import com.example.graduation_project.presentation.component.MicrophoneIcon
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -188,6 +203,12 @@ private fun ConversationScreenContent(
 
             Spacer(Modifier.height(32.dp))
 
+            // 내 차례 표시 (대기: 테두리 마이크 숨쉬기 / 말하는 중: 꽉 찬 마이크 + 파동)
+            TurnMicIndicator(state = uiState.conversationState)
+
+            // 파동이 칸 밖으로 최대 약 17dp까지 퍼지므로 글자와 닿지 않게 여유를 둠
+            Spacer(Modifier.height(24.dp))
+
             // 상태 텍스트
             StateTextSection(
                 state = uiState.conversationState,
@@ -226,6 +247,69 @@ private fun CharacterWebpSection(
     AnimatedWebpImage(resId = resId, modifier = modifier)
 }
 
+/**
+ * 내 차례 마이크 표시 - "말씀해 주세요"(대기)와 "듣고 있어요"(말하는 중)를 글자 외에 모양으로도 구분
+ * - 대기(Listening): 초록 테두리 원 + 초록 마이크, 2초 주기로 천천히 숨쉬기
+ * - 말하는 중(Recording): 꽉 찬 초록 원 + 흰 마이크, 0.8초 빠른 숨쉬기 + 퍼지는 파동
+ * - 그 외 상태: 같은 높이를 비워 두어 상태가 바뀔 때 화면이 위아래로 튀지 않게 함
+ * 애니메이션을 끈 기기에서도 채움(테두리/꽉 참)과 문구 색으로 구분됨
+ */
+@Composable
+private fun TurnMicIndicator(state: ConversationState) {
+    val colors = LocalEchoColors.current
+    val isListening = state is ConversationState.Listening
+    val isSpeaking = state is ConversationState.Recording
+
+    Box(modifier = Modifier.size(TURN_MIC_SIZE), contentAlignment = Alignment.Center) {
+        when {
+            isSpeaking -> {
+                val pulse = rememberInfiniteTransition(label = "turnMicPulse")
+                val progress by pulse.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Restart),
+                    label = "turnMicPulseProgress"
+                )
+                BreathingAnimation(durationMs = 800, minScale = 0.92f, maxScale = 1.08f) {
+                    Box(
+                        modifier = Modifier
+                            .size(TURN_MIC_SIZE)
+                            // 파동은 칸 밖까지 그리되 레이아웃 크기는 바꾸지 않음
+                            .drawBehind {
+                                val base = size.minDimension / 2
+                                drawCircle(
+                                    color = colors.accentGreen.copy(alpha = 0.35f * (1f - progress)),
+                                    radius = base * (1f + 0.4f * progress),
+                                    style = Stroke(width = 3.dp.toPx())
+                                )
+                            }
+                            .clip(CircleShape)
+                            .background(colors.accentGreen),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MicrophoneIcon(tint = Color.White, size = 36.dp, contentDescription = null)
+                    }
+                }
+            }
+            isListening -> {
+                BreathingAnimation(durationMs = 2000) {
+                    Box(
+                        modifier = Modifier
+                            .size(TURN_MIC_SIZE)
+                            .border(3.dp, colors.accentGreen, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MicrophoneIcon(tint = colors.accentGreen, size = 36.dp, contentDescription = null)
+                    }
+                }
+            }
+            else -> Unit
+        }
+    }
+}
+
+private val TURN_MIC_SIZE = 72.dp
+
 @Composable
 private fun StateTextSection(
     state: ConversationState,
@@ -237,8 +321,9 @@ private fun StateTextSection(
         is ConversationState.Idle -> "대화를 시작해보세요"
         is ConversationState.Sending -> "처리 중..."
         is ConversationState.Playing -> "에코가 말하고 있어요"
-        is ConversationState.Recording -> "말씀해주세요"
-        is ConversationState.Listening -> "듣고 있어요"
+        // Listening = 말을 기다리는 중, Recording = VAD가 발화를 감지해 듣는 중
+        is ConversationState.Listening -> "말씀해 주세요"
+        is ConversationState.Recording -> "듣고 있어요"
         is ConversationState.Ended -> "오늘 대화가 저장되었으니, 내일 또 봐요"
     }
 
@@ -247,7 +332,8 @@ private fun StateTextSection(
         fontSize = 22.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = OutfitFontFamily,
-        color = colors.textPrimary,
+        // 듣는 중에만 마이크와 같은 초록으로 강조 (22sp 굵은 글씨라 대비 기준 3:1, accentGreen 3.83:1)
+        color = if (state is ConversationState.Recording) colors.accentGreen else colors.textPrimary,
         textAlign = TextAlign.Center
     )
 

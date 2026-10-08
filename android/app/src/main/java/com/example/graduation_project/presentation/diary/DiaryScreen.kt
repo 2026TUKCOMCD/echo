@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,7 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -49,6 +52,7 @@ import com.example.graduation_project.presentation.model.ConversationSummary
 import com.example.graduation_project.ui.theme.EchoColorScheme
 import com.example.graduation_project.ui.theme.LocalEchoColors
 import com.example.graduation_project.ui.theme.OutfitFontFamily
+import com.example.graduation_project.ui.theme.highContrastEchoColors
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -91,23 +95,8 @@ fun DiaryScreen(
         )
 
         // 서버 동기화 실패를 조용히 삼키지 않고 배너로 노출 (캐시는 그대로 표시됨)
-        uiState.syncError?.let { error ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .clickable { viewModel.refresh() },
-                shape = RoundedCornerShape(8.dp),
-                color = colors.bgMuted
-            ) {
-                Text(
-                    text = "일기 동기화 실패: $error (눌러서 다시 시도)",
-                    fontSize = 14.sp,
-                    fontFamily = OutfitFontFamily,
-                    color = colors.accentRed,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
+        uiState.syncError?.let { reason ->
+            SyncErrorBanner(reason = reason, onRetry = { viewModel.refresh() })
             Spacer(Modifier.height(8.dp))
         }
 
@@ -166,6 +155,55 @@ fun DiaryScreen(
         }
     }
 }
+
+/**
+ * 일기 불러오기 실패 배너 - 눌러서 다시 시도
+ * - 글씨 16sp, 바탕과 대비 4.5:1 이상(WCAG 1.4.3), 높이 48dp 이상(Material 최소 터치 영역)
+ * - TalkBack은 하나의 버튼으로 읽음
+ */
+@Composable
+private fun SyncErrorBanner(reason: String, onRetry: () -> Unit) {
+    val colors = LocalEchoColors.current
+    // 기본 테마 accentRed는 bgMuted 위에서 대비 2.55라 배너 글씨에는 더 진한 빨강 사용 (고대비 테마 accentRed는 7.09로 충분)
+    val textColor = if (colors == highContrastEchoColors) colors.accentRed else SyncErrorTextRed
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .heightIn(min = 48.dp)
+            .clickable(onClickLabel = "다시 불러오기", role = Role.Button, onClick = onRetry),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.bgMuted
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            // 한글은 글자 단위로 줄이 바뀌어 단어가 잘리므로, 문장마다 줄을 나눠 짧게 유지
+            Text(
+                text = "일기를 불러오지 못했어요.",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = OutfitFontFamily,
+                color = textColor
+            )
+            Text(
+                text = reason,
+                fontSize = 16.sp,
+                fontFamily = OutfitFontFamily,
+                color = textColor
+            )
+            Text(
+                text = "눌러서 다시 불러오기",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = OutfitFontFamily,
+                color = textColor,
+                textDecoration = TextDecoration.Underline,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+private val SyncErrorTextRed = Color(0xFFC62828)  // bgMuted 위 대비 4.76
 
 @Composable
 private fun MonthNavigationHeader(
