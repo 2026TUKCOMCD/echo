@@ -1,6 +1,7 @@
 package com.example.graduation_project.presentation.diary
 
 import android.app.Application
+import android.util.Log
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.local.dao.ConversationDiaryLinkDao
@@ -14,12 +15,16 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -56,6 +61,8 @@ class DiaryViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        mockkStatic(Log::class)
+        every { Log.w(any(), any<String>(), any()) } returns 0
         coEvery { diaryRepository.refreshMonth(any()) } returns ApiResult.Success(Unit)
         every { diaryRepository.observeMonth(any()) } returns flowOf(emptyList())
         every { messageDao.getSessionRanges(userId) } returns flowOf(emptyList())
@@ -65,6 +72,7 @@ class DiaryViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+        unmockkStatic(Log::class)
     }
 
     private fun viewModel(clock: Clock = Clock.systemUTC()) = DiaryViewModel(
@@ -182,7 +190,7 @@ class DiaryViewModelTest {
         val vm = viewModel()
         advanceUntilIdle()
 
-        assertEquals("네트워크 연결을 확인해주세요", vm.uiState.value.syncError)
+        assertEquals("인터넷 연결을 확인해 주세요.", vm.uiState.value.syncError)
         assertTrue(vm.uiState.value.cellsByDate[day] is DayCellState.HasDiary)
 
         coEvery { diaryRepository.refreshMonth(month) } returns ApiResult.Success(Unit)
@@ -273,5 +281,92 @@ class DiaryViewModelTest {
 
         assertEquals(LocalDate.of(2026, 10, 6), vm.uiState.value.today)
         assertEquals(YearMonth.of(2026, 10), vm.uiState.value.currentMonth)
+    }
+
+    @Test
+    fun `이전 달 요청이 늦게 실패해도 지금 보고 있는 달에 오류를 띄우지 않는다`() = runTest(testDispatcher) {
+        val next = month.plusMonths(1)
+        coEvery { diaryRepository.refreshMonth(month) } coAnswers {
+            delay(1_000)
+            ApiResult.Error(ApiException.NetworkError())
+        }
+        coEvery { diaryRepository.refreshMonth(next) } returns ApiResult.Success(Unit)
+
+        val vm = viewModel()
+        runCurrent()
+        vm.changeMonth(1)   // 이전 달 요청이 끝나기 전에 다음 달로 이동
+        advanceUntilIdle()
+
+        assertEquals(next, vm.uiState.value.currentMonth)
+        assertNull(vm.uiState.value.syncError)
+    }
+
+    @Test
+    fun `이전 달 요청이 늦게 성공해도 지금 보고 있는 달의 오류를 지우지 않는다`() = runTest(testDispatcher) {
+        val next = month.plusMonths(1)
+        coEvery { diaryRepository.refreshMonth(month) } coAnswers {
+            delay(1_000)
+            ApiResult.Success(Unit)
+        }
+        coEvery { diaryRepository.refreshMonth(next) } returns ApiResult.Error(ApiException.NetworkError())
+
+        val vm = viewModel()
+        runCurrent()
+        vm.changeMonth(1)
+        advanceUntilIdle()
+
+        assertEquals("인터넷 연결을 확인해 주세요.", vm.uiState.value.syncError)
+    }
+
+    @Test
+    fun `달을 넘기면 새 달 결과가 오기 전에도 이전 달 오류 배너를 지운다`() = runTest(testDispatcher) {
+        val next = month.plusMonths(1)
+        coEvery { diaryRepository.refreshMonth(month) } returns ApiResult.Error(ApiException.NetworkError())
+        coEvery { diaryRepository.refreshMonth(next) } coAnswers {
+            delay(1_000)
+            ApiResult.Success(Unit)
+        }
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertEquals("인터넷 연결을 확인해 주세요.", vm.uiState.value.syncError)
+
+        vm.changeMonth(1)
+        runCurrent()        // 다음 달 요청은 아직 진행 중
+
+        assertEquals(next, vm.uiState.value.currentMonth)
+        assertNull(vm.uiState.value.syncError)
+    }
+
+    @Test
+    fun `같은 달 요청이 겹치면 먼저 보낸 요청이 늦게 실패해도 마지막 요청 결과를 따른다`() = runTest(testDispatcher) {
+        var calls = 0
+        coEvery { diaryRepository.refreshMonth(month) } coAnswers {
+            if (++calls == 1) {
+                delay(1_000)    // 첫 요청(화면 진입)은 늦게 실패
+                ApiResult.Error(ApiException.NetworkError())
+            } else {
+                ApiResult.Success(Unit)  // 재시도는 바로 성공
+            }
+        }
+
+        val vm = viewModel()
+        runCurrent()
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(2, calls)
+        assertNull(vm.uiState.value.syncError)
+    }
+
+    @Test
+    fun `배너 문구는 인터넷 끊김과 그 외 두 가지로만 안내하고 HTTP 코드는 보이지 않는다`() {
+        assertEquals("인터넷 연결을 확인해 주세요.", syncErrorMessage(ApiException.NetworkError()))
+        assertEquals(
+            "잠시 후 다시 시도해 주세요.",
+            syncErrorMessage(ApiException.ServerError(500, "서버 오류가 발생했습니다 (500)"))
+        )
+        assertEquals("잠시 후 다시 시도해 주세요.", syncErrorMessage(ApiException.ClientError(404)))
+        assertEquals("잠시 후 다시 시도해 주세요.", syncErrorMessage(ApiException.UnknownError()))
     }
 }
