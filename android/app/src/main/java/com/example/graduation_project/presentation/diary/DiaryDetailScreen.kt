@@ -63,7 +63,7 @@ data class DiaryDetailUiState(
 /**
  * 일기 상세 ViewModel
  *
- * 캐시된 일기(diaries)와 그날의 로컬 대화 세션(messages)을 함께 로드
+ * 캐시된 일기(diaries)와 그날의 로컬 대화 세션(messages)을 함께 관찰 (캐시가 바뀌면 화면도 갱신)
  * 모두 로컬 조회이므로 오프라인에서도 동작
  */
 class DiaryDetailViewModel(
@@ -85,18 +85,22 @@ class DiaryDetailViewModel(
 
     private fun load() {
         viewModelScope.launch {
+            // 일기도 Flow로 관찰 - 화면이 열려 있는 동안 서버 동기화로 캐시가 바뀌면 바로 반영
             combine(
+                diaryDao.observeByDate(date),
                 messageDao.getSessionRanges(currentUserId),
                 conversationDiaryLinkDao.observeAll()
-            ) { ranges, links -> ranges to links.associate { it.conversationId to it.diaryDate } }
-                .collect { (ranges, linkedDates) ->
+            ) { diary, ranges, links ->
+                Triple(diary, ranges, links.associate { it.conversationId to it.diaryDate })
+            }
+                .collect { (diary, ranges, linkedDates) ->
                     // DiaryViewModel의 버킷 기준과 동일하게: 서버 diaryDate가 있으면 우선 신뢰,
                     // 없으면 lastTimestamp 휴리스틱으로 폴백
                     val sessions = ranges
                         .filter { resolveDateKey(it, linkedDates[it.conversationId]) == date }
                         .mapNotNull { buildSessionSummary(messageDao, it, date, currentUserId) }
                     _uiState.value = DiaryDetailUiState(
-                        diary = diaryDao.getByDate(date),
+                        diary = diary,
                         sessions = sessions,
                         isLoading = false
                     )

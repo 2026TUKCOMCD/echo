@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -53,6 +55,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.data.local.entity.DiaryEntity
 import com.example.graduation_project.presentation.model.ConversationSummary
@@ -83,6 +87,16 @@ fun DiaryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val colors = LocalEchoColors.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 화면이 다시 보일 때마다 "오늘"을 다시 계산 (다음 날 앱을 다시 열어도 어제가 오늘로 남지 않도록)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshToday()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     var sheetSessions by remember { mutableStateOf<List<ConversationSummary>?>(null) }
     val sheetState = rememberModalBottomSheetState()
@@ -120,6 +134,7 @@ fun DiaryScreen(
             CalendarLegend()
             CalendarGrid(
                 currentMonth = uiState.currentMonth,
+                today = uiState.today,
                 cellsByDate = uiState.cellsByDate,
                 onDateSelected = { state ->
                     when (state) {
@@ -294,11 +309,11 @@ private fun LegendItem(status: DayCellStatus, label: String) {
 @Composable
 private fun CalendarGrid(
     currentMonth: YearMonth,
+    today: LocalDate,
     cellsByDate: Map<LocalDate, DayCellState>,
     onDateSelected: (DayCellState) -> Unit
 ) {
     val colors = LocalEchoColors.current
-    val today = remember { LocalDate.now() }
     val weeks = remember(currentMonth) { buildCalendarWeeks(currentMonth) }
 
     Column(modifier = Modifier.padding(horizontal = 12.dp)) {

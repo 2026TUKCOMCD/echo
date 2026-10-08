@@ -36,6 +36,13 @@ interface DiaryDao {
     suspend fun getByDate(date: String): DiaryEntity?
 
     /**
+     * 특정 날짜 일기 구독 - 캐시가 갱신되면 다시 방출
+     * - 일기 상세 화면이 열려 있는 동안 서버 동기화 결과를 반영할 때 사용
+     */
+    @Query("SELECT * FROM diaries WHERE date = :date")
+    fun observeByDate(date: String): Flow<DiaryEntity?>
+
+    /**
      * 날짜 범위(양끝 포함) 일기 조회 (최신 날짜순)
      * - 일기 탭 캘린더에서 현재 보는 달만 관찰할 때 사용
      */

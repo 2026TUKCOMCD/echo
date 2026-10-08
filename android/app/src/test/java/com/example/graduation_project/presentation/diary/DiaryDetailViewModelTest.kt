@@ -13,6 +13,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -50,6 +51,7 @@ class DiaryDetailViewModelTest {
         Dispatchers.setMain(testDispatcher)
         every { linkDao.observeAll() } returns flowOf(emptyList())
         coEvery { diaryDao.getByDate(any()) } returns null
+        every { diaryDao.observeByDate(any()) } returns flowOf(null)
     }
 
     @After
@@ -64,6 +66,11 @@ class DiaryDetailViewModelTest {
         diaryDao = diaryDao,
         conversationDiaryLinkDao = linkDao,
         currentUserId = userId
+    )
+
+    private fun diary(status: String, content: String?) = DiaryEntity(
+        date = date.toString(), serverId = 1L, title = "제목", content = content,
+        status = status, failureReason = null, weather = null, mood = null, updatedAt = null
     )
 
     private fun kstMillis(day: LocalDate, hour: Int, minute: Int = 0): Long =
@@ -84,6 +91,7 @@ class DiaryDetailViewModelTest {
             status = "SUCCESS", failureReason = null, weather = null, mood = null, updatedAt = null
         )
         coEvery { diaryDao.getByDate(date.toString()) } returns diary
+        every { diaryDao.observeByDate(date.toString()) } returns flowOf(diary)
         every { messageDao.getSessionRanges(userId) } returns flowOf(
             listOf(
                 givenSession("today", kstMillis(date, 10)),
@@ -112,5 +120,25 @@ class DiaryDetailViewModelTest {
 
         assertNull(vm.uiState.value.diary)
         assertEquals(listOf("s1"), vm.uiState.value.sessions.map { it.conversationId })
+    }
+
+    @Test
+    fun `상세 화면이 열려 있는 동안 일기 캐시가 갱신되면 화면도 바뀐다`() = runTest(testDispatcher) {
+        // 캘린더의 달 동기화가 끝나기 전에 상세로 들어온 상황: 처음엔 이전 캐시(갱신 실패)
+        val stale = diary("FAILED", "이전 일기")
+        val fresh = diary("SUCCESS", "새로 쓴 일기")
+        val cached = MutableStateFlow<DiaryEntity?>(stale)
+        coEvery { diaryDao.getByDate(date.toString()) } answers { cached.value }
+        every { diaryDao.observeByDate(date.toString()) } returns cached
+        every { messageDao.getSessionRanges(userId) } returns flowOf(emptyList())
+
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertEquals(stale, vm.uiState.value.diary)
+
+        cached.value = fresh   // 동기화 결과가 캐시에 저장됨 (세션·링크는 그대로)
+        advanceUntilIdle()
+
+        assertEquals(fresh, vm.uiState.value.diary)
     }
 }
