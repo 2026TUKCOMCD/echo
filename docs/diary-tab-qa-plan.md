@@ -70,8 +70,8 @@
 | 묶음 | # | 의심 내용 | 위치 | 처리 |
 |---|---|---|---|---|
 | 1 | ⑤ | 상태를 6dp 색 점으로만 표시(WCAG 1.4.1 색만으로 정보 전달), 셀 `contentDescription` 없음, 범례 12sp | `DiaryScreen.CalendarDayCell`·`CalendarLegend` | `fix/diary-calendar-accessibility` — 표시 방식은 착수 시 결정 |
-| 2 | ⑦ | 달을 빠르게 넘기면 이전 달 요청 결과가 `syncError`를 덮어씀 | `DiaryViewModel.refreshCurrentMonth` | `fix/diary-sync-error` |
-| 2 | ⑥ | 동기화 실패 배너 문구 — 확인 결과 `ApiException`의 한국어 안내문("네트워크 연결을 확인해주세요" 등)이 표시되어 예외 원문 노출은 아님. 문구 다듬기만 검토 | `DiaryScreen` | 묶음 2에서 함께 검토 |
+| 2 | ⑦ | 달을 빠르게 넘기면 이전 달 요청 결과가 `syncError`를 덮어씀 | `DiaryViewModel.refreshCurrentMonth` | `fix/diary-sync-error` — 재현 테스트 4개로 확정. 가장 마지막 요청 결과만 배너에 반영(요청은 취소하지 않아 캐시 저장 유지), 달 이동 시 배너 즉시 초기화 |
+| 2 | ⑥ | 동기화 실패 배너 문구 — 확인 결과 `ApiException`의 한국어 안내문("네트워크 연결을 확인해주세요" 등)이 표시되어 예외 원문 노출은 아님. 문구 다듬기만 검토 | `DiaryScreen` | 묶음 2에서 처리 — 원인 문구를 2종(인터넷 끊김/그 외)으로 단순화(HTTP 코드는 로그만), 기본 테마 글씨 대비 2.55→4.76(`#C62828`), 16sp·높이 48dp 이상·TalkBack 버튼, 문장별 줄 나눔 |
 | 3 | ① | 서버에서 지워진 일기(체험 데이터 초기화 등)가 다른 기기 캐시에 남음 — `upsertAll`만 하고 달 범위를 교체하지 않음 | `DiaryRepository.refreshMonth` | `fix/diary-cache-month-replace` |
 | 4 | ③ | 상세 화면이 일기를 `getByDate`로 한 번만 읽어 열려 있는 동안 갱신이 반영되지 않음 | `DiaryDetailViewModel.load` | `fix/diary-stale-display` |
 | 4 | ④ | 오늘 표시가 기기 시간대 기준(`LocalDate.now()`)이고 자정이 지나도 갱신되지 않음 | `DiaryScreen.CalendarGrid` | `fix/diary-stale-display` |
