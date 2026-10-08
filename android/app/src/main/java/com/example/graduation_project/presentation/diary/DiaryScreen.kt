@@ -1,6 +1,7 @@
 package com.example.graduation_project.presentation.diary
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,11 +18,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -42,8 +45,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -258,36 +265,43 @@ private fun MonthNavigationHeader(
     }
 }
 
+/**
+ * 범례 - 날짜 칸과 같은 색·아이콘의 네모로 표시 (갱신/생성 실패는 같은 색·아이콘이라 "실패" 하나로 묶음)
+ */
 @Composable
 private fun CalendarLegend() {
-    val colors = LocalEchoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        LegendItem(color = colors.accentGreen, label = "일기", colors = colors)
-        LegendItem(color = colors.accentCoral, label = "대화만", colors = colors)
-        LegendItem(color = colors.accentBlue, label = "갱신 실패", colors = colors)
-        LegendItem(color = colors.accentRed, label = "생성 실패", colors = colors)
+        LegendItem(DayCellStatus.SUCCESS, label = "일기")
+        LegendItem(DayCellStatus.SESSION_ONLY, label = "대화만")
+        LegendItem(DayCellStatus.FAILURE, label = "실패")
     }
 }
 
 @Composable
-private fun LegendItem(color: Color, label: String, colors: EchoColorScheme) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun LegendItem(status: DayCellStatus, label: String) {
+    val colors = LocalEchoColors.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(
             modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
+                .size(24.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(dayCellBackground(status, colors)),
+            contentAlignment = Alignment.Center
+        ) {
+            dayCellIcon(status)?.let { icon ->
+                Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+        }
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 14.sp,
             fontFamily = OutfitFontFamily,
-            color = colors.textTertiary
+            color = colors.textSecondary
         )
     }
 }
@@ -343,17 +357,34 @@ private fun CalendarDayCell(
     onClick: (DayCellState) -> Unit
 ) {
     val colors = LocalEchoColors.current
+    val status = state.toStatus()
     val isEnabled = state != DayCellState.Empty
+    val shape = RoundedCornerShape(8.dp)
+    val description = dayCellDescription(date, status, isToday)
+    val clickLabel = when (state) {
+        is DayCellState.HasDiary -> "일기 보기"
+        is DayCellState.HasSessions -> "대화 보기"
+        DayCellState.Empty -> null
+    }
 
     Box(
         modifier = Modifier
-            .aspectRatio(1f)
+            // 숫자 + 표준 크기(24dp) 아이콘이 들어가도록 세로로 조금 긴 칸
+            .aspectRatio(0.8f)
             .padding(2.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .then(
-                if (isToday) Modifier.background(colors.bgMuted) else Modifier
+            .clip(shape)
+            .background(dayCellBackground(status, colors))
+            .border(
+                // 오늘은 배경이 상태색으로 쓰이므로 진한 테두리로 구분
+                width = if (isToday) 2.dp else 1.dp,
+                color = if (isToday) colors.textPrimary else colors.borderSubtle,
+                shape = shape
             )
-            .clickable(enabled = isEnabled) { onClick(state) },
+            .clickable(enabled = isEnabled, onClickLabel = clickLabel) { onClick(state) }
+            .clearAndSetSemantics {
+                contentDescription = description
+                if (isEnabled) role = Role.Button
+            },
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -362,34 +393,56 @@ private fun CalendarDayCell(
                 fontSize = 16.sp,
                 fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                 fontFamily = OutfitFontFamily,
-                color = if (isEnabled) colors.textPrimary else colors.textTertiary
+                // 진한 색 칸은 흰 글씨(대비 4.5:1 이상), 기록 없는 흰 칸은 흐린 글씨
+                color = if (isEnabled) Color.White else colors.textTertiary
             )
-            Spacer(Modifier.height(2.dp))
-            val dotColor = dayCellDotColor(state, colors)
-            if (dotColor != null) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(dotColor)
+            // 색을 구분하기 어려운 경우를 위해 표지판처럼 모양이 다른 아이콘을 함께 표시
+            dayCellIcon(status)?.let { icon ->
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
     }
 }
 
-private fun dayCellDotColor(state: DayCellState, colors: EchoColorScheme): Color? = when (state) {
-    is DayCellState.HasDiary -> {
-        val hasStaleContent = state.diary.status == "FAILED" && state.diary.content != null
-        val isTotalFailure = state.diary.status == "FAILED" && state.diary.content == null
-        when {
-            isTotalFailure -> colors.accentRed
-            hasStaleContent -> colors.accentBlue
-            else -> colors.accentGreen
-        }
+/**
+ * 캘린더 날짜 칸 배경색 - 캘린더 전용이라 공용 테마(EchoColorScheme)에 넣지 않고 여기서만 정의
+ * 모두 흰 글씨·아이콘과 대비 4.5:1 이상(WCAG 1.4.3)인 진한 색, 기록 없는 날은 bgCard 흰색
+ * 색 의미는 표지판 관례(ISO 3864)를 따름: 초록=완료, 빨강=문제, 파랑=안내
+ */
+private data class CalendarCellColors(val success: Color, val failure: Color, val sessionOnly: Color)
+
+private val defaultCalendarCellColors = CalendarCellColors(
+    success = Color(0xFF2E7D32),      // 진한 초록 - 일기 있음 (흰색 대비 5.13)
+    failure = Color(0xFFC62828),      // 진한 빨강 - 일기 갱신/생성 실패 (5.62)
+    sessionOnly = Color(0xFF1565C0)   // 진한 파랑 - 대화만 있음 (5.75)
+)
+
+private val highContrastCalendarCellColors = CalendarCellColors(
+    success = Color(0xFF1B5E20),      // 7.87
+    failure = Color(0xFFB71C1C),      // 6.57
+    sessionOnly = Color(0xFF0D47A1)   // 8.63
+)
+
+private fun dayCellBackground(status: DayCellStatus, colors: EchoColorScheme): Color {
+    val cell = if (colors == highContrastEchoColors) highContrastCalendarCellColors else defaultCalendarCellColors
+    return when (status) {
+        DayCellStatus.SUCCESS -> cell.success
+        DayCellStatus.STALE, DayCellStatus.FAILURE -> cell.failure
+        DayCellStatus.SESSION_ONLY -> cell.sessionOnly
+        DayCellStatus.EMPTY -> colors.bgCard
     }
-    is DayCellState.HasSessions -> colors.accentCoral
-    DayCellState.Empty -> null
+}
+
+private fun dayCellIcon(status: DayCellStatus): ImageVector? = when (status) {
+    DayCellStatus.SUCCESS -> Icons.Filled.CheckCircle
+    DayCellStatus.STALE, DayCellStatus.FAILURE -> Icons.Filled.Error
+    DayCellStatus.SESSION_ONLY -> Icons.Filled.ChatBubble
+    DayCellStatus.EMPTY -> null
 }
 
 /**
