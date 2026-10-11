@@ -19,9 +19,9 @@ data class VadConfig(
     /**
      * 음성 종료로 판정하기 위한 무음 지속 시간 (ms)
      *
-     * [T2.2-3] 어르신 말 속도 고려하여 3초로 설정
+     * 어르신 말 속도 고려하여 2초로 설정 (3초 → 2초: 말 끝 → AI 첫 소리 지연 중 무음 대기가 가장 커서 단축)
      * - 어르신은 단어 사이 쉼이 길 수 있음
-     * - 너무 짧으면 문장 중간에 끊김 발생
+     * - 너무 짧으면 문장 중간에 끊김 발생 - TTS 재생 중엔 VAD가 멈춰 있어 이어서 한 말은 녹음되지 않음
      * - 권장 범위: 2000ms ~ 3500ms
      */
     val silenceDurationMs: Int = DEFAULT_SILENCE_DURATION_MS,
@@ -104,8 +104,8 @@ data class VadConfig(
         const val BITS_PER_SAMPLE = 16
 
         // [T2.2-3] 기본값 상수
-        /** 기본 무음 지속 시간: 3초 (어르신 말 속도 고려, 넉넉한 침묵 허용) */
-        const val DEFAULT_SILENCE_DURATION_MS = 3000
+        /** 기본 무음 지속 시간: 2초 (어르신 말 속도 고려, 권장 범위의 하한) */
+        const val DEFAULT_SILENCE_DURATION_MS = 2000
 
         /** 기본 최소 음성 지속 시간: 100ms (노이즈 필터링) */
         const val DEFAULT_SPEECH_DURATION_MS = 100

@@ -19,6 +19,9 @@ interface ConversationApi {
     companion object {
         const val MESSAGE_STREAM_PATH = "/api/conversations/message-stream"
         const val START_STREAM_PATH = "/api/conversations/start-stream"
+
+        /** 실시간 음성 메시지 (WebSocket) - [LiveMessageSession] 참고 */
+        const val MESSAGE_LIVE_PATH = "/api/conversations/message-live"
     }
 
     @POST("/api/conversations/start")

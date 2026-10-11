@@ -104,6 +104,11 @@ class MemoryServiceTest {
         return memory;
     }
 
+    /** 검색 질의 임베딩 결과 - OpenAI 처리 시간은 로그에만 쓰이므로 값은 아무거나 */
+    private Optional<EmbeddingService.QueryEmbedding> queryEmbedding(float[] vector) {
+        return Optional.of(new EmbeddingService.QueryEmbedding(vector, 50));
+    }
+
     private String facts(String... contents) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < contents.length; i++) {
@@ -498,7 +503,7 @@ class MemoryServiceTest {
     @DisplayName("search는 임계값 이상인 기억만 유사도 높은 순으로 최대 limit건 반환한다")
     void search_returnsTopMatchesAboveThreshold() {
         // given: 질의(NEAR)와의 유사도 #1 0.6 / #2 1.0 / #3 0.8 / #4 0
-        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(embeddingService.embed("질의")).thenReturn(queryEmbedding(NEAR));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
                 stored(1, "조금 비슷함", new float[]{0.6f, 0.8f, 0f}, MODEL_TAG),
                 stored(2, "같은 이야기", NEAR, MODEL_TAG),
@@ -516,7 +521,7 @@ class MemoryServiceTest {
     @DisplayName("search는 이미 대화에 붙은 기억을 빼고 찾아, 다음으로 비슷한 기억이 그 자리를 채운다")
     void search_excludesAlreadyRecalled() {
         // given
-        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(embeddingService.embed("질의")).thenReturn(queryEmbedding(NEAR));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
                 stored(1, "조금 비슷함", new float[]{0.6f, 0.8f, 0f}, MODEL_TAG),
                 stored(2, "같은 이야기", NEAR, MODEL_TAG),
@@ -535,7 +540,7 @@ class MemoryServiceTest {
         // given
         Memory withoutEmbedding = Memory.builder().userId(TEST_USER_ID).content("백필 전 기억").build();
         ReflectionTestUtils.setField(withoutEmbedding, "id", 2L);
-        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(embeddingService.embed("질의")).thenReturn(queryEmbedding(NEAR));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
                 stored(1, "옛 모델로 만든 기억", NEAR, "text-embedding-3-small@1536"),
                 withoutEmbedding));
@@ -565,7 +570,7 @@ class MemoryServiceTest {
     @DisplayName("search는 DB 조회에 실패해도 예외를 던지지 않고 빈 목록을 반환한다 (기억 없이 대화 진행)")
     void search_returnsEmptyWhenRepositoryFails() {
         // given
-        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(embeddingService.embed("질의")).thenReturn(queryEmbedding(NEAR));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenThrow(new RuntimeException("DB 연결 끊김"));
 
         // when

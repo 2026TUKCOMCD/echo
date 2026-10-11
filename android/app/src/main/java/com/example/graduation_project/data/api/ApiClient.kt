@@ -33,7 +33,8 @@ object ApiClient {
     // 스트리밍 엔드포인트를 추가하면 반드시 이 목록에도 넣어야 한다.
     private val streamingPaths = setOf(
         ConversationApi.MESSAGE_STREAM_PATH,
-        ConversationApi.START_STREAM_PATH
+        ConversationApi.START_STREAM_PATH,
+        ConversationApi.MESSAGE_LIVE_PATH
     )
 
     private val loggingInterceptor = Interceptor { chain ->
@@ -82,9 +83,20 @@ object ApiClient {
     var tokenStorage: TokenStorage? = null
         private set
 
+    // 실시간 음성 메시지(WebSocket)도 같은 인증(AuthInterceptor, TokenAuthenticator)을 거치도록 공유한다
+    private lateinit var authenticatedClient: OkHttpClient
+
+    /**
+     * 실시간 음성 메시지 턴(`/message-live`)을 연다. 운영은 https 주소라 wss(TLS)로 연결된다.
+     * 연결 후에는 OkHttp가 소켓 읽기 타임아웃을 끄므로(말하는 동안 서버가 보낼 게 없음), 응답 대기 시간은
+     * [LiveMessageSession]이 따로 잰다.
+     */
+    fun newLiveMessageSession(): LiveMessageSession =
+        LiveMessageSession(authenticatedClient, BuildConfig.BASE_URL + ConversationApi.MESSAGE_LIVE_PATH)
+
     fun init(tokenStorage: TokenStorage) {
         this.tokenStorage = tokenStorage
-        val authenticatedClient = OkHttpClient.Builder()
+        authenticatedClient = OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .addInterceptor(AuthInterceptor(tokenStorage))
             .authenticator(TokenAuthenticator(tokenStorage, authApi))

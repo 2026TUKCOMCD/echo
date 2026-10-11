@@ -24,11 +24,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.zip.Deflater;
 
 @Slf4j
 @Service
@@ -168,14 +170,59 @@ public class VoiceServiceImpl implements VoiceService {
                 return false; // 예상 못한 포맷 - 판단하지 않고 통과
             }
 
-            int dataSize = bytes.length - WAV_HEADER_SIZE;
-            double durationMs = (dataSize / 2.0) / sampleRate * 1000;
-            double energyDbfs = calculateRmsDbfs(bytes, WAV_HEADER_SIZE, bytes.length);
-
-            return durationMs < minDurationMs && energyDbfs < minEnergyDbfs;
+            return isEffectivelySilent(bytes, WAV_HEADER_SIZE, bytes.length, sampleRate);
         } catch (IOException e) {
             log.warn("오디오 길이/에너지 계산 실패 - 필터링 없이 진행: {}", e.getMessage());
             return false;
+        }
+    }
+
+    @Override
+    public boolean isEffectivelySilent(byte[] pcm16le, int sampleRate) {
+        return isEffectivelySilent(pcm16le, 0, pcm16le.length, sampleRate);
+    }
+
+    private boolean isEffectivelySilent(byte[] bytes, int start, int end, int sampleRate) {
+        double durationMs = ((end - start) / 2.0) / sampleRate * 1000;
+        double energyDbfs = calculateRmsDbfs(bytes, start, end);
+        return durationMs < minDurationMs && energyDbfs < minEnergyDbfs;
+    }
+
+    @Override
+    public String filterLiveTranscript(String transcript) {
+        if (transcript == null || transcript.isBlank()) {
+            return "";
+        }
+        if (isKnownHallucinationPhrase(transcript)) {
+            log.info("알려진 STT 환각 문구 감지(실시간 전사) - 필터링: {}", transcript);
+            return "";
+        }
+        double compressionRatio = compressionRatio(transcript);
+        if (compressionRatio > compressionRatioThreshold) {
+            log.info("STT 신뢰도 필터링 발동(실시간 전사) - compression_ratio: {}", compressionRatio);
+            return "";
+        }
+        return transcript;
+    }
+
+    /**
+     * whisper가 세그먼트마다 내던 compression_ratio와 같은 정의: UTF-8 바이트 수 / zlib 압축 바이트 수.
+     * 같은 말이 반복될수록 잘 압축되어 값이 커진다. 짧은 정상 발화는 zlib 헤더 때문에 1 안팎이다.
+     */
+    static double compressionRatio(String text) {
+        byte[] raw = text.getBytes(StandardCharsets.UTF_8);
+        Deflater deflater = new Deflater();
+        try {
+            deflater.setInput(raw);
+            deflater.finish();
+            byte[] buffer = new byte[raw.length + 64];
+            int compressed = 0;
+            while (!deflater.finished()) {
+                compressed += deflater.deflate(buffer);
+            }
+            return compressed == 0 ? 0.0 : (double) raw.length / compressed;
+        } finally {
+            deflater.end();
         }
     }
 

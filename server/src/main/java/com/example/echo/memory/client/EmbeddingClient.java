@@ -11,6 +11,7 @@ import com.example.echo.memory.dto.EmbeddingResponse;
 import com.example.echo.voice.config.OpenAIFeignConfig;
 import feign.Request;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -24,7 +25,8 @@ public interface EmbeddingClient {
     /**
      * @param options 호출별 타임아웃 - 설정 클래스의 타임아웃(STT용 30초)보다 우선한다.
      *                대화 중 호출(짧게)과 부팅 백필(JVM 첫 호출이라 느림, 길게)이 달라 호출마다 넘긴다
+     * @return 응답 헤더(openai-processing-ms)를 읽기 위해 ResponseEntity로 받는다
      */
     @PostMapping("/embeddings")
-    EmbeddingResponse createEmbeddings(@RequestBody EmbeddingRequest request, Request.Options options);
+    ResponseEntity<EmbeddingResponse> createEmbeddings(@RequestBody EmbeddingRequest request, Request.Options options);
 }

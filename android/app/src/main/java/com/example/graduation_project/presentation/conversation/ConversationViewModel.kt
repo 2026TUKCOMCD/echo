@@ -10,6 +10,7 @@ import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.api.AudioFrameInputStream
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
+import com.example.graduation_project.data.api.LiveMessageSession
 import com.example.graduation_project.data.health.HealthConnectManager
 import com.example.graduation_project.data.health.HealthConnectRepositoryImpl
 import com.example.graduation_project.data.location.LocationDataManager
@@ -110,6 +111,9 @@ class ConversationViewModel(
     // PROCESSING 상태 타이머 Job
     private var processingTimerJob: Job? = null
 
+    // 말하는 동안 소리를 서버로 흘려보내는 실시간 메시지 턴 (말 시작에 열고 말 끝에 commit)
+    private var liveSession: LiveMessageSession? = null
+
 
     // 서버 TTS 재요청 진행 중 여부 (무한 루프 방지)
     private var isServerRetryInProgress = false
@@ -157,6 +161,15 @@ class ConversationViewModel(
                 recorderRecoveryAttempts = 0  // 마이크 정상 동작 확인 → 복구 카운터 리셋
                 _uiState.update { it.copy(isSpeechDetected = true) }
                 transitionTo(ConversationState.Recording)
+                // 말하는 동안 인식을 미리 진행하도록 실시간 턴을 연다 (연결 시간은 말하는 동안 지나감)
+                cancelLiveSession()
+                liveSession = repository.openLiveMessage()
+            }
+
+            override fun onRecordingAudio(pcm: ByteArray) {
+                if (_uiState.value.conversationState is ConversationState.Recording) {
+                    liveSession?.send(pcm)
+                }
             }
 
             override fun onRecordingComplete(audioFile: File) {
@@ -164,6 +177,7 @@ class ConversationViewModel(
                 val currentState = _uiState.value.conversationState
                 if (currentState !is ConversationState.Recording) {
                     Log.d(TAG, "AudioRecordListener.onRecordingComplete() - 무시됨 (현재 상태: $currentState)")
+                    cancelLiveSession()
                     return
                 }
                 Log.d(TAG, "AudioRecordListener.onRecordingComplete() - 파일: ${audioFile.path}")
@@ -173,6 +187,7 @@ class ConversationViewModel(
 
             override fun onError(exception: AudioRecordException) {
                 Log.e(TAG, "AudioRecordListener.onError()", exception)
+                cancelLiveSession()
                 _uiState.update { it.copy(isSpeechDetected = false, isRecordingPreparing = false) }
                 // 마이크가 죽은 채 Listening 화면만 남는 것 방지 → 자동 복구 시도
                 recoverRecordingAfterError()
@@ -530,10 +545,16 @@ class ConversationViewModel(
      * @param wavData VoiceRecordingViewModel에서 전달받은 WAV 바이너리 데이터
      */
     fun sendMessage(wavData: ByteArray) {
+        // 이 발화의 실시간 턴 (없으면 기존 /message-stream으로 WAV 전송)
+        val live = liveSession
+        liveSession = null
         viewModelScope.launch {
             isServerRetryInProgress = false
             // Recording → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
-            if (!transitionTo(ConversationState.Sending)) return@launch
+            if (!transitionTo(ConversationState.Sending)) {
+                live?.cancel()
+                return@launch
+            }
             _uiState.update {
                 it.copy(
                     errorMessage = null,
@@ -552,9 +573,14 @@ class ConversationViewModel(
             val requestBody = wavData.toRequestBody("audio/wav".toMediaType())
             val audioPart = MultipartBody.Part.createFormData("audio", "recording.wav", requestBody)
 
-            // 스트리밍 우선 (서버에 스트리밍 엔드포인트가 없으면 저장소가 /message로 폴백)
+            // 실시간 턴이 있으면 말 끝만 알리고, 없거나 서버가 처리 전에 실패하면 WAV를 /message-stream으로 보낸다
+            // (스트리밍 엔드포인트도 없으면 저장소가 /message로 폴백)
             TurnLatencyTracker.onRequestStart(TurnLatencyTracker.KIND_MESSAGE)
-            val result = repository.sendMessageStreaming(audioPart)
+            val result = if (live != null) {
+                repository.finishLiveMessage(live, audioPart)
+            } else {
+                repository.sendMessageStreaming(audioPart)
+            }
 
             // PROCESSING 타이머 중지
             stopProcessingTimer()
@@ -932,6 +958,7 @@ class ConversationViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        cancelLiveSession()
         audioPlayerManager.release()
         audioRecordManager.release()
         stopProcessingTimer()
@@ -955,7 +982,14 @@ class ConversationViewModel(
     fun stopRecording() {
         Log.d(TAG, "stopRecording()")
         audioRecordManager.stop()
+        // 녹음을 멈추면 진행 중이던 발화는 전송되지 않으므로 실시간 턴도 버린다
+        cancelLiveSession()
         _uiState.update { it.copy(isSpeechDetected = false) }
+    }
+
+    private fun cancelLiveSession() {
+        liveSession?.cancel()
+        liveSession = null
     }
 
     // ═══════════════════════════════════════════════════════════════════
