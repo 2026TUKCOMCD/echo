@@ -623,7 +623,8 @@ class ConversationViewModel(
             when (result) {
                 is ApiResult.Success -> {
                     val reply = result.data
-                    val userMessage = createUserMessage(reply.userMessage ?: "")
+                    // 인식된 말이 없으면(기침·TV 소리 등) 서버도 사용자 발화를 기록하지 않으므로 말풍선을 만들지 않는다
+                    val userMessage = reply.userMessage?.takeIf { it.isNotBlank() }?.let { createUserMessage(it) }
                     val aiMessage = createAiMessage(reply.aiResponse ?: "")
 
                     // 발화 인식 성공 → 실패 카운트 초기화
@@ -634,12 +635,12 @@ class ConversationViewModel(
                     _uiState.update { currentState ->
                         currentState.copy(
                             playbackStatus = PlaybackStatus.PREPARING,
-                            messages = currentState.messages + userMessage + aiMessage
+                            messages = currentState.messages + listOfNotNull(userMessage) + aiMessage
                         )
                     }
 
                     // 사용자 메시지는 바로 Room DB 저장, AI 응답은 재생이 끝날 때 저장 (스트리밍은 조각이 다 모여야 완성)
-                    saveMessageToDb(userMessage)
+                    userMessage?.let { saveMessageToDb(it) }
                     beginAiMessage(aiMessage)
 
                     // AI 응답 음성 재생 (재생 전 녹음 중지 포함)

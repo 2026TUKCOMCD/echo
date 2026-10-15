@@ -555,6 +555,27 @@ class ConversationViewModelTest {
         }
 
     @Test
+    fun `인식된 말이 없는 응답이면 빈 사용자 말풍선을 만들거나 저장하지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            advanceUntilIdle()
+            val userSaves = mutableListOf<MessageEntity>()
+            coEvery { mockMessageDao.insertMessage(any()) } answers {
+                firstArg<MessageEntity>().takeIf { it.role == MessageEntity.ROLE_USER }?.let { userSaves += it }
+            }
+            // 서버는 STT가 비면(기침·TV 소리 등) 사용자 발화 없이 고정 안내 문구로 답한다
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns ApiResult.Success(
+                MessageReply.Streaming("", "죄송해요, 잘 못 들었어요. 다시 한 번 말씀해 주시겠어요?", restFrames(audio(1), end()))
+            )
+
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.messages.none { it.isFromUser })
+            assertTrue(userSaves.isEmpty())
+        }
+
+    @Test
     fun `재생 도중 대화를 종료하면 그때까지 받은 AI 응답을 저장한다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
