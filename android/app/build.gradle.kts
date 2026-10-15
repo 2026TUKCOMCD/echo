@@ -133,6 +133,9 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.okhttp.mockwebserver)
+    // 화면 전환(Navigation Compose) 타이밍 문제를 Robolectric에서 재현하는 Compose UI 테스트
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     // Room 마이그레이션 테스트에서 ApplicationProvider(Context) 제공
     testImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.junit)
