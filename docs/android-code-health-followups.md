@@ -47,7 +47,7 @@
   - 말로 한 대답("응, 그만할게")은 대화 기록에 남음. 말로 대답해도 반응이 없게 하는 B는 필요하면 A 위에 추가
 - 테스트: `ConversationViewModelTest` 3개 (재현 2개는 수정 전 실패 확인)
 
-#### H2. 뒤로가기 연타·대화 종료 직후 back → 두 단계 pop, 탭바 없는 빈 화면 🔎
+#### H2. 뒤로가기 연타·대화 종료 직후 back → 두 단계 pop, 탭바 없는 빈 화면 → 처리함 (PR #476)
 - 위치: `MainActivity`의 `onBack = { navController.popBackStack() }`(일기 상세·대화 상세),
   `ConversationScreen`의 Ended 2초 뒤 `onBack()`
 - 추정 원인: NavHost 기본 전환(700ms 페이드) 동안 나가는 화면이 남아 터치·effect가 살아 있어 한 번 더 pop
@@ -55,16 +55,21 @@
 - 시나리오: 일기 상세에서 ←를 두 번 → 일기 탭까지 닫힘 / 대화 종료 후 1.3~2초 사이 back → HOME까지 pop
 - 제안: `dropUnlessResumed { navController.popBackStack() }` 또는 entry가 RESUMED일 때만 pop
 - 확인: 실기기(또는 Compose UI 테스트) 필요
+- **처리(#476)**: Robolectric Compose UI 테스트로 재현됨(← 연타 → 홈까지, 종료 직후 back → 백스택이 비어 빈 화면).
+  ← 버튼은 `dropUnlessResumed`로 전환 중 호출을 버리고, 대화 화면의 2초 자동 복귀는 `lifecycle.withResumed`로
+  화면이 보일 때까지 기다렸다 실행(drop으로 하면 2초 안에 홈으로 나갔다 오면 작별 화면에 갇힘)
 
-#### H3. 로그아웃 후 재부팅·앱 업데이트 시 위치 수집 재개 ✅ (상의 필요: 위치 수집)
+#### H3. 로그아웃 후 재부팅·앱 업데이트 시 위치 수집 재개 ✅ (상의 필요: 위치 수집) → 처리함 (결정: A 로그인 여부 확인, PR #477)
 - 위치: `BootReceiver.scheduleLocationCollection()`(로그인 여부 확인 없이 `enableLocationCollection`),
   `MorningAlarmReceiver`도 로그인 확인 없음
 - 시나리오: 로그아웃(`disableLocationCollection`으로 수집·아침 알람 중지) → 재부팅 → 백그라운드 정밀 GPS 수집 재개,
   아침 알람도 매일 다시 예약
 - 제안: 두 receiver에서 로그인 여부(토큰) 또는 "수집 활성" 플래그 확인
 - 테스트: Robolectric 가능 (토큰 없이 BOOT_COMPLETED → `enableLocationCollection` 미호출)
+- **처리(#477)**: `LocationScheduler.isLoggedIn`(토큰 존재)을 두고 `BootReceiver`·`MorningAlarmReceiver`가 로그아웃 상태면
+  위치 수집·아침 알람(·안내 알림)을 건너뜀. 로그인한 사용자 동작은 그대로
 
-#### H4. Android 9~13(API 28~33)에서 Health Connect 권한을 줄 수 없음 ✅(코드)
+#### H4. Android 9~13(API 28~33)에서 Health Connect 권한을 줄 수 없음 ✅(코드) → 처리함 (PR #478)
 - 위치: `UnifiedPermissionHandler`의 `healthConnectLauncher = RequestMultiplePermissions()`
   - 건강 권한은 API 34부터 플랫폼 권한이라 33 이하에서는 화면 없이 바로 거부됨
   - manifest에 API 33 이하 Health Connect 앱용 권한 이유 화면(`androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE`)이 없음
@@ -73,13 +78,17 @@
 - 제안: `PermissionController.createRequestPermissionResultContract()`로 교체 + manifest activity-alias 추가
   (올바른 contract 코드는 지금 쓰이지 않는 `HealthConnectPermissionHandler`에 있음)
 - 확인: Android 13 이하 + Health Connect 앱 설치 기기 필요
+- **처리(#478)**: 공식 문서 방식으로 교체 - `PermissionController.createRequestPermissionResultContract()` +
+  manifest에 13 이하용 `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` alias. Android 13 이하 실기기·에뮬레이터 확인은 남음
 
-#### H5. 디버그 HTTP 로그에 대화·건강·위치·일기·개인정보 본문이 남음 ✅ (팀 방침)
+#### H5. 디버그 HTTP 로그에 대화·건강·위치·일기·개인정보 본문이 남음 ✅ (팀 방침) → 처리함 (결정: C, 이 PR)
 - 이번 PR에서는 `/api/auth/`(비밀번호·토큰)만 본문 로깅에서 뺌
 - 여전히 본문 기록: `/message`·`/tts-retry`(전사·AI 답변), `/start`(건강·위치), `/api/diaries`(일기 본문),
   `/api/users/me/preferences`(생일·주소·집 좌표)
 - 실기기에 prodDebug APK를 설치해 쓰므로 logcat(adb·버그 리포트)에 남음
-- 결정 필요: 전부 HEADERS로 낮출지 / 경로별로 뺄지 / 현행 유지
+- 검토한 선택지: A. 개인정보 경로만 헤더까지 / B. 전부 헤더까지 / C. 기본 헤더까지 + 필요할 때 본문 로깅 켜기 / D. 현행 유지
+- **처리(C)**: 디버그 로그는 기본적으로 모든 요청을 헤더까지만 남기고, 응답 내용을 봐야 할 때만 개발자 PC에서
+  `-Pecho.logHttpBody=true`(→ `BuildConfig.LOG_HTTP_BODY`)로 빌드해 본문까지 남김. 켜도 인증 본문은 남기지 않음
 
 ### 중간
 
