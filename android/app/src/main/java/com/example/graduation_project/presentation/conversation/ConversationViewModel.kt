@@ -184,12 +184,16 @@ class ConversationViewModel(
                 val currentState = _uiState.value.conversationState
                 if (currentState !is ConversationState.Recording) {
                     Log.d(TAG, "AudioRecordListener.onRecordingComplete() - 무시됨 (현재 상태: $currentState)")
+                    audioRecordManager.deleteLastAudioFile()
                     cancelLiveSession()
                     return
                 }
                 Log.d(TAG, "AudioRecordListener.onRecordingComplete() - 파일: ${audioFile.path}")
                 _uiState.update { it.copy(isSpeechDetected = false) }
-                sendMessage(audioFile.readBytes())
+                val wavData = audioFile.readBytes()
+                // 보낼 소리는 메모리로 읽었으므로 녹음 파일은 바로 지운다 (어르신 음성을 기기에 남기지 않도록)
+                audioRecordManager.deleteLastAudioFile()
+                sendMessage(wavData)
             }
 
             override fun onError(exception: AudioRecordException) {
@@ -989,6 +993,8 @@ class ConversationViewModel(
         cancelLiveSession()
         audioPlayerManager.release()
         audioRecordManager.release()
+        // 전송하지 않은 발화(대기 중 잡힌 소리 등)의 녹음 파일도 남기지 않는다
+        audioRecordManager.clearAudioFiles()
         stopProcessingTimer()
     }
 

@@ -67,6 +67,7 @@ import org.junit.Test
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import java.io.ByteArrayInputStream
+import java.io.File
 
 /**
  * ConversationViewModel 단위 테스트
@@ -789,6 +790,24 @@ class ConversationViewModelTest {
             viewModel.onAppForegrounded()
             advanceUntilIdle()
             assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+        }
+
+    @Test
+    fun `보낼 녹음을 메모리로 읽은 뒤 녹음 파일을 바로 지운다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            every { mockRepository.openLiveMessage() } returns null
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Buffered("안녕", "반가워요.", "dummy-audio"))
+            val recording = File.createTempFile("echo_voice_", ".wav").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+
+            audioRecordListenerSlot.captured.onRecordingStart()  // Listening → Recording
+            audioRecordListenerSlot.captured.onRecordingComplete(recording)
+            advanceUntilIdle()
+
+            verify { mockAudioRecordManager.deleteLastAudioFile() }
+            coVerify(exactly = 1) { mockRepository.sendMessageStreaming(any()) }
+            recording.delete()
         }
 
     @Test
