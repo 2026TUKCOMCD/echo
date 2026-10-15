@@ -340,6 +340,89 @@ class ConversationViewModelTest {
             assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
         }
 
+    // ===== 응답 대기 중 대화 종료(종료 예약) 테스트 =====
+
+    @Test
+    fun `응답을 기다리는 중 마치기를 누르면 응답이 오는 대로 재생 없이 대화를 끝낸다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            advanceUntilIdle()
+            val saved = assistantSaves()
+            val source = spyk(ByteArrayInputStream(audio(1, 2, 3) + end()))
+            // 종료 다이얼로그에 소리 내어 답한 말("응, 그만할게")이 메시지로 전송되어 응답을 기다리는 중
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
+                delay(1_000)
+                ApiResult.Success(MessageReply.Streaming("응, 그만할게", "네, 오늘 즐거웠어요.", AudioFrameInputStream(source)))
+            }
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+            viewModel.sendMessage(ByteArray(0))
+            runCurrent()
+            clearRecordedCalls(mockAudioRecordManager)
+
+            // when: 응답이 오기 전에 "마치기"
+            viewModel.onFarewellButtonClicked()
+            viewModel.onFarewellConfirmed()
+            runCurrent()
+
+            // then: 바로 녹음을 멈추고 응답을 기다림 (종료 요청은 아직)
+            verify { mockAudioRecordManager.stop() }
+            coVerify(exactly = 0) { mockRepository.endConversation() }
+
+            // then: 응답이 오면 재생하지 않고 받은 만큼 저장한 뒤 대화 종료
+            advanceUntilIdle()
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+            verify(exactly = 0) { mockAudioPlayerManager.playStream(any()) }
+            coVerify(exactly = 1) { mockRepository.endConversation() }
+            assertEquals(listOf("네, 오늘 즐거웠어요."), saved.map { it.content })
+            verify(timeout = 2_000) { source.close() }
+        }
+
+    @Test
+    fun `응답을 기다리는 중 마치기를 눌렀는데 메시지가 실패해도 대화를 끝낸다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
+                delay(1_000)
+                ApiResult.Error(ApiException.NetworkError())
+            }
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+            viewModel.sendMessage(ByteArray(0))
+            runCurrent()
+
+            viewModel.onFarewellConfirmed()
+            advanceUntilIdle()
+
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+            coVerify(exactly = 1) { mockRepository.endConversation() }
+        }
+
+    @Test
+    fun `종료 요청 중에 다시 누른 종료는 예약으로 남지 않아 다음 응답은 그대로 재생된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            coEvery { mockRepository.endConversation() } coAnswers {
+                delay(1_000)
+                ApiResult.Error(ApiException.NetworkError())
+            }
+            // given: 종료 요청 진행 중 한 번 더 누름 → 종료 실패로 대화 계속
+            viewModel.endConversation()
+            runCurrent()
+            viewModel.endConversation()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+
+            // when: 이어서 대화
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Buffered("안녕", "반가워요.", "dummy-audio"))
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            // then: 남은 예약 때문에 끝나지 않고 평소처럼 재생
+            verify { mockAudioPlayerManager.play("dummy-audio") }
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+            coVerify(exactly = 1) { mockRepository.endConversation() }
+        }
+
     // ===== 재생 완료 후 발화 대기 전환(여백) 테스트 =====
 
     @Test
