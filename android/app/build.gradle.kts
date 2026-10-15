@@ -20,6 +20,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 디버그 HTTP 로그에 요청·응답 본문까지 남길지 (기본 꺼짐 - 본문에 대화 전사·건강·위치·일기·개인정보가 있음)
+        // 응답 내용을 봐야 할 때만 개발자 PC에서 켠다: ./gradlew installLocalDebug -Pecho.logHttpBody=true
+        buildConfigField(
+            "boolean", "LOG_HTTP_BODY",
+            (project.findProperty("echo.logHttpBody")?.toString()?.toBoolean() ?: false).toString()
+        )
     }
 
     flavorDimensions += "server"

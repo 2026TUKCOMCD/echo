@@ -31,16 +31,21 @@ object ApiClient {
         ConversationApi.MESSAGE_LIVE_PATH
     )
 
-    // 인증 요청·응답 본문에는 비밀번호와 토큰이 들어 있어 헤더까지만 남긴다
+    // 인증 요청·응답 본문에는 비밀번호와 토큰이 들어 있어 본문 로깅을 켜도 헤더까지만 남긴다
     // (Authorization 헤더를 redactHeader로 가린 것과 같은 이유)
     private const val AUTH_PATH_PREFIX = "/api/auth/"
 
     private val loggingInterceptor = createLoggingInterceptor()
 
-    /** 디버그 빌드의 HTTP 로그 - 경로에 따라 스트리밍은 건너뛰고, 인증은 헤더까지만, 그 외는 본문까지 남긴다 */
+    /**
+     * 디버그 빌드의 HTTP 로그 - 스트리밍은 건너뛰고, 그 외는 기본적으로 헤더까지만 남긴다.
+     * 본문에는 대화 전사·건강·위치·일기·개인정보가 있어서, 응답 내용을 봐야 할 때만 개발자 PC에서
+     * `-Pecho.logHttpBody=true`로 빌드해 본문까지 남긴다 (인증 경로는 켜도 헤더까지만).
+     */
     internal fun createLoggingInterceptor(
         logger: HttpLoggingInterceptor.Logger = HttpLoggingInterceptor.Logger.DEFAULT,
-        debug: Boolean = BuildConfig.DEBUG
+        debug: Boolean = BuildConfig.DEBUG,
+        logBody: Boolean = BuildConfig.LOG_HTTP_BODY
     ): Interceptor {
         fun httpLogging(debugLevel: HttpLoggingInterceptor.Level) = HttpLoggingInterceptor(logger).apply {
             level = if (debug) debugLevel else HttpLoggingInterceptor.Level.NONE
@@ -53,8 +58,8 @@ object ApiClient {
             val path = chain.request().url.encodedPath
             when {
                 path in streamingPaths -> chain.proceed(chain.request())
-                path.startsWith(AUTH_PATH_PREFIX) -> headersLogging.intercept(chain)
-                else -> bodyLogging.intercept(chain)
+                logBody && !path.startsWith(AUTH_PATH_PREFIX) -> bodyLogging.intercept(chain)
+                else -> headersLogging.intercept(chain)
             }
         }
     }

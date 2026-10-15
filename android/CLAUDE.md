@@ -32,6 +32,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 # 앱 설치
 ./gradlew installLocalDebug   # 로컬 서버 (USB 연결 + adb reverse tcp:8080 tcp:8080)
 ./gradlew installProdDebug    # 운영 서버
+
+# 디버그 HTTP 로그에 요청·응답 본문까지 남기기 (기본은 헤더까지만 - 본문에 개인정보가 있음, 인증 본문은 켜도 제외)
+./gradlew installLocalDebug -Pecho.logHttpBody=true
 ```
 
 ## 기술 스택
@@ -102,7 +105,7 @@ POST /api/conversations/tts-retry      # TTS 재시도 → 음성 재생성
 
 - 프레임 규격·실패 규칙은 `docs/API.md`(1-1, 2-1, 2-2절)와 `ConversationStreamProtocol` 참고
 - 스트리밍 엔드포인트가 **404/405일 때만** 비스트리밍 엔드포인트로 폴백한다 (`ConversationRepository`). 그 외 실패에서 다시 보내면 서버 히스토리가 중복된다
-- **스트리밍 엔드포인트를 추가하면 `ApiClient.streamingPaths`에도 넣어야 한다** — 디버그 빌드의 BODY 로깅이 응답을 끝까지 버퍼링해 스트리밍을 무력화함
+- **스트리밍 엔드포인트를 추가하면 `ApiClient.streamingPaths`에도 넣어야 한다** — 본문 로깅(`-Pecho.logHttpBody=true`)이 응답을 끝까지 버퍼링해 스트리밍을 무력화함
 
 ### HealthData 요청 필드 (대화 시작 시)
 
