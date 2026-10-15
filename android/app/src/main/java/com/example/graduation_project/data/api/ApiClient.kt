@@ -22,12 +22,6 @@ object ApiClient {
         encodeDefaults = true
     }
 
-    private val httpLoggingInterceptor = HttpLoggingInterceptor().apply {
-        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
-        else HttpLoggingInterceptor.Level.NONE
-        redactHeader("Authorization")
-    }
-
     // BODY 레벨 로깅은 응답 본문을 끝까지 읽어 버퍼링한 뒤에 넘겨주므로 스트리밍 응답을 무력화한다
     // (디버그 빌드에서 첫 소리가 전체 합성 완료 후에야 나옴). 스트리밍 요청은 로깅을 건너뛴다.
     // 스트리밍 엔드포인트를 추가하면 반드시 이 목록에도 넣어야 한다.
@@ -37,11 +31,31 @@ object ApiClient {
         ConversationApi.MESSAGE_LIVE_PATH
     )
 
-    private val loggingInterceptor = Interceptor { chain ->
-        if (chain.request().url.encodedPath in streamingPaths) {
-            chain.proceed(chain.request())
-        } else {
-            httpLoggingInterceptor.intercept(chain)
+    // 인증 요청·응답 본문에는 비밀번호와 토큰이 들어 있어 헤더까지만 남긴다
+    // (Authorization 헤더를 redactHeader로 가린 것과 같은 이유)
+    private const val AUTH_PATH_PREFIX = "/api/auth/"
+
+    private val loggingInterceptor = createLoggingInterceptor()
+
+    /** 디버그 빌드의 HTTP 로그 - 경로에 따라 스트리밍은 건너뛰고, 인증은 헤더까지만, 그 외는 본문까지 남긴다 */
+    internal fun createLoggingInterceptor(
+        logger: HttpLoggingInterceptor.Logger = HttpLoggingInterceptor.Logger.DEFAULT,
+        debug: Boolean = BuildConfig.DEBUG
+    ): Interceptor {
+        fun httpLogging(debugLevel: HttpLoggingInterceptor.Level) = HttpLoggingInterceptor(logger).apply {
+            level = if (debug) debugLevel else HttpLoggingInterceptor.Level.NONE
+            redactHeader("Authorization")
+        }
+        val bodyLogging = httpLogging(HttpLoggingInterceptor.Level.BODY)
+        val headersLogging = httpLogging(HttpLoggingInterceptor.Level.HEADERS)
+
+        return Interceptor { chain ->
+            val path = chain.request().url.encodedPath
+            when {
+                path in streamingPaths -> chain.proceed(chain.request())
+                path.startsWith(AUTH_PATH_PREFIX) -> headersLogging.intercept(chain)
+                else -> bodyLogging.intercept(chain)
+            }
         }
     }
 
