@@ -6,6 +6,7 @@ import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.api.AudioFrameInputStream
+import com.example.graduation_project.data.api.LiveMessageSession
 import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.audio
 import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.end
 import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.text
@@ -29,6 +30,7 @@ import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.presentation.model.ConversationState
 import io.mockk.CapturingSlot
 import io.mockk.Runs
+import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -37,6 +39,7 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.slot
+import io.mockk.spyk
 import io.mockk.unmockkObject
 import io.mockk.unmockkStatic
 import io.mockk.verify
@@ -51,6 +54,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -620,7 +624,156 @@ class ConversationViewModelTest {
             assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
         }
 
+    @Test
+    fun `재생 완료 직후 여백 동안 백그라운드로 가면 마이크는 복귀할 때 켠다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            coEvery { mockRepository.startConversationStreaming(any(), any()) } returns
+                ApiResult.Success(MessageReply.Buffered(null, "안녕하세요", "dummy-audio"))
+            viewModel.startConversation()
+            advanceUntilIdle()
+            clearRecordedCalls(mockAudioRecordManager)
+
+            // when: 재생이 끝나 Listening 전환 여백(800ms)이 예약된 직후 홈으로 나감
+            audioPlayListenerSlot.captured.onPlaybackComplete()
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
+
+            // then: 백그라운드에서는 마이크를 켜지 않고, 복귀하면 발화 대기로 재개
+            verify(exactly = 0) { mockAudioRecordManager.start() }
+            viewModel.onAppForegrounded()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+            verify(exactly = 1) { mockAudioRecordManager.start() }
+        }
+
+    @Test
+    fun `응답을 기다리는 동안 백그라운드로 가면 도착한 응답을 재생하지 않고 복귀 시 발화 대기로 재개한다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            advanceUntilIdle()
+            val saved = assistantSaves()
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
+                delay(1_000)
+                ApiResult.Success(MessageReply.Buffered("오늘 산책했어요", "산책하셨군요!", "dummy-audio"))
+            }
+            viewModel.sendMessage(ByteArray(0))
+            runCurrent()  // Sending, 응답 대기 중
+            clearRecordedCalls(mockAudioRecordManager)
+
+            // when: 응답이 오기 전에 홈으로 나감 → 백그라운드에서 응답 도착
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
+
+            // then: 소리를 내지 않고 받은 말풍선만 저장
+            verify(exactly = 0) { mockAudioPlayerManager.play(any()) }
+            verify(exactly = 0) { mockAudioRecordManager.start() }
+            assertEquals(listOf("산책하셨군요!"), saved.map { it.content })
+
+            viewModel.onAppForegrounded()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+            verify(exactly = 1) { mockAudioRecordManager.start() }
+        }
+
+    @Test
+    fun `백그라운드에서 도착한 스트리밍 응답은 재생하지 않고 응답 스트림을 닫는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            val source = spyk(ByteArrayInputStream(audio(1, 2, 3) + end()))
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
+                delay(1_000)
+                ApiResult.Success(MessageReply.Streaming("안녕", "반가워요.", AudioFrameInputStream(source)))
+            }
+            viewModel.sendMessage(ByteArray(0))
+            runCurrent()
+
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
+
+            verify(exactly = 0) { mockAudioPlayerManager.playStream(any()) }
+            verify(timeout = 2_000) { source.close() }
+        }
+
+    @Test
+    fun `TTS 재요청 중 대화를 종료하면 재요청 결과가 마이크를 되살리지 않고 Ended가 된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupPlayingAfterMessage()
+            coEvery { mockRepository.retryTts() } coAnswers {
+                delay(1_000)
+                ApiResult.Error(ApiException.NetworkError())
+            }
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+
+            // given: 재생 실패 → 서버 TTS 재요청 진행 중
+            audioPlayListenerSlot.captured.onError(
+                AudioPlayException.PlaybackError(message = "재생 실패"),
+                isFallbackNeeded = true
+            )
+            runCurrent()
+            clearRecordedCalls(mockAudioRecordManager)
+
+            // when: 재요청 결과가 오기 전에 대화 종료
+            viewModel.endConversation()
+            advanceUntilIdle()
+
+            // then: 실패한 재요청이 텍스트 폴백(Listening + 녹음 시작)으로 종료를 덮어쓰면 안 됨
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+            verify(exactly = 0) { mockAudioRecordManager.start() }
+        }
+
+    @Test
+    fun `TTS 재요청 중 백그라운드로 가면 재요청한 음성을 재생하지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupPlayingAfterMessage()
+            coEvery { mockRepository.retryTts() } coAnswers {
+                delay(1_000)
+                ApiResult.Success(TtsRetryResponse(aiResponse = "반가워요.", audioData = "retry-audio"))
+            }
+            audioPlayListenerSlot.captured.onError(
+                AudioPlayException.PlaybackError(message = "재생 실패"),
+                isFallbackNeeded = true
+            )
+            runCurrent()
+
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
+
+            verify(exactly = 0) { mockAudioPlayerManager.play("retry-audio") }
+            viewModel.onAppForegrounded()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+        }
+
+    @Test
+    fun `말하는 중 대화를 종료하면 열어 둔 실시간 전송 턴도 닫는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            val live = mockk<LiveMessageSession>(relaxed = true)
+            every { mockRepository.openLiveMessage() } returns live
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+            audioRecordListenerSlot.captured.onRecordingStart()  // Listening → Recording, 실시간 턴 열림
+
+            viewModel.endConversation()
+            advanceUntilIdle()
+
+            verify { live.cancel() }
+        }
+
     // ===== 헬퍼 =====
+
+    /** 스텁은 두고 지금까지의 호출 기록만 지운다 (이후의 호출만 검증하기 위함) */
+    private fun clearRecordedCalls(mock: Any) =
+        clearMocks(mock, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true, exclusionRules = false)
+
+    /** 사용자 발화를 보내 AI 응답(Base64 오디오)을 재생 중인 상태로 설정 */
+    private fun TestScope.setupPlayingAfterMessage() {
+        setupListeningState()
+        coEvery { mockRepository.sendMessageStreaming(any()) } returns
+            ApiResult.Success(MessageReply.Buffered("안녕", "반가워요.", "dummy-audio"))
+        viewModel.sendMessage(ByteArray(0))
+        advanceUntilIdle()
+        assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+    }
 
     /**
      * sendMessage/endConversation 테스트를 위해 Listening 상태로 설정

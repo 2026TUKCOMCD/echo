@@ -40,6 +40,7 @@ import com.example.graduation_project.presentation.model.MessageUiModel
 import com.example.graduation_project.presentation.model.PlaybackStatus
 import com.example.graduation_project.presentation.model.SpeechErrorType
 import com.example.graduation_project.util.TurnLatencyTracker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -118,12 +119,18 @@ class ConversationViewModel(
     // 서버 TTS 재요청 진행 중 여부 (무한 루프 방지)
     private var isServerRetryInProgress = false
 
+    // 서버 TTS 재요청 - 대화 종료/백그라운드 전환 시 취소 (뒤늦은 결과가 재생·녹음을 되살리지 않도록)
+    private var ttsRetryJob: Job? = null
+
     // 녹음 오류 자동 복구 시도 횟수 (연속 실패 시 무한 재시도 방지)
     private var recorderRecoveryAttempts = 0
     private val MAX_RECORDER_RECOVERY_ATTEMPTS = 3
 
     // 백그라운드 전환으로 오디오를 중지했는지 여부 (복귀 시 재개 판단용)
     private var wasAudioStoppedForBackground = false
+
+    // 앱이 백그라운드에 있는지 (화면 회전 제외) - 그 사이 도착한 응답은 재생하지 않는다
+    private var isInBackground = false
 
     // [TEST ONLY] true로 설정하면 음성 재생 시 강제로 DecodeError 발생 → 서버 TTS 재요청 흐름 테스트
     private val forceDecodeErrorForTest = false
@@ -286,9 +293,10 @@ class ConversationViewModel(
                 // LISTENING 전환 + 다음 발화 대기 시작은 자연스러운 턴 전환 여백을 두고 진행.
                 // 그 사이 endConversation() 등으로 상태가 바뀌었으면(더 이상 Playing이 아니면)
                 // 건너뛴다 - 종료 중인데 뒤늦게 LISTENING으로 되돌리고 마이크를 켜면 안 되므로.
+                // 백그라운드로 갔으면 마이크는 복귀할 때(onAppForegrounded) 켠다.
                 viewModelScope.launch {
                     delay(LISTENING_TRANSITION_DELAY_MS)
-                    if (_uiState.value.conversationState is ConversationState.Playing) {
+                    if (_uiState.value.conversationState is ConversationState.Playing && !isInBackground) {
                         transitionTo(ConversationState.Listening)
                         startRecording()
                     }
@@ -345,6 +353,40 @@ class ConversationViewModel(
     }
 
     /**
+     * 받은 AI 응답을 재생합니다 (Playing 전환과 [beginAiMessage] 뒤에 호출).
+     * 응답을 기다리는 동안 앱이 백그라운드로 갔으면 재생하지 않고 재생 중 백그라운드로 간 것과 같이 처리합니다
+     * - 받은 만큼 저장하고, 복귀 시 [onAppForegrounded]가 발화 대기로 재개합니다.
+     */
+    private fun playReply(reply: MessageReply, aiMessageId: String) {
+        if (isInBackground) {
+            // 녹음 중지 과정의 onError가 자동 복구를 트리거하지 않도록 플래그를 먼저 설정
+            wasAudioStoppedForBackground = true
+            stopRecording()
+            if (reply is MessageReply.Streaming) {
+                // 응답 본문(네트워크) 닫기는 메인 스레드 밖에서
+                viewModelScope.launch(Dispatchers.IO) { runCatching { reply.audio.close() } }
+            }
+            savePendingAiMessage()
+            _uiState.update { it.copy(playbackStatus = PlaybackStatus.NONE) }
+            return
+        }
+        when {
+            reply is MessageReply.Streaming -> playAiAudioStream(reply.audio, aiMessageId)
+            reply is MessageReply.Buffered && reply.audioData != null ->
+                playAiAudio(reply.audioData)
+            else -> {
+                // audioData가 없으면 바로 저장 + LISTENING으로 전환 + 녹음 시작
+                savePendingAiMessage()
+                transitionTo(ConversationState.Listening)
+                _uiState.update {
+                    it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
+                }
+                startRecording()
+            }
+        }
+    }
+
+    /**
      * 화면에 추가한 AI 말풍선을 재생이 끝날 때 저장하도록 표시해 둡니다.
      * (Room 저장은 [savePendingAiMessage] - 스트리밍 응답은 조각이 다 모여야 전체 문장이 되므로)
      */
@@ -394,7 +436,7 @@ class ConversationViewModel(
                 retryProgress = "음성을 다시 불러오는 중..."
             )
         }
-        viewModelScope.launch {
+        ttsRetryJob = viewModelScope.launch {
             when (val result = repository.retryTts()) {
                 is ApiResult.Success -> {
                     // 스트리밍이 중간에 끊겼으면 말풍선에 받은 조각까지만 있으므로 전체 문장으로 채운다
@@ -417,6 +459,12 @@ class ConversationViewModel(
                 }
             }
         }
+    }
+
+    private fun cancelTtsRetry() {
+        ttsRetryJob?.cancel()
+        ttsRetryJob = null
+        isServerRetryInProgress = false
     }
 
     /**
@@ -509,20 +557,7 @@ class ConversationViewModel(
 
                     // AI 응답 음성 재생 (재생 전 녹음 중지 포함). 인사 메시지는 재생이 끝날 때 Room에 저장
                     beginAiMessage(aiMessage)
-                    when {
-                        reply is MessageReply.Streaming -> playAiAudioStream(reply.audio, aiMessage.id)
-                        reply is MessageReply.Buffered && reply.audioData != null ->
-                            playAiAudio(reply.audioData)
-                        else -> {
-                            // audioData가 없으면 바로 저장 + LISTENING으로 전환 + 녹음 시작
-                            savePendingAiMessage()
-                            transitionTo(ConversationState.Listening)
-                            _uiState.update {
-                                it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
-                            }
-                            startRecording()
-                        }
-                    }
+                    playReply(reply, aiMessage.id)
                 }
 
                 is ApiResult.Error -> {
@@ -608,20 +643,7 @@ class ConversationViewModel(
                     beginAiMessage(aiMessage)
 
                     // AI 응답 음성 재생 (재생 전 녹음 중지 포함)
-                    when {
-                        reply is MessageReply.Streaming -> playAiAudioStream(reply.audio, aiMessage.id)
-                        reply is MessageReply.Buffered && reply.audioData != null ->
-                            playAiAudio(reply.audioData)
-                        else -> {
-                            // audioData가 없으면 바로 저장 + LISTENING으로 전환 + 녹음 시작
-                            savePendingAiMessage()
-                            transitionTo(ConversationState.Listening)
-                            _uiState.update {
-                                it.copy(playbackStatus = PlaybackStatus.NONE, isSpeechDetected = false)
-                            }
-                            startRecording()
-                        }
-                    }
+                    playReply(reply, aiMessage.id)
                 }
 
                 is ApiResult.Error -> {
@@ -674,8 +696,9 @@ class ConversationViewModel(
             if (!transitionTo(ConversationState.Sending)) return@launch
 
             // 사용자가 종료를 확정했으므로 재생/녹음을 즉시 중지 (재생 중 종료 포함)
+            cancelTtsRetry()
             audioPlayerManager.stop()
-            audioRecordManager.stop()
+            stopRecording()
             // 재생 도중 종료했으면 그때까지 받은 AI 응답을 저장 (conversationId가 지워지기 전에)
             savePendingAiMessage()
 
@@ -786,6 +809,7 @@ class ConversationViewModel(
      * - TTS 재생 즉시 중지 (백그라운드에서 소리가 계속 나는 것 방지)
      */
     fun onAppBackgrounded() {
+        isInBackground = true
         val state = _uiState.value.conversationState
         if (state !is ConversationState.Playing &&
             state !is ConversationState.Listening &&
@@ -797,6 +821,7 @@ class ConversationViewModel(
         Log.d(TAG, "onAppBackgrounded() - 오디오 중지 (현재 상태: $state)")
         // stop() 과정에서 발생하는 onError가 자동 복구를 트리거하지 않도록 플래그를 먼저 설정
         wasAudioStoppedForBackground = true
+        cancelTtsRetry()
         audioPlayerManager.stop()
         stopRecording()
 
@@ -813,6 +838,7 @@ class ConversationViewModel(
      * - 재생 중이던 TTS는 이미 중단되었으므로 Listening으로 전환 후 재개
      */
     fun onAppForegrounded() {
+        isInBackground = false
         if (!wasAudioStoppedForBackground) return
         wasAudioStoppedForBackground = false
 
