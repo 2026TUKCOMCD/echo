@@ -27,6 +27,7 @@
 - [ ] 앱을 켜 둔 채 **자정을 넘겨** 다시 열기 → 홈 날짜가 오늘인지
 - [ ] Health Connect에서 **심박수만 끄고** 대화 시작 → 서버 로그에 수면·걸음 값이 오는지
 - [ ] 기침·TV 소리로 "잘 못 들었어요" 턴이 생긴 뒤 대화 상세에 **빈 말풍선**이 없는지
+- [ ] (H1) 종료 다이얼로그에 **"응"이라고 말한 뒤 "마치기"** → 몇 초 "처리 중..." 뒤 작별 화면으로 끝나는지 (AI 대답은 재생되지 않음)
 
 ---
 
@@ -34,16 +35,17 @@
 
 ### 높음
 
-#### H1. 종료 다이얼로그를 띄운 채 말하면 "마치기"가 무시됨 ✅
+#### H1. 종료 다이얼로그를 띄운 채 말하면 "마치기"가 무시됨 ✅ → 처리함 (결정: A 종료 예약)
 - 위치: `ConversationViewModel.endConversation()`(Sending이면 `transitionTo` 실패로 return), `onFarewellConfirmed()`,
   `ConversationScreen.BottomActionSection`(Sending이면 종료 버튼 비활성)
 - 시나리오: "대화를 마치시겠어요?"에 소리 내어 "응, 그만할게"라고 답함 → VAD가 발화로 보내 Sending
   → "마치기"를 눌러도 다이얼로그만 닫히고 대화가 계속됨 → `/end` 미호출(일기 미생성), 마이크·화면 켜진 채
-- 결정 필요 (택1):
-  - A. Sending 중 종료 요청을 기억했다가 응답이 오면 재생 없이 종료
-  - B. 다이얼로그가 열려 있는 동안 VAD 정지
-  - C. Sending 중에는 "마치기" 비활성 + 안내 문구
-- 테스트: JVM 가능 (응답 지연 중 `onFarewellConfirmed()` → `endConversation` 호출 검증)
+- 검토한 선택지: A. Sending 중 종료 요청을 기억했다가 응답이 오면 재생 없이 종료 / B. 다이얼로그가 열려 있는 동안 VAD 정지 /
+  C. Sending 중에는 "마치기" 비활성 + 안내 문구
+- **처리(A)**: 응답을 기다리는 중 "마치기"를 누르면 녹음을 바로 멈추고 종료를 예약 → 응답이 오면 재생하지 않고 받은 만큼 저장한 뒤 종료,
+  메시지가 실패해도 종료. 종료 요청 중 다시 누른 종료는 예약하지 않음 (`ConversationViewModel.endConversation()`·`playReply()`)
+  - 말로 한 대답("응, 그만할게")은 대화 기록에 남음. 말로 대답해도 반응이 없게 하는 B는 필요하면 A 위에 추가
+- 테스트: `ConversationViewModelTest` 3개 (재현 2개는 수정 전 실패 확인)
 
 #### H2. 뒤로가기 연타·대화 종료 직후 back → 두 단계 pop, 탭바 없는 빈 화면 🔎
 - 위치: `MainActivity`의 `onBack = { navController.popBackStack() }`(일기 상세·대화 상세),
