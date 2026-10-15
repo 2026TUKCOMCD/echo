@@ -236,6 +236,32 @@ class ConversationViewModelTest {
         }
 
     @Test
+    fun `시작 실패 직후 다시 시작하면 startFailed가 풀려 홈 복귀 예약이 취소된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            var calls = 0
+            coEvery { mockRepository.startConversationStreaming(any(), any()) } coAnswers {
+                if (calls++ == 0) {
+                    ApiResult.Error(ApiException.NetworkError())
+                } else {
+                    delay(1_000)
+                    ApiResult.Success(MessageReply.Buffered(null, "안녕하세요", "dummy-audio"))
+                }
+            }
+            viewModel.startConversation()
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.startFailed)
+
+            // when: 화면이 2초 뒤 홈으로 돌아가기 전에 "대화 시작"을 다시 누름
+            viewModel.startConversation()
+            runCurrent()
+
+            // then: 화면(LaunchedEffect(startFailed))의 홈 복귀가 취소되어야 다시 시도한 요청이 이어진다
+            assertFalse(viewModel.uiState.value.startFailed)
+            advanceUntilIdle()
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+        }
+
+    @Test
     fun `sendMessage 실패 시에는 startFailed가 true로 바뀌지 않는다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()

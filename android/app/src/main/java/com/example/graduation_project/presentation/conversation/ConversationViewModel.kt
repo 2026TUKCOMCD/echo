@@ -514,7 +514,8 @@ class ConversationViewModel(
             isServerRetryInProgress = false
             // Idle → Sending (이미 Sending이면 중복 요청으로 간주하고 차단)
             if (!transitionTo(ConversationState.Sending)) return@launch
-            _uiState.update { it.copy(errorMessage = null, currentError = null) }
+            // 직전 시작 실패로 예약된 홈 복귀(startFailed)도 취소 - 다시 시도하는 중에 화면을 떠나지 않도록
+            _uiState.update { it.copy(errorMessage = null, currentError = null, startFailed = false) }
 
             // 대화 시간 알림 취소
             ConversationAlarmReceiver.cancelNotification(getApplication())
