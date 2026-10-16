@@ -1,5 +1,6 @@
 package com.example.echo.voice.provider;
 
+import com.example.echo.common.http.HttpStreams;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.client.ElevenLabsTtsClient;
 import com.example.echo.voice.dto.ElevenLabsSubscriptionInfo;
@@ -158,7 +159,11 @@ public class ElevenLabsTtsProvider implements TtsProvider {
         }
     }
 
-    /** 스트림을 닫을 때 Feign Response(=HTTP 연결)도 함께 닫는다. */
+    /**
+     * 스트림을 닫을 때 Feign Response(=HTTP 연결)도 함께 닫는다.
+     * 다 읽기 전에 닫으면 남은 오디오를 받지 않고 연결을 끊는다 - 응답 close()는 남은 본문을 끝까지 읽기 때문(drain).
+     * 끝까지 읽은 스트림이면 연결은 이미 풀에 반납되어 끊지 않는다.
+     */
     private static final class ResponseBoundInputStream extends FilterInputStream {
         private final Response response;
 
@@ -169,6 +174,7 @@ public class ElevenLabsTtsProvider implements TtsProvider {
 
         @Override
         public void close() throws IOException {
+            HttpStreams.abortQuietly(in);
             try {
                 super.close();
             } finally {
