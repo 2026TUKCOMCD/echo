@@ -131,8 +131,9 @@ public class PromptService {
         variables.put("wakeTimeEvaluation", healthData != null ? healthData.getWakeTimeEvaluation() : "");
 
         // 4-7. 위치 정보 (방문 시점 날씨 포함)
-        // 역지오코딩 실패로 placeName이 없는 장소는 "오늘 활동" 판단에서 제외한다
+        // 역지오코딩 실패로 placeName이 없는 외출 장소는 "오늘 활동" 판단에서 제외한다
         // (그대로 두면 프롬프트에 "- null"이 들어가고, AI가 실패한 장소를 언급하려 든다)
+        // 집 체류는 원래 지오코딩하지 않아 장소명이 없으므로 그대로 둔다(시간대만 표시)
         LocationData locationData = context.getLocationData();
         List<VisitedPlace> namedPlaces = extractNamedPlaces(locationData);
 
@@ -198,16 +199,19 @@ public class PromptService {
     }
 
     /**
-     * 역지오코딩에 성공해 장소명이 있거나, 루틴 방문 장소로 매칭돼 카테고리를 아는 방문 장소만 추림
+     * 집 체류이거나, 역지오코딩에 성공해 장소명이 있거나, 루틴 방문 장소로 매칭돼 카테고리를 아는 방문 장소만 추림
      *
-     * 둘 다 없으면(역지오코딩 실패이고 루틴 매칭도 안 됨) "오늘 활동" 판단·표시 대상에서 제외한다.
+     * 외출인데 둘 다 없으면(역지오코딩 실패이고 루틴 매칭도 안 됨) "오늘 활동" 판단·표시 대상에서 제외한다.
+     * 집 체류는 LocationService가 지오코딩 없이 장소명 없이 만들고 [집에서 보낸 시간]도 시간대만 쓰므로 항상 남긴다
+     * (장소명으로 거르면 집 체류가 전부 빠져 [집에서 보낸 시간]과 집 체류 가이드가 한 번도 쓰이지 않는다).
      */
     private List<VisitedPlace> extractNamedPlaces(LocationData locationData) {
         if (locationData == null || locationData.getVisitedPlaces() == null) {
             return List.of();
         }
         return locationData.getVisitedPlaces().stream()
-                .filter(place -> (place.getPlaceName() != null && !place.getPlaceName().isBlank())
+                .filter(place -> place.isHome()
+                        || (place.getPlaceName() != null && !place.getPlaceName().isBlank())
                         || place.getRoutineCategory() != null)
                 .toList();
     }
