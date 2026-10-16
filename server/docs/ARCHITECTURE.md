@@ -209,8 +209,9 @@ com.example.echo
 │   │   ├── STTClient.java             # Whisper API
 │   │   └── TTSClient.java             # Azure/Clova TTS
 │   └── dto
-│       ├── SttResponse.java
-│       └── TtsRequest.java
+│       ├── ElevenLabsTtsRequest.java
+│       ├── ElevenLabsSubscriptionInfo.java
+│       └── WhisperTranscriptionResponse.java
 │
 ├── prompt                          # 프롬프트 관리 모듈
 │   ├── service
