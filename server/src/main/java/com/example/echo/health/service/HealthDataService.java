@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -22,13 +23,16 @@ import java.util.List;
 public class HealthDataService {
 
     private final HealthLogRepository healthLogRepository;
+    // 날짜 경계는 Asia/Seoul 고정 Clock(SchedulingConfig) 기준 - 운영 JVM 기본 시간대(UTC)를 따르면
+    // 한국 0~9시에 날짜가 하루 이르게 계산된다
+    private final Clock clock;
 
     /**
      * 오늘 건강 데이터 조회
      */
     public HealthData getTodayHealthData(Long userId) {
         return healthLogRepository
-                .findByUserIdAndRecordedDate(userId, LocalDate.now())
+                .findByUserIdAndRecordedDate(userId, LocalDate.now(clock))
                 .map(HealthLog::toHealthData)
                 .orElse(createDefaultHealthData());
     }
@@ -55,7 +59,7 @@ public class HealthDataService {
      */
     public EnrichedHealthData buildEnrichedHealthData(HealthData todayData, Long userId, Integer preferredSleepHours) {
         // 1. 7일치 데이터 한번에 조회
-        LocalDate endDate = LocalDate.now().minusDays(1);
+        LocalDate endDate = LocalDate.now(clock).minusDays(1);
         LocalDate startDate = endDate.minusDays(6);
         List<HealthLog> weeklyLogs = healthLogRepository
                 .findByUserIdAndRecordedDateBetweenOrderByRecordedDateAsc(userId, startDate, endDate);
@@ -175,7 +179,7 @@ public class HealthDataService {
      */
     @Transactional
     public HealthLog saveHealthData(Long userId, HealthData data) {
-        return saveHealthData(userId, LocalDate.now(), data);
+        return saveHealthData(userId, LocalDate.now(clock), data);
     }
 
     /**

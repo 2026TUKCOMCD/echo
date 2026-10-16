@@ -111,7 +111,7 @@ public class ContextService {
         }
         UserContext context = UserContext.builder()
                 .userId(userId)
-                .date(LocalDate.now())
+                .date(LocalDate.now(clock))
                 .startedAt(LocalDateTime.now(clock))
                 .conversationHistory(new CopyOnWriteArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
