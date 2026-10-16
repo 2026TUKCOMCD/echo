@@ -3,9 +3,17 @@ package com.example.echo.common.exception;
 import com.example.echo.conversation.exception.StreamAbortedException;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.ServletRequestBindingException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -77,6 +85,37 @@ public class GlobalExceptionHandler {
                         "NOT_FOUND",
                         "요청한 경로를 찾을 수 없습니다."
                 ));
+    }
+
+    /**
+     * 요청 형식 오류 - 본문 JSON을 읽을 수 없음, 파라미터 누락·타입 불일치, multipart 파트 누락·형식 오류.
+     * 이 핸들러가 없으면 handleUnexpected(Exception)가 잡아 500이 되고(앱은 "서버 문제"로 안내) ERROR 로그가 쌓인다.
+     * 예외 메시지에 요청 본문 일부(비밀번호 등)가 들어갈 수 있어 응답·로그에는 예외 종류와 경로만 남긴다.
+     */
+    @ExceptionHandler({
+            HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class,
+            ServletRequestBindingException.class,
+            MissingServletRequestPartException.class,
+            MultipartException.class
+    })
+    public ResponseEntity<ErrorResponse> handleBadRequest(Exception e, HttpServletRequest request) {
+        log.warn("잘못된 요청 - {} {}: {}", request.getMethod(), request.getRequestURI(), e.getClass().getSimpleName());
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "BAD_REQUEST", "잘못된 요청입니다."));
+    }
+
+    /** 지원하지 않는 HTTP 메서드(405)·Content-Type(415) - 클라이언트 오류라 500으로 뭉개지 않는다 */
+    @ExceptionHandler({HttpRequestMethodNotSupportedException.class, HttpMediaTypeNotSupportedException.class})
+    public ResponseEntity<ErrorResponse> handleUnsupportedRequest(Exception e, HttpServletRequest request) {
+        HttpStatus status = e instanceof HttpRequestMethodNotSupportedException
+                ? HttpStatus.METHOD_NOT_ALLOWED
+                : HttpStatus.UNSUPPORTED_MEDIA_TYPE;
+        log.warn("지원하지 않는 요청 - {} {}: {}", request.getMethod(), request.getRequestURI(), e.getClass().getSimpleName());
+        return ResponseEntity
+                .status(status)
+                .body(ErrorResponse.of(status.value(), status.name(), "지원하지 않는 요청입니다."));
     }
 
     @ExceptionHandler(Exception.class)
