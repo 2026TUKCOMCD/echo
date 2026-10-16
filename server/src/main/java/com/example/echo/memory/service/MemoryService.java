@@ -10,6 +10,8 @@ import com.example.echo.memory.support.EmbeddingCodec;
 import com.example.echo.memory.support.VectorMath;
 import com.example.echo.prompt.service.PromptService;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.JsonLocation;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -363,14 +365,24 @@ public class MemoryService {
      *
      * 모델이 매일 로테이션되어 출력 형식이 흔들릴 수 있으므로,
      * 첫 [ 부터 마지막 ] 까지만 잘라내어 코드 블록 표시와 앞뒤 설명문을 함께 방어한다.
+     *
+     * 실패 예외에는 응답 원문을 싣지 않는다 - 대화에서 뽑은 기억이 담겨 있어, 호출부가 WARN으로 남기는
+     * 예외(스택 트레이스 포함)에 들어가면 안 된다. Jackson 예외도 메시지에 값 일부가 들어가므로
+     * 원인 예외로 붙이지 않고 종류와 위치만 남긴다.
      */
-    private <T> List<T> parseJsonArray(String raw, TypeReference<List<T>> type) throws Exception {
+    private <T> List<T> parseJsonArray(String raw, TypeReference<List<T>> type) {
         int start = raw.indexOf('[');
         int end = raw.lastIndexOf(']');
         if (start < 0 || end <= start) {
-            throw new IllegalArgumentException("JSON 배열을 찾을 수 없습니다: " + raw);
+            throw new IllegalArgumentException("JSON 배열을 찾을 수 없습니다 (응답 길이: " + raw.length() + ")");
         }
-        return objectMapper.readValue(raw.substring(start, end + 1), type);
+        try {
+            return objectMapper.readValue(raw.substring(start, end + 1), type);
+        } catch (JsonProcessingException e) {
+            JsonLocation location = e.getLocation();
+            throw new IllegalArgumentException("JSON 파싱 실패: " + e.getClass().getSimpleName()
+                    + (location != null ? " (line " + location.getLineNr() + ", column " + location.getColumnNr() + ")" : ""));
+        }
     }
 
     private Memory toEntity(Long userId, MemoryItem item) {

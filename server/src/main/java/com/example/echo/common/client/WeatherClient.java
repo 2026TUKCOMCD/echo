@@ -157,7 +157,7 @@ public class WeatherClient {
             return weatherData;
 
         } catch (Exception e) {
-            log.error("현재 날씨 조회 실패 - 오류: {}", e.getMessage());
+            log.error("현재 날씨 조회 실패 - {}", ExternalApiErrors.describe(e));
             return null;
         }
     }
@@ -205,12 +205,10 @@ public class WeatherClient {
                     "https://home.openweathermap.org/subscriptions");
             return null;
         } catch (FeignException e) {
-            log.error("방문 날씨 조회 실패 - timestamp: {}, HTTP 상태: {}, 오류: {}",
-                    timestamp, e.status(), e.getMessage());
+            log.error("방문 날씨 조회 실패 - timestamp: {}, {}", timestamp, ExternalApiErrors.describe(e));
             return null;
         } catch (Exception e) {
-            log.error("방문 날씨 조회 실패 - timestamp: {}, 오류: {}",
-                    timestamp, e.getMessage());
+            log.error("방문 날씨 조회 실패 - timestamp: {}, {}", timestamp, ExternalApiErrors.describe(e));
             return null;
         }
     }
