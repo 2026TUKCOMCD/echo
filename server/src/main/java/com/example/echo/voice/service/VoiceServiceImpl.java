@@ -13,6 +13,7 @@ import com.example.echo.voice.client.STTClient;
 // 이유: user/dto에 더 완성도 높은 VoiceSettings가 있어 중복 제거
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
+import com.example.echo.voice.exception.InvalidAudioException;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import com.example.echo.voice.provider.TtsProvider;
 import lombok.extern.slf4j.Slf4j;
@@ -349,18 +350,18 @@ public class VoiceServiceImpl implements VoiceService {
 
     private void validateAudioFile(MultipartFile audioFile) {
         if (audioFile == null || audioFile.isEmpty()) {
-            throw new VoiceProcessingException("오디오 파일이 비어있습니다.");
+            throw new InvalidAudioException("오디오 파일이 비어있습니다.");
         }
 
         String contentType = audioFile.getContentType();
         if (contentType == null || !isValidAudioType(contentType)) {
-            throw new VoiceProcessingException("지원하지 않는 오디오 형식입니다. (지원 형식: mp3, mp4, mpeg, mpga, m4a, wav, webm)");
+            throw new InvalidAudioException("지원하지 않는 오디오 형식입니다. (지원 형식: mp3, mp4, mpeg, mpga, m4a, wav, webm)");
         }
 
         // Whisper API 최대 파일 크기: 25MB
         long maxSize = 25 * 1024 * 1024;
         if (audioFile.getSize() > maxSize) {
-            throw new VoiceProcessingException("파일 크기가 25MB를 초과합니다.");
+            throw new InvalidAudioException("파일 크기가 25MB를 초과합니다.");
         }
     }
 

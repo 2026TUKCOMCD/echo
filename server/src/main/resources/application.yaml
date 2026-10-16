@@ -25,6 +25,13 @@ spring:
     init:
       mode: always  # 매 시작마다 data.sql 실행 (개발용)
 
+  # 음성 업로드(/message, /message-stream) 한도 - 기본값(파일 1MB)이면 앱의 33초 넘는 발화(16kHz WAV)가 거절된다.
+  # Whisper 파일 한도이자 VoiceServiceImpl의 크기 검사와 같은 25MB로 맞춘다 (요청 전체는 multipart 헤더 여유분 포함)
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 26MB
+
   # 비동기 작업(장기기억 추출 등) 스레드풀 - 배포/재시작 시 진행 중인 작업을 최대한 마치고 종료
   task:
     execution:
