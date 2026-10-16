@@ -66,7 +66,7 @@ public class AIService {
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
             logCacheUsage(response);
-            String greeting = extractContent(response);
+            String greeting = sanitizeGarbledText(extractContent(response));
 
             log.debug("Generated greeting - length: {}", greeting.length());
             return greeting;
@@ -106,7 +106,7 @@ public class AIService {
         try {
             ChatCompletionResponse response = openRouterClient.createChatCompletion(request);
             logCacheUsage(response);
-            String aiResponse = extractContent(response);
+            String aiResponse = sanitizeGarbledText(extractContent(response));
 
             log.debug("Generated response - length: {}", aiResponse.length());
             return aiResponse;
@@ -429,6 +429,10 @@ public class AIService {
     /**
      * API 응답에서 텍스트 추출
      * 응답 구조: response.choices[0].message.content
+     *
+     * 깨진 글자 정제(sanitizeGarbledText)는 하지 않는다 - 음성으로 읽히는 대화 응답(첫 인사·답변)에서만
+     * 호출자가 적용한다. 일기·기억 JSON에 적용하면 ℃·이모지·한자가 섞인 단어가 "거기"로 바뀌고
+     * JSON 문자열까지 망가질 수 있다.
      */
     private String extractContent(ChatCompletionResponse response) {
         if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
@@ -442,7 +446,7 @@ public class AIService {
             return "";
         }
 
-        return sanitizeGarbledText(choice.getMessage().getContent());
+        return choice.getMessage().getContent();
     }
 
     /**
@@ -451,7 +455,7 @@ public class AIService {
      * 정상 범위를 벗어난 문자(예: 아르메니아/IPA 확장 문자)가 하나라도 섞인 토큰만 치환 대상이다.
      *
      * AI가 장소명을 문장 안에서 두 번째로 다시 언급하려다 드물게 깨진 문자를 생성하는 케이스에 대한
-     * 안전망(재호출 없이 즉시 처리 - 응답 지연 없음). PromptService의 프롬프트 지시(장소명은 한 번만
+     * 안전망(재호출 없이 즉시 처리 - 응답 지연 없음). 그래서 음성으로 읽히는 대화 응답에만 적용한다. PromptService의 프롬프트 지시(장소명은 한 번만
      * 말하고 재언급 시 "거기"를 쓰도록 강제)가 1차 방어이고, 이건 그래도 새어나온 경우의 2차 방어.
      */
     private static final Pattern WORD_PATTERN = Pattern.compile("\\S+");
