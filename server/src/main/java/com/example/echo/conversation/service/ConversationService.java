@@ -13,6 +13,7 @@ import com.example.echo.conversation.stream.SpeechSegment;
 import com.example.echo.conversation.stream.SpeechSegmentSource;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.entity.Diary;
+import com.example.echo.diary.entity.DiaryStatus;
 import com.example.echo.diary.service.DiaryOutcome;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.HealthData;
@@ -188,12 +189,23 @@ public class ConversationService {
     /** appendRecentDiaries에서 조회하는 최근 일기 범위 (일) */
     private static final int RECENT_DIARY_DAYS = 7;
 
+    // /end 응답 diaryError - 앱이 "일기 생성에 실패했어요: {diaryError}" Toast로 그대로 보여 주므로
+    // 예외 원문 대신 정해진 짧은 문구만 싣는다 (원문은 서버 로그와 diaries.failure_reason에 남는다)
+    private static final String DIARY_ERROR_TEMPORARY = "일시적인 서버 오류";
+    private static final String DIARY_ERROR_NO_CONTEXT = "대화 기록을 찾을 수 없음";
+
     /**
      * 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다.
      *
      * 건강데이터 저장·컨텍스트 초기화(위치/날씨 포함)·최근 일기 조회는 서로 결과를
      * 참조하지 않는 독립적인 I/O라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이
      * 기다린다.
+     *
+     * 컨텍스트 초기화만은 공용 풀에 넣지 않고 이 요청 스레드에서 직접 한다. 그 안에서 방문 장소별 작업을
+     * 같은 공용 풀(applicationTaskExecutor)에 넣고 기다리기 때문이다(LocationService). 공용 풀은 스레드 8개에
+     * 대기열이 무제한이라 스레드가 더 늘지 않으므로, 풀 스레드에서 돌리면 대화 시작이 스레드 수만큼 몰릴 때
+     * 모두가 대기열 속 작업을 기다리며 재시작 전까지 멈춘다. 요청 스레드는 어차피 세 작업을 기다리는 동안
+     * 놀고 있으므로 병렬성은 그대로다.
      *
      * 건강데이터 저장이 이 배치에 안전하게 낄 수 있는 이유:
      * (1) EnrichedHealthData는 방금 저장한 DB 값이 아니라 이 메서드가 받은 healthData 객체를 그대로
@@ -209,17 +221,15 @@ public class ConversationService {
      * 이미 쓰고 있는 것과 같은 fire-and-forget 판단이다.
      */
     private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
-        // 0-1. 독립적인 세 작업을 한꺼번에 제출
+        // 0-1. 독립적인 두 작업은 공용 풀에 제출하고, 컨텍스트 초기화는 이 스레드에서 직접 한다 (위 설명 참고)
         CompletableFuture<Void> healthSaveFuture = healthData != null
                 ? CompletableFuture.runAsync(() -> saveHealthDataSafely(userId, healthData), taskExecutor)
                 : CompletableFuture.completedFuture(null);
-        CompletableFuture<UserContext> contextFuture = CompletableFuture.supplyAsync(
-                () -> contextService.initializeContext(userId, healthData, rawLocationData), taskExecutor);
         CompletableFuture<List<Diary>> diariesFuture = CompletableFuture.supplyAsync(
                 () -> loadRecentDiaries(userId), taskExecutor);
 
+        UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
         join(healthSaveFuture);
-        UserContext context = join(contextFuture);
         List<Diary> recentDiaries = join(diariesFuture);
 
         // 3. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
@@ -535,10 +545,12 @@ public class ConversationService {
         Long diaryId = null;
         String diaryError = null;
         LocalDate diaryDate = null;
+        boolean contextFound = false;
 
         try {
             // 1. 컨텍스트 조회
             UserContext context = contextService.getContext(userId);
+            contextFound = true;
             log.info("컨텍스트 조회 완료 - 대화 턴 수: {}", context.getConversationHistory().size());
 
             // 2. 일기 생성 (동기) - 실패해도 대화 종료는 계속되며, 결과를 응답에 명시
@@ -547,9 +559,15 @@ public class ConversationService {
                 Diary diary = processed.diary();
                 diaryStatus = diary.getStatus().name();
                 diaryId = diary.getId();
-                diaryError = diary.getFailureReason();
+                diaryError = diary.getStatus() == DiaryStatus.FAILED ? DIARY_ERROR_TEMPORARY : null;
                 // 클라이언트가 이 세션을 일기 탭에서 로컬 타임스탬프 추정 대신 신뢰할 수 있도록 전달
                 diaryDate = diary.getDiaryDate();
+            } else if (outcome instanceof DiaryOutcome.UpdateFailed updateFailed) {
+                // 이번 갱신만 실패 - 같은 날 성공한 일기는 그대로 남아 있다
+                diaryStatus = DiaryStatus.FAILED.name();
+                diaryId = updateFailed.kept().getId();
+                diaryError = DIARY_ERROR_TEMPORARY;
+                diaryDate = updateFailed.kept().getDiaryDate();
             } else {
                 diaryStatus = "SKIPPED";
             }
@@ -567,7 +585,7 @@ public class ConversationService {
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}", userId, e);
             diaryStatus = "FAILED";
-            diaryError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            diaryError = contextFound ? DIARY_ERROR_TEMPORARY : DIARY_ERROR_NO_CONTEXT;
         } finally {
             // 4. 컨텍스트 정리 (어떤 경우에도 보장)
             contextService.finalizeContext(userId);

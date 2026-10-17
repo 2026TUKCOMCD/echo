@@ -2,6 +2,7 @@ package com.example.echo.memory.service;
 
 import com.example.echo.ai.exception.AIException;
 import com.example.echo.ai.service.AIService;
+import com.example.echo.common.LogCapture;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.memory.dto.MemoryMergeItem;
@@ -387,6 +388,42 @@ class MemoryServiceTest {
         // then
         verifyNoInteractions(embeddingService);
         verify(memoryRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("추출 응답이 JSON이 아니어도 로그에 응답 원문(대화에서 뽑은 내용)을 남기지 않는다")
+    void parseFailureLogDoesNotContainLlmResponse() {
+        // given
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("손녀 김서연이 다음 달 결혼한다고 하셨습니다.");
+
+        try (LogCapture logs = LogCapture.of(MemoryService.class)) {
+            // when
+            memoryService.extractAndSaveMemories(contextWithUserMessage());
+
+            // then
+            assertThat(logs.count()).isPositive();
+            assertThat(logs.allText()).doesNotContain("김서연");
+        }
+    }
+
+    @Test
+    @DisplayName("병합 판단 JSON에 잘못된 값이 와도 로그에 그 값을 남기지 않는다 (Jackson 예외 메시지에 값이 들어감)")
+    void mergeParseFailureLogDoesNotContainLlmValue() {
+        // given
+        Memory existing = stored(12, "어머니가 떡장사를 하셨다", NEAR, MODEL_TAG);
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn(facts("어머니가 새벽에 떡을 찌셨다"));
+        when(embeddingService.embedAll(anyList(), eq(MemoryService.EMBEDDING_TIMEOUT))).thenReturn(List.of(NEAR));
+        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(existing));
+        when(aiService.generateMemoryMerge(anyString()))
+                .thenReturn("[{\"index\": \"손녀 김서연 결혼\", \"action\": \"ADD\"}]");
+
+        try (LogCapture logs = LogCapture.of(MemoryService.class)) {
+            // when
+            memoryService.extractAndSaveMemories(contextWithUserMessage());
+
+            // then
+            assertThat(logs.allText()).contains("병합 판단 실패").doesNotContain("김서연");
+        }
     }
 
     @Test

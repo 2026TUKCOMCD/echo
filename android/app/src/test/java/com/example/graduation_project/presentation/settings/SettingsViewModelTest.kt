@@ -41,6 +41,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.LocalTime
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -209,11 +210,13 @@ class SettingsViewModelTest {
 
     @Test
     fun `checkAndUpdateLocationCollectionStatus가_범위내이고_미실행중이면_enableLocationCollection_호출`() {
-        // Given: 대화 시간이 설정되어 있고(23:59), 수집 시작 시간(00:00)~대화 시간 사이가 사실상 하루 전체를
-        // 덮도록 해서 실제 현재 시각과 무관하게 "범위 내"가 되도록 함. 서비스는 미실행 상태(기본 스텁).
-        LocationCollectionStorage(context).saveStartTime("00:00")
+        // Given: 수집 시작 시간~대화 시간을 현재 시각 앞뒤 1시간으로 설정해 실제 시각과 무관하게 "범위 내"가 되도록 함
+        // (00:00~23:59처럼 고정하면 23:59대 1분 동안은 범위 밖이 됨. 자정을 넘는 범위도 지원하므로 시를 24로 감음)
+        // 서비스는 미실행 상태(기본 스텁).
+        val currentHour = LocalTime.now().hour
+        LocationCollectionStorage(context).saveStartTime("%02d:00".format((currentHour - 1).mod(24)))
         coEvery { mockUserRepository.getPreferences() } returns
-            ApiResult.Success(UserPreferences(conversationTime = "23:59"))
+            ApiResult.Success(UserPreferences(conversationTime = "%02d:00".format((currentHour + 1).mod(24))))
 
         // When: ViewModel 생성 (init에서 loadSettings() → checkAndUpdateLocationCollectionStatus() 호출)
         SettingsViewModel(context, mockUserRepository)

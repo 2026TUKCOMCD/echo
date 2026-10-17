@@ -318,74 +318,6 @@ END
 
 ---
 
-## Voice API
-
-음성 처리 API (STT/TTS)
-
-### 1. STT (음성 → 텍스트)
-
-음성 파일을 텍스트로 변환합니다.
-
-- **URL:** `/api/voice/stt`
-- **Method:** `POST`
-- **Content-Type:** `multipart/form-data`
-- **사용 API:** OpenAI Whisper
-
-#### Request
-
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|------|------|
-| file | File | O | 변환할 음성 파일 (WAV, MP3, M4A, WebM, MP4 지원) |
-
-#### Response
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| text | String | 변환된 텍스트 |
-
-```json
-{
-  "text": "오늘 날씨가 참 좋네요"
-}
-```
-
----
-
-### 2. TTS (텍스트 → 음성)
-
-텍스트를 음성으로 변환합니다.
-
-- **URL:** `/api/voice/tts`
-- **Method:** `POST`
-- **Content-Type:** `application/json`
-- **사용 API:** Azure Cognitive Services TTS
-
-#### Request
-
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|------|------|
-| text | String | O | 변환할 텍스트 |
-| voiceSettings | Object | X | 음성 설정 |
-| voiceSettings.voiceSpeed | Double | X | 음성 속도 (기본값: 1.0) |
-| voiceSettings.voiceTone | String | X | 음성 톤 (기본값: "warm") |
-
-```json
-{
-  "text": "안녕하세요, 오늘 하루는 어떠셨나요?",
-  "voiceSettings": {
-    "voiceSpeed": 1.0,
-    "voiceTone": "warm"
-  }
-}
-```
-
-#### Response
-
-- **Content-Type:** `audio/mpeg`
-- **Body:** MP3 바이너리 오디오 데이터
-
----
-
 ## 에러 응답
 
 ### 공통 에러 형식
@@ -405,6 +337,7 @@ END
 | 상태 코드 | 설명 |
 |-----------|------|
 | 400 | 잘못된 요청 (파일 형식 오류 등) |
+| 413 | 업로드한 음성 파일이 한도(25MB)를 넘음 |
 | 404 | 리소스를 찾을 수 없음 (대화 컨텍스트 없음 등) |
 | 500 | 서버 내부 오류 |
 

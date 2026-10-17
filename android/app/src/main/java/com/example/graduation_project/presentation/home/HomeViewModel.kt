@@ -19,7 +19,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalDate
+import java.time.Clock
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -38,7 +39,8 @@ class HomeViewModel(
     private val locationManager: LocationManager = LocationManager(application),
     private val locationStorageManager: LocationStorageManager = LocationStorageManager(
         AppDatabase.getInstance(application).locationPointDao()
-    )
+    ),
+    private val clock: Clock = Clock.systemUTC()
 ) : AndroidViewModel(application) {
 
     private val alarmStorage = ConversationAlarmStorage(application)
@@ -57,11 +59,12 @@ class HomeViewModel(
     }
 
     /**
-     * 홈 화면 재진입 시 사용자 정보(대화 시간 등)를 서버와 다시 동기화.
-     * 설정 화면에서 값을 바꾸고 돌아와도 홈 ViewModel 인스턴스는 그대로 유지되므로
+     * 홈 화면 재진입 시 오늘 날짜를 다시 계산하고 사용자 정보(대화 시간 등)를 서버와 다시 동기화.
+     * 설정 화면에서 값을 바꾸고 돌아오거나 자정을 넘겨 다시 열어도 홈 ViewModel 인스턴스는 그대로 유지되므로
      * (NavBackStackEntry 스코프), init 시점의 값만으론 최신 상태를 반영하지 못함.
      */
     fun refresh() {
+        _uiState.value = _uiState.value.copy(date = formatToday())
         viewModelScope.launch {
             loadUserPreferences()
         }
@@ -110,14 +113,16 @@ class HomeViewModel(
         return locationManager.getCurrentLocation()?.let { it.latitude to it.longitude }
     }
 
+    /** 오늘 날짜 - 일기·서버 날짜와 같은 KST 기준 (기기 시간대와 무관) */
+    private fun formatToday(): String =
+        clock.instant().atZone(KST_ZONE).toLocalDate().format(DATE_FORMATTER)
+
     companion object {
+        private val KST_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
+        private val DATE_FORMATTER = DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN)
+
         fun Factory(application: Application) = viewModelFactory {
             initializer { HomeViewModel(application) }
-        }
-
-        private fun formatToday(): String {
-            val formatter = DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN)
-            return LocalDate.now().format(formatter)
         }
     }
 }

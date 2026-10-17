@@ -904,7 +904,50 @@ class ConversationServiceTest2 {
 
             // then
             assertThat(response.getDiaryStatus()).isEqualTo("FAILED");
-            assertThat(response.getDiaryError()).contains("AI 일기 생성 실패");
+            // 앱 Toast에 그대로 보이므로 예외 원문 대신 정해진 문구 (원문은 서버 로그·DB failure_reason에만)
+            assertThat(response.getDiaryError()).isEqualTo("일시적인 서버 오류");
+            then(contextService).should().finalizeContext(userId);
+        }
+
+        @Test
+        @DisplayName("성공: 같은 날 일기 갱신만 실패하면 diaryStatus=FAILED와 기존 일기 날짜가 담긴다")
+        void diaryUpdateFailure_responseContainsFailedWithKeptDiary() {
+            // given
+            LocalDate diaryDate = LocalDate.now();
+            Diary kept = Diary.builder()
+                    .userId(userId)
+                    .diaryDate(diaryDate)
+                    .content("아침에 성공한 일기")
+                    .status(DiaryStatus.SUCCESS)
+                    .build();
+            given(contextService.getContext(userId)).willReturn(mockContext);
+            given(diaryService.generateAndSaveDiary(mockContext))
+                    .willReturn(new DiaryOutcome.UpdateFailed(kept));
+            willDoNothing().given(contextService).finalizeContext(userId);
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then
+            assertThat(response.getDiaryStatus()).isEqualTo("FAILED");
+            assertThat(response.getDiaryError()).isEqualTo("일시적인 서버 오류");
+            assertThat(response.getDiaryDate()).isEqualTo(diaryDate);
+            then(contextService).should().finalizeContext(userId);
+        }
+
+        @Test
+        @DisplayName("실패: 대화 컨텍스트가 없으면(재시작·만료) diaryError에 내부 메시지 대신 정해진 문구가 담긴다")
+        void contextMissing_responseContainsFixedMessage() {
+            // given
+            given(contextService.getContext(userId))
+                    .willThrow(new IllegalStateException("Context not found for userId: " + userId));
+
+            // when
+            ConversationEndResponse response = conversationService.endConversation(userId);
+
+            // then
+            assertThat(response.getDiaryStatus()).isEqualTo("FAILED");
+            assertThat(response.getDiaryError()).isEqualTo("대화 기록을 찾을 수 없음");
             then(contextService).should().finalizeContext(userId);
         }
 

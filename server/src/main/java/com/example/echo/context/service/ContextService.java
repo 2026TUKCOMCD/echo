@@ -89,12 +89,19 @@ public class ContextService {
 
         // 4-1. 루틴 방문 장소: 동의한 사용자만 오늘 방문 이력을 기록(패턴 감지 원재료).
         //      서버가 직접 동의 여부를 확인한다(클라이언트가 보낸 값을 신뢰하지 않음).
-        if (rawLocationData != null && routinePlaceService.hasConsent(userId)) {
-            visitOccurrenceRecordingService.recordOccurrences(
-                    userId, rawLocationData, homeLatitude, homeLongitude, LocalDate.now(clock));
+        //      오늘 대화에는 필요 없는 기록이라 실패해도 대화 시작을 막지 않는다.
+        if (rawLocationData != null) {
+            try {
+                if (routinePlaceService.hasConsent(userId)) {
+                    visitOccurrenceRecordingService.recordOccurrences(
+                            userId, rawLocationData, homeLatitude, homeLongitude, LocalDate.now(clock));
+                }
+            } catch (RuntimeException e) {
+                log.warn("방문 이력 기록 실패 - 기록 없이 대화 시작 - userId: {}", userId, e);
+            }
         }
         // 동의를 철회하면 확정 장소가 이미 전량 삭제되므로 여기서 별도 동의 체크 없이 조회해도 안전
-        List<RoutinePlaceInfo> confirmedRoutinePlaces = routinePlaceService.getConfirmedPlaceInfos(userId);
+        List<RoutinePlaceInfo> confirmedRoutinePlaces = loadConfirmedRoutinePlaces(userId);
 
         LocationData locationData = locationService.enrichLocationData(
                 rawLocationData, homeLatitude, homeLongitude, confirmedRoutinePlaces);
@@ -111,7 +118,7 @@ public class ContextService {
         }
         UserContext context = UserContext.builder()
                 .userId(userId)
-                .date(LocalDate.now())
+                .date(LocalDate.now(clock))
                 .startedAt(LocalDateTime.now(clock))
                 .conversationHistory(new CopyOnWriteArrayList<>())
                 .enrichedHealthData(enrichedHealthData)
@@ -143,6 +150,16 @@ public class ContextService {
     /**
      * 컨텍스트 초기화 (위치 데이터 없이)
      */
+    /** 확정 루틴 장소는 프롬프트를 풍부하게 하는 부가 정보라, 조회가 실패하면 없이 진행한다 */
+    private List<RoutinePlaceInfo> loadConfirmedRoutinePlaces(Long userId) {
+        try {
+            return routinePlaceService.getConfirmedPlaceInfos(userId);
+        } catch (RuntimeException e) {
+            log.warn("확정 루틴 장소 조회 실패 - 루틴 장소 없이 대화 시작 - userId: {}", userId, e);
+            return List.of();
+        }
+    }
+
     public UserContext initializeContext(Long userId, HealthData healthData) {
         return initializeContext(userId, healthData, null);
     }

@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 
 /**
@@ -28,10 +27,12 @@ import java.io.ByteArrayOutputStream
  */
 class VoiceRecordingManager(
     private val context: Context,
-    private val config: VadConfig = VadConfig()
+    private val config: VadConfig = VadConfig(),
+    private val audioRecorder: AudioRecorder = AudioRecorder(context, config),
+    private val vadProcessor: VadProcessor = VadProcessor(context, config)
 ) {
-    private val audioRecorder = AudioRecorder(context, config)
-    private val vadProcessor = VadProcessor(context, config)
+    // 발화 하나의 최대 길이 (16-bit 모노 PCM 바이트) - 넘으면 말이 이어져도 끊어서 보낸다
+    private val maxSpeechBytes: Long = config.maxRecordingDurationMs * config.sampleRate * 2 / 1000
 
     private val _vadState = MutableStateFlow<VadState>(VadState.Idle)
     val vadState: StateFlow<VadState> = _vadState.asStateFlow()
@@ -93,23 +94,21 @@ class VoiceRecordingManager(
                 _vadState.value = VadState.Listening
                 Log.d(TAG, "VAD initialized, state: Listening")
 
-                // 타임아웃 설정
-                withTimeoutOrNull(config.maxRecordingDurationMs) {
-                    audioRecorder.startRecording()
-                        .catch { e ->
-                            val vadException = when (e) {
-                                is VadException -> e
-                                else -> VadException.UnknownError(cause = e)
-                            }
-                            _vadState.value = VadState.Error(vadException)
-                            listener?.onError(vadException)
+                // stop()까지 계속 듣는다. 최대 길이는 발화 하나에만 적용한다 (processAudioFrame)
+                audioRecorder.startRecording()
+                    .catch { e ->
+                        val vadException = when (e) {
+                            is VadException -> e
+                            else -> VadException.UnknownError(cause = e)
                         }
-                        .collect { audioFrame ->
-                            processAudioFrame(audioFrame)
-                        }
-                }
+                        _vadState.value = VadState.Error(vadException)
+                        listener?.onError(vadException)
+                    }
+                    .collect { audioFrame ->
+                        processAudioFrame(audioFrame)
+                    }
 
-                // 타임아웃으로 종료된 경우
+                // 녹음 스트림이 오류로 끝난 경우 진행 중이던 발화는 마무리
                 if (isSpeechActive) {
                     finalizeSpeech()
                 }
@@ -175,9 +174,13 @@ class VoiceRecordingManager(
                 flushPreRollBuffer()
                 appendToBuffer(audioFrame)
             }
-            // 음성 계속 중
+            // 음성 계속 중 - 최대 길이에 닿으면 여기서 끊어 보낸다
             isSpeech && isSpeechActive -> {
                 appendToBuffer(audioFrame)
+                if (audioBuffer.size() >= maxSpeechBytes) {
+                    Log.d(TAG, "Speech reached max duration (${config.maxRecordingDurationMs}ms)")
+                    finalizeSpeech()
+                }
             }
             // 음성 종료 감지
             !isSpeech && isSpeechActive -> {

@@ -37,8 +37,8 @@ data class VadConfig(
     val speechDurationMs: Int = DEFAULT_SPEECH_DURATION_MS,
 
     /**
-     * 최대 녹음 시간 (ms)
-     * 어르신의 긴 발화를 고려하여 60초로 설정
+     * 발화 하나의 최대 녹음 시간 (ms) - 넘으면 말이 이어져도 끊어서 보낸다
+     * 어르신의 긴 발화를 고려하여 60초로 설정 (말을 기다리는 시간에는 제한 없음)
      */
     val maxRecordingDurationMs: Long = DEFAULT_MAX_RECORDING_DURATION_MS,
 

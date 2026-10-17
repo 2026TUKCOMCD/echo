@@ -396,6 +396,69 @@ class AIServiceTest {
         assertThat(capturedLogMessages()).noneMatch(msg -> msg.contains("비정상 유니코드"));
     }
 
+    @Test
+    @DisplayName("generateGreeting - 첫 인사도 깨진 유니코드 구간을 '거기'로 치환한다 (음성으로 읽히는 응답)")
+    void generateGreeting_sanitizesGarbledUnicode() {
+        // Given
+        ChatCompletionResponse response = createMockResponse("어제 서둔동 wjbntɦԱ서 즐거우셨어요?");
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        String result = aiService.generateGreeting("시스템 프롬프트", UserContext.builder().userId(1L).build());
+
+        // Then
+        assertThat(result).isEqualTo("어제 서둔동 거기 즐거우셨어요?");
+    }
+
+    @Test
+    @DisplayName("generateDiary - 일기는 음성으로 읽지 않으므로 ℃·이모지·한자가 섞인 단어를 '거기'로 바꾸지 않는다")
+    void generateDiary_keepsNonHangulSymbols() {
+        // Given - 정제기를 거치면 "20℃로" "산책😊" "家族과"가 전부 "거기"가 된다
+        String diary = "오늘은 20℃로 따뜻해서 공원을 산책😊 했다. 저녁에는 家族과 식사를 했다.";
+        ChatCompletionResponse response = createMockResponse(diary);
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        String result = aiService.generateDiary("일기 프롬프트");
+
+        // Then
+        assertThat(result).isEqualTo(diary);
+    }
+
+    @Test
+    @DisplayName("generateMemoryExtraction - 기억 추출 JSON은 정제하지 않고 그대로 반환한다")
+    void generateMemoryExtraction_returnsRawJson() {
+        // Given - 정제기는 공백 단위 토큰을 통째로 바꾸므로 JSON 문자열 값과 따옴표까지 망가뜨릴 수 있다
+        String json = "[{\"content\":\"매일 아침 7시에 20℃ 물로 세수한다\",\"tags\":[\"습관\",\"아침😊\"]}]";
+        ChatCompletionResponse response = createMockResponse(json);
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        String result = aiService.generateMemoryExtraction("기억 프롬프트");
+
+        // Then
+        assertThat(result).isEqualTo(json);
+    }
+
+    @Test
+    @DisplayName("generateMemoryMerge - 기억 병합 판단 JSON은 정제하지 않고 그대로 반환한다")
+    void generateMemoryMerge_returnsRawJson() {
+        // Given
+        String json = "[{\"action\":\"UPDATE\",\"content\":\"손녀 이름은 김서연(瑞妍)이다\"}]";
+        ChatCompletionResponse response = createMockResponse(json);
+        when(openRouterClient.createChatCompletion(any(ChatCompletionRequest.class)))
+                .thenReturn(response);
+
+        // When
+        String result = aiService.generateMemoryMerge("병합 프롬프트");
+
+        // Then
+        assertThat(result).isEqualTo(json);
+    }
+
     // ===== 프롬프트 캐싱 로그 테스트 =====
 
     @Test

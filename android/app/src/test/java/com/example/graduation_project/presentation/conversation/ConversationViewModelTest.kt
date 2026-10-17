@@ -6,6 +6,7 @@ import com.example.graduation_project.data.alarm.ConversationAlarmReceiver
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.api.AudioFrameInputStream
+import com.example.graduation_project.data.api.LiveMessageSession
 import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.audio
 import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.end
 import com.example.graduation_project.data.api.ConversationStreamProtocolTest.Companion.text
@@ -29,6 +30,7 @@ import com.example.graduation_project.domain.voice.AudioRecordState
 import com.example.graduation_project.presentation.model.ConversationState
 import io.mockk.CapturingSlot
 import io.mockk.Runs
+import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -37,6 +39,7 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.slot
+import io.mockk.spyk
 import io.mockk.unmockkObject
 import io.mockk.unmockkStatic
 import io.mockk.verify
@@ -51,6 +54,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -63,6 +67,7 @@ import org.junit.Test
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import java.io.ByteArrayInputStream
+import java.io.File
 
 /**
  * ConversationViewModel 단위 테스트
@@ -232,6 +237,32 @@ class ConversationViewModelTest {
         }
 
     @Test
+    fun `시작 실패 직후 다시 시작하면 startFailed가 풀려 홈 복귀 예약이 취소된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            var calls = 0
+            coEvery { mockRepository.startConversationStreaming(any(), any()) } coAnswers {
+                if (calls++ == 0) {
+                    ApiResult.Error(ApiException.NetworkError())
+                } else {
+                    delay(1_000)
+                    ApiResult.Success(MessageReply.Buffered(null, "안녕하세요", "dummy-audio"))
+                }
+            }
+            viewModel.startConversation()
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.startFailed)
+
+            // when: 화면이 2초 뒤 홈으로 돌아가기 전에 "대화 시작"을 다시 누름
+            viewModel.startConversation()
+            runCurrent()
+
+            // then: 화면(LaunchedEffect(startFailed))의 홈 복귀가 취소되어야 다시 시도한 요청이 이어진다
+            assertFalse(viewModel.uiState.value.startFailed)
+            advanceUntilIdle()
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+        }
+
+    @Test
     fun `sendMessage 실패 시에는 startFailed가 true로 바뀌지 않는다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
@@ -307,6 +338,89 @@ class ConversationViewModelTest {
 
             // 재생 중에도 대화 종료가 동작해야 함 (기존에는 조용히 무시되던 버그)
             assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+        }
+
+    // ===== 응답 대기 중 대화 종료(종료 예약) 테스트 =====
+
+    @Test
+    fun `응답을 기다리는 중 마치기를 누르면 응답이 오는 대로 재생 없이 대화를 끝낸다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            advanceUntilIdle()
+            val saved = assistantSaves()
+            val source = spyk(ByteArrayInputStream(audio(1, 2, 3) + end()))
+            // 종료 다이얼로그에 소리 내어 답한 말("응, 그만할게")이 메시지로 전송되어 응답을 기다리는 중
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
+                delay(1_000)
+                ApiResult.Success(MessageReply.Streaming("응, 그만할게", "네, 오늘 즐거웠어요.", AudioFrameInputStream(source)))
+            }
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+            viewModel.sendMessage(ByteArray(0))
+            runCurrent()
+            clearRecordedCalls(mockAudioRecordManager)
+
+            // when: 응답이 오기 전에 "마치기"
+            viewModel.onFarewellButtonClicked()
+            viewModel.onFarewellConfirmed()
+            runCurrent()
+
+            // then: 바로 녹음을 멈추고 응답을 기다림 (종료 요청은 아직)
+            verify { mockAudioRecordManager.stop() }
+            coVerify(exactly = 0) { mockRepository.endConversation() }
+
+            // then: 응답이 오면 재생하지 않고 받은 만큼 저장한 뒤 대화 종료
+            advanceUntilIdle()
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+            verify(exactly = 0) { mockAudioPlayerManager.playStream(any()) }
+            coVerify(exactly = 1) { mockRepository.endConversation() }
+            assertEquals(listOf("네, 오늘 즐거웠어요."), saved.map { it.content })
+            verify(timeout = 2_000) { source.close() }
+        }
+
+    @Test
+    fun `응답을 기다리는 중 마치기를 눌렀는데 메시지가 실패해도 대화를 끝낸다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
+                delay(1_000)
+                ApiResult.Error(ApiException.NetworkError())
+            }
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+            viewModel.sendMessage(ByteArray(0))
+            runCurrent()
+
+            viewModel.onFarewellConfirmed()
+            advanceUntilIdle()
+
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+            coVerify(exactly = 1) { mockRepository.endConversation() }
+        }
+
+    @Test
+    fun `종료 요청 중에 다시 누른 종료는 예약으로 남지 않아 다음 응답은 그대로 재생된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            coEvery { mockRepository.endConversation() } coAnswers {
+                delay(1_000)
+                ApiResult.Error(ApiException.NetworkError())
+            }
+            // given: 종료 요청 진행 중 한 번 더 누름 → 종료 실패로 대화 계속
+            viewModel.endConversation()
+            runCurrent()
+            viewModel.endConversation()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+
+            // when: 이어서 대화
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Buffered("안녕", "반가워요.", "dummy-audio"))
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            // then: 남은 예약 때문에 끝나지 않고 평소처럼 재생
+            verify { mockAudioPlayerManager.play("dummy-audio") }
+            assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+            coVerify(exactly = 1) { mockRepository.endConversation() }
         }
 
     // ===== 재생 완료 후 발화 대기 전환(여백) 테스트 =====
@@ -551,6 +665,27 @@ class ConversationViewModelTest {
         }
 
     @Test
+    fun `인식된 말이 없는 응답이면 빈 사용자 말풍선을 만들거나 저장하지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            advanceUntilIdle()
+            val userSaves = mutableListOf<MessageEntity>()
+            coEvery { mockMessageDao.insertMessage(any()) } answers {
+                firstArg<MessageEntity>().takeIf { it.role == MessageEntity.ROLE_USER }?.let { userSaves += it }
+            }
+            // 서버는 STT가 비면(기침·TV 소리 등) 사용자 발화 없이 고정 안내 문구로 답한다
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns ApiResult.Success(
+                MessageReply.Streaming("", "죄송해요, 잘 못 들었어요. 다시 한 번 말씀해 주시겠어요?", restFrames(audio(1), end()))
+            )
+
+            viewModel.sendMessage(ByteArray(0))
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.messages.none { it.isFromUser })
+            assertTrue(userSaves.isEmpty())
+        }
+
+    @Test
     fun `재생 도중 대화를 종료하면 그때까지 받은 AI 응답을 저장한다`() =
         runTest(mainDispatcherRule.testDispatcher) {
             setupListeningState()
@@ -620,7 +755,174 @@ class ConversationViewModelTest {
             assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
         }
 
+    @Test
+    fun `재생 완료 직후 여백 동안 백그라운드로 가면 마이크는 복귀할 때 켠다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            coEvery { mockRepository.startConversationStreaming(any(), any()) } returns
+                ApiResult.Success(MessageReply.Buffered(null, "안녕하세요", "dummy-audio"))
+            viewModel.startConversation()
+            advanceUntilIdle()
+            clearRecordedCalls(mockAudioRecordManager)
+
+            // when: 재생이 끝나 Listening 전환 여백(800ms)이 예약된 직후 홈으로 나감
+            audioPlayListenerSlot.captured.onPlaybackComplete()
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
+
+            // then: 백그라운드에서는 마이크를 켜지 않고, 복귀하면 발화 대기로 재개
+            verify(exactly = 0) { mockAudioRecordManager.start() }
+            viewModel.onAppForegrounded()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+            verify(exactly = 1) { mockAudioRecordManager.start() }
+        }
+
+    @Test
+    fun `응답을 기다리는 동안 백그라운드로 가면 도착한 응답을 재생하지 않고 복귀 시 발화 대기로 재개한다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            advanceUntilIdle()
+            val saved = assistantSaves()
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
+                delay(1_000)
+                ApiResult.Success(MessageReply.Buffered("오늘 산책했어요", "산책하셨군요!", "dummy-audio"))
+            }
+            viewModel.sendMessage(ByteArray(0))
+            runCurrent()  // Sending, 응답 대기 중
+            clearRecordedCalls(mockAudioRecordManager)
+
+            // when: 응답이 오기 전에 홈으로 나감 → 백그라운드에서 응답 도착
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
+
+            // then: 소리를 내지 않고 받은 말풍선만 저장
+            verify(exactly = 0) { mockAudioPlayerManager.play(any()) }
+            verify(exactly = 0) { mockAudioRecordManager.start() }
+            assertEquals(listOf("산책하셨군요!"), saved.map { it.content })
+
+            viewModel.onAppForegrounded()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+            verify(exactly = 1) { mockAudioRecordManager.start() }
+        }
+
+    @Test
+    fun `백그라운드에서 도착한 스트리밍 응답은 재생하지 않고 응답 스트림을 닫는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            val source = spyk(ByteArrayInputStream(audio(1, 2, 3) + end()))
+            coEvery { mockRepository.sendMessageStreaming(any()) } coAnswers {
+                delay(1_000)
+                ApiResult.Success(MessageReply.Streaming("안녕", "반가워요.", AudioFrameInputStream(source)))
+            }
+            viewModel.sendMessage(ByteArray(0))
+            runCurrent()
+
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
+
+            verify(exactly = 0) { mockAudioPlayerManager.playStream(any()) }
+            verify(timeout = 2_000) { source.close() }
+        }
+
+    @Test
+    fun `TTS 재요청 중 대화를 종료하면 재요청 결과가 마이크를 되살리지 않고 Ended가 된다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupPlayingAfterMessage()
+            coEvery { mockRepository.retryTts() } coAnswers {
+                delay(1_000)
+                ApiResult.Error(ApiException.NetworkError())
+            }
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+
+            // given: 재생 실패 → 서버 TTS 재요청 진행 중
+            audioPlayListenerSlot.captured.onError(
+                AudioPlayException.PlaybackError(message = "재생 실패"),
+                isFallbackNeeded = true
+            )
+            runCurrent()
+            clearRecordedCalls(mockAudioRecordManager)
+
+            // when: 재요청 결과가 오기 전에 대화 종료
+            viewModel.endConversation()
+            advanceUntilIdle()
+
+            // then: 실패한 재요청이 텍스트 폴백(Listening + 녹음 시작)으로 종료를 덮어쓰면 안 됨
+            assertEquals(ConversationState.Ended, viewModel.uiState.value.conversationState)
+            verify(exactly = 0) { mockAudioRecordManager.start() }
+        }
+
+    @Test
+    fun `TTS 재요청 중 백그라운드로 가면 재요청한 음성을 재생하지 않는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupPlayingAfterMessage()
+            coEvery { mockRepository.retryTts() } coAnswers {
+                delay(1_000)
+                ApiResult.Success(TtsRetryResponse(aiResponse = "반가워요.", audioData = "retry-audio"))
+            }
+            audioPlayListenerSlot.captured.onError(
+                AudioPlayException.PlaybackError(message = "재생 실패"),
+                isFallbackNeeded = true
+            )
+            runCurrent()
+
+            viewModel.onAppBackgrounded()
+            advanceUntilIdle()
+
+            verify(exactly = 0) { mockAudioPlayerManager.play("retry-audio") }
+            viewModel.onAppForegrounded()
+            advanceUntilIdle()
+            assertEquals(ConversationState.Listening, viewModel.uiState.value.conversationState)
+        }
+
+    @Test
+    fun `보낼 녹음을 메모리로 읽은 뒤 녹음 파일을 바로 지운다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            every { mockRepository.openLiveMessage() } returns null
+            coEvery { mockRepository.sendMessageStreaming(any()) } returns
+                ApiResult.Success(MessageReply.Buffered("안녕", "반가워요.", "dummy-audio"))
+            val recording = File.createTempFile("echo_voice_", ".wav").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+
+            audioRecordListenerSlot.captured.onRecordingStart()  // Listening → Recording
+            audioRecordListenerSlot.captured.onRecordingComplete(recording)
+            advanceUntilIdle()
+
+            verify { mockAudioRecordManager.deleteLastAudioFile() }
+            coVerify(exactly = 1) { mockRepository.sendMessageStreaming(any()) }
+            recording.delete()
+        }
+
+    @Test
+    fun `말하는 중 대화를 종료하면 열어 둔 실시간 전송 턴도 닫는다`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            setupListeningState()
+            val live = mockk<LiveMessageSession>(relaxed = true)
+            every { mockRepository.openLiveMessage() } returns live
+            coEvery { mockRepository.endConversation() } returns ApiResult.Success(ConversationEndResponse())
+            audioRecordListenerSlot.captured.onRecordingStart()  // Listening → Recording, 실시간 턴 열림
+
+            viewModel.endConversation()
+            advanceUntilIdle()
+
+            verify { live.cancel() }
+        }
+
     // ===== 헬퍼 =====
+
+    /** 스텁은 두고 지금까지의 호출 기록만 지운다 (이후의 호출만 검증하기 위함) */
+    private fun clearRecordedCalls(mock: Any) =
+        clearMocks(mock, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true, exclusionRules = false)
+
+    /** 사용자 발화를 보내 AI 응답(Base64 오디오)을 재생 중인 상태로 설정 */
+    private fun TestScope.setupPlayingAfterMessage() {
+        setupListeningState()
+        coEvery { mockRepository.sendMessageStreaming(any()) } returns
+            ApiResult.Success(MessageReply.Buffered("안녕", "반가워요.", "dummy-audio"))
+        viewModel.sendMessage(ByteArray(0))
+        advanceUntilIdle()
+        assertEquals(ConversationState.Playing, viewModel.uiState.value.conversationState)
+    }
 
     /**
      * sendMessage/endConversation 테스트를 위해 Listening 상태로 설정

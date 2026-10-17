@@ -2,6 +2,7 @@ package com.example.echo.ai.stream;
 
 import com.example.echo.ai.dto.ChatCompletionResponse;
 import com.example.echo.ai.exception.AIException;
+import com.example.echo.common.http.HttpStreams;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +30,8 @@ import java.util.function.Consumer;
  * 최상위 {@code error}와 {@code finish_reason: "error"}가 담긴 이벤트로 온다 - 이 경우 {@link AIException}을 던진다.
  *
  * {@link #close()}는 다른 스레드에서 호출해도 된다 - 읽기 중인 스레드는 IOException으로 깨어난다.
- * 연결을 끊으면 OpenAI 계열 프로바이더는 생성과 과금을 멈춘다.
+ * [DONE]을 받기 전에 닫으면 남은 응답을 읽지 않고 연결을 끊는다({@link HttpStreams#abortQuietly}) -
+ * 연결을 끊으면 OpenAI 계열 프로바이더는 생성과 과금을 멈춘다. [DONE]까지 받았으면 평소처럼 닫아 연결을 재사용한다.
  */
 @Slf4j
 public class ChatCompletionStream implements Closeable {
@@ -37,11 +39,14 @@ public class ChatCompletionStream implements Closeable {
     private static final String DATA_PREFIX = "data:";
     private static final String DONE = "[DONE]";
 
+    private final InputStream body;
     private final BufferedReader reader;
     private final Closeable connection;
     private final ObjectMapper objectMapper;
     private final Consumer<ChatCompletionResponse.Usage> usageListener;
     private volatile boolean finished;
+    /** [DONE]까지 정상적으로 받음 - 남은 응답이 사실상 없어 연결을 재사용할 수 있다 */
+    private volatile boolean completed;
 
     /**
      * @param body          SSE 응답 본문
@@ -50,6 +55,7 @@ public class ChatCompletionStream implements Closeable {
      */
     public ChatCompletionStream(InputStream body, Closeable connection, ObjectMapper objectMapper,
                                 Consumer<ChatCompletionResponse.Usage> usageListener) {
+        this.body = body;
         this.reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
         this.connection = connection;
         this.objectMapper = objectMapper;
@@ -76,6 +82,7 @@ public class ChatCompletionStream implements Closeable {
             String data = line.substring(DATA_PREFIX.length()).trim();
             if (DONE.equals(data)) {
                 finished = true;
+                completed = true;
                 return null;
             }
             String content = parseEvent(data);
@@ -131,6 +138,10 @@ public class ChatCompletionStream implements Closeable {
     @Override
     public void close() {
         finished = true;
+        if (!completed) {
+            // 응답 close()는 남은 본문을 끝까지 읽으므로(drain), 그 전에 연결을 끊어 생성을 멈추게 한다
+            HttpStreams.abortQuietly(body);
+        }
         try {
             connection.close();
         } catch (IOException ignored) {

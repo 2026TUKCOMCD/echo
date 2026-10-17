@@ -22,6 +22,12 @@ class MorningAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "아침 알람 수신 - 위치 수집 서비스 시작 시도")
 
+        // 로그아웃 상태면 수집도 안내도 하지 않고 다음날 알람도 잇지 않음 (로그아웃할 때 끈 수집이 알람으로 살아나지 않도록)
+        if (!LocationScheduler.isLoggedIn(context)) {
+            Log.d(TAG, "로그인 상태가 아니라 아침 위치 수집을 건너뜀")
+            return
+        }
+
         // 필수 조건 체크
         val prerequisiteResult = LocationScheduler.checkPrerequisites(context)
         Log.d(TAG, "필수 조건 체크 결과: $prerequisiteResult")

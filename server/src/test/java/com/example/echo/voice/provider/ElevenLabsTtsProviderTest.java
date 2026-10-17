@@ -242,12 +242,81 @@ class ElevenLabsTtsProviderTest {
         ));
     }
 
+    @Test
+    @DisplayName("스트리밍: 4xx 응답(쿼터 초과 등) → 본문을 오디오로 넘기지 않고 재시도 없이 VoiceProcessingException + 연결 닫힘")
+    void stream_clientErrorStatus_throwsWithoutRetry_andClosesConnection() {
+        CloseTrackingStream body = new CloseTrackingStream(
+                "{\"detail\":{\"status\":\"quota_exceeded\"}}".getBytes(StandardCharsets.UTF_8));
+        when(elevenLabsClient.synthesizeStream(any(), any())).thenReturn(feignResponse(401, body));
+
+        assertThatThrownBy(() -> provider.synthesizeStream("테스트", null))
+                .isInstanceOf(VoiceProcessingException.class)
+                .isNotInstanceOf(RetryableVoiceException.class)
+                .hasMessageContaining("인증");
+
+        assertThat(body.closed).isTrue();
+        verify(elevenLabsClient, times(1)).synthesizeStream(any(), any());
+        verify(elevenLabsClient, times(1)).getSubscriptionInfo();
+    }
+
+    @Test
+    @DisplayName("스트리밍: 429 응답 → 재시도 없이 요청 한도 초과 VoiceProcessingException")
+    void stream_tooManyRequests_throwsWithoutRetry() {
+        when(elevenLabsClient.synthesizeStream(any(), any()))
+                .thenReturn(feignResponse(429, new ByteArrayInputStream("{}".getBytes())));
+
+        assertThatThrownBy(() -> provider.synthesizeStream("테스트", null))
+                .isInstanceOf(VoiceProcessingException.class)
+                .hasMessageContaining("한도");
+
+        verify(elevenLabsClient, times(1)).synthesizeStream(any(), any());
+    }
+
+    @Test
+    @DisplayName("스트리밍: 5xx 응답 → 비스트리밍과 같이 3회 재시도, 실패한 응답은 매번 닫힘")
+    void stream_serverErrorStatus_retriedThreeTimes_andEachResponseClosed() {
+        CloseTrackingStream first = new CloseTrackingStream("err".getBytes());
+        CloseTrackingStream second = new CloseTrackingStream("err".getBytes());
+        CloseTrackingStream third = new CloseTrackingStream("err".getBytes());
+        when(elevenLabsClient.synthesizeStream(any(), any()))
+                .thenReturn(feignResponse(503, first), feignResponse(503, second), feignResponse(503, third));
+
+        assertThatThrownBy(() -> provider.synthesizeStream("테스트", null))
+                .isInstanceOf(VoiceProcessingException.class)
+                .hasMessageContaining("일시적으로 불안정");
+
+        verify(elevenLabsClient, times(3)).synthesizeStream(any(), any());
+        assertThat(first.closed).isTrue();
+        assertThat(second.closed).isTrue();
+        assertThat(third.closed).isTrue();
+    }
+
+    @Test
+    @DisplayName("스트리밍: 5xx 한 번 뒤 정상 응답 → 재시도해서 정상 오디오 반환")
+    void stream_serverErrorThenSuccess_returnsAudio() throws IOException {
+        byte[] expectedAudio = "mp3-stream-data".getBytes();
+        when(elevenLabsClient.synthesizeStream(any(), any()))
+                .thenReturn(feignResponse(500, new ByteArrayInputStream("err".getBytes())),
+                        feignResponse(new ByteArrayInputStream(expectedAudio)));
+
+        try (InputStream stream = provider.synthesizeStream("테스트", null)) {
+            assertThat(stream.readAllBytes()).isEqualTo(expectedAudio);
+        }
+
+        verify(elevenLabsClient, times(2)).synthesizeStream(any(), any());
+        verify(elevenLabsClient, never()).getSubscriptionInfo();
+    }
+
     private static Response feignResponse(InputStream body) {
+        return feignResponse(200, body);
+    }
+
+    private static Response feignResponse(int status, InputStream body) {
         Request request = Request.create(
                 Request.HttpMethod.POST, "http://localhost/tts", Map.of(), null, StandardCharsets.UTF_8, null);
         return Response.builder()
-                .status(200)
-                .reason("OK")
+                .status(status)
+                .reason(status == 200 ? "OK" : "Error")
                 .request(request)
                 .headers(Map.of())
                 .body(body, null)

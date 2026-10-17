@@ -152,6 +152,7 @@ public class LocationService {
             //    외부 API 호출이라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이 기다린다.
             //    (지오코딩/날씨 클라이언트는 내부에서 예외를 삼키고 null/빈 결과를 돌려주므로
             //    future가 예외로 완료되는 경우는 없다 - GeocodingService, WeatherClient 참고)
+            // 같은 공용 풀에 넣고 기다리므로 이 메서드를 공용 풀 스레드에서 부르면 안 된다 (ConversationService.prepareGreetingContext 참고)
             List<CompletableFuture<VisitedPlace>> pendingPlaces = new ArrayList<>();
             routineMatches.forEach(match -> pendingPlaces.add(CompletableFuture.supplyAsync(
                     () -> buildRoutineVisitedPlace(match.place(), match.info()), taskExecutor)));

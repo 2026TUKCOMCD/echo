@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.Period;
 
@@ -19,6 +20,9 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserPreferencesRepository userPreferencesRepository;
+    // 날짜 경계는 Asia/Seoul 고정 Clock(SchedulingConfig) 기준 - 운영 JVM 기본 시간대(UTC)를 따르면
+    // 한국 0~9시에 날짜가 하루 이르게 계산된다
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public UserPreferences getPreferences(Long userId) {
@@ -30,7 +34,7 @@ public class UserService {
                         .userId(user.getId())
                         .name(user.getName())
                         .age(prefs.getBirthday() != null
-                                ? Period.between(prefs.getBirthday(), LocalDate.now()).getYears()
+                                ? Period.between(prefs.getBirthday(), LocalDate.now(clock)).getYears()
                                 : null)
                         .birthday(prefs.getBirthday())
                         .location(prefs.getLocation())

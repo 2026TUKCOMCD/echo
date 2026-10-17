@@ -56,7 +56,8 @@ import java.util.concurrent.TimeoutException;
  * message에는 개발용 짧은 설명만 넣는다 - 발화 내용·서버 내부 원문을 싣지 않는다.
  *
  * 말하는 동안 소리는 24kHz로 리샘플해 OpenAI로 바로 중계하고, 무음 판정용으로 원본 PCM도 모은다.
- * commit 뒤의 처리(전사 대기 → LLM → TTS → 프레임 전송)는 WebSocket 스레드를 막지 않도록 스트리밍 전용 풀에서 한다.
+ * commit 뒤의 처리(전사 대기 → LLM → TTS → 프레임 전송)는 WebSocket 스레드를 막지 않도록 실시간 턴 전용 풀에서 한다
+ * (LLM·TTS 작업은 파이프라인 풀에서 돌고 이 처리가 그 결과를 기다리므로 같은 풀을 쓰면 안 된다).
  */
 @Slf4j
 @Component
@@ -139,7 +140,7 @@ public class LiveMessageHandler extends AbstractWebSocketHandler {
             return;
         }
         try {
-            speechStreamExecutor.executor().execute(() -> finishTurn(turn));
+            speechStreamExecutor.liveTurnExecutor().execute(() -> finishTurn(turn));
         } catch (RejectedExecutionException e) {
             log.error("스트리밍 풀이 가득 차 실시간 메시지를 처리하지 못함 - userId: {}", turn.userId);
             turn.fail(ERROR_PROCESSING_FAILED, "서버가 바쁨", CloseStatus.SERVER_ERROR);
