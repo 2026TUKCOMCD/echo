@@ -114,7 +114,7 @@ fun MicrophoneIcon(
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.primary,
     size: Dp = 80.dp,
-    contentDescription: String = "마이크"
+    contentDescription: String? = "마이크"   // 장식용으로 쓸 때는 null (TalkBack이 읽지 않음)
 ) {
     Icon(
         imageVector = MicIcon,

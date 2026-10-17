@@ -193,7 +193,10 @@ class AudioPlayerManager {
 
     private fun startStreamingPlayback(buffer: GrowingAudioBuffer) {
         try {
-            val player = MediaPlayer().apply {
+            // 설정 중 실패해도 catch의 releaseMediaPlayer()가 해제하도록 먼저 대입
+            val player = MediaPlayer()
+            mediaPlayer = player
+            player.apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -241,7 +244,6 @@ class AudioPlayerManager {
                 }
             }
 
-            mediaPlayer = player
             player.prepareAsync()
         } catch (e: Exception) {
             releaseMediaPlayer()
@@ -298,7 +300,10 @@ class AudioPlayerManager {
         try {
             val dataSource = ByteArrayMediaDataSource(audioBytes)
 
-            val player = MediaPlayer().apply {
+            // setDataSource()/prepare()가 실패해도 catch의 releaseMediaPlayer()가 해제하도록 먼저 대입
+            val player = MediaPlayer()
+            mediaPlayer = player
+            player.apply {
                 // 음성(TTS) 콘텐츠임을 명시해 기기가 올바른 오디오 경로/볼륨 정책을 적용하도록 함
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -331,7 +336,6 @@ class AudioPlayerManager {
                 start()
             }
 
-            mediaPlayer = player
             _state.value = AudioPlayState.Playing
             listener?.onPlaybackStart()
         } catch (e: Exception) {

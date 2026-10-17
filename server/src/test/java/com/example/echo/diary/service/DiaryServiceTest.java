@@ -123,8 +123,8 @@ class DiaryServiceTest {
     }
 
     @Test
-    @DisplayName("AI 생성 실패 시 기존 content를 보존한 채 FAILED로 기록하고 예외를 던지지 않는다")
-    void generateAndSaveDiary_marksFailedAndPreservesContent() {
+    @DisplayName("같은 날 성공한 일기가 있는데 갱신이 실패하면 DB의 성공본은 그대로 두고 UpdateFailed를 반환한다")
+    void generateAndSaveDiary_keepsSuccessfulDiaryWhenUpdateFails() {
         // given
         UserContext context = contextWithUserMessage();
         Diary existing = Diary.builder()
@@ -136,6 +136,33 @@ class DiaryServiceTest {
         when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.of(existing));
         when(promptService.buildDiaryPrompt(any(), anyString())).thenReturn("프롬프트");
         when(aiService.generateDiary(anyString())).thenThrow(new AIException("AI 일기 생성 실패: 401"));
+
+        // when
+        DiaryOutcome outcome = diaryService.generateAndSaveDiary(context);
+
+        // then: 최근 일기 주입(getRecentSuccessfulDiaries)에서 빠지지 않도록 SUCCESS 유지
+        assertThat(outcome).isInstanceOf(DiaryOutcome.UpdateFailed.class);
+        Diary kept = ((DiaryOutcome.UpdateFailed) outcome).kept();
+        assertThat(kept.getStatus()).isEqualTo(DiaryStatus.SUCCESS);
+        assertThat(kept.getContent()).isEqualTo("아침에 성공한 일기");
+        assertThat(kept.getFailureReason()).isNull();
+        verify(diaryRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("같은 날 기존 일기가 FAILED면 다시 실패했을 때 실패 사유를 갱신해 FAILED로 기록한다")
+    void generateAndSaveDiary_updatesFailureReasonWhenExistingFailed() {
+        // given
+        UserContext context = contextWithUserMessage();
+        Diary existing = Diary.builder()
+                .userId(TEST_USER_ID)
+                .diaryDate(TODAY)
+                .status(DiaryStatus.FAILED)
+                .failureReason("이전 실패")
+                .build();
+        when(diaryRepository.findByUserIdAndDiaryDate(TEST_USER_ID, TODAY)).thenReturn(Optional.of(existing));
+        when(promptService.buildDiaryPrompt(any(), isNull())).thenReturn("프롬프트");
+        when(aiService.generateDiary(anyString())).thenThrow(new AIException("AI 일기 생성 실패: 401"));
         when(diaryRepository.save(any(Diary.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
@@ -145,7 +172,6 @@ class DiaryServiceTest {
         Diary result = processedDiary(outcome);
         assertThat(result.getStatus()).isEqualTo(DiaryStatus.FAILED);
         assertThat(result.getFailureReason()).contains("AI 일기 생성 실패");
-        assertThat(result.getContent()).isEqualTo("아침에 성공한 일기"); // 성공본 보존
     }
 
     @Test

@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -192,6 +193,33 @@ class SpeechStreamPipelineTest {
 
         assertThatThrownBy(() -> start(llm)).isInstanceOf(AIException.class);
         verify(voiceService, never()).textToSpeechStream(anyString(), any());
+        assertThat(savedResponses).isEmpty();
+    }
+
+    @Test
+    @DisplayName("규칙 1: 풀에서 차례를 기다리다 시간 초과로 취소된 요청은 나중에 실행돼도 LLM을 호출하지 않는다")
+    void timedOutWhileQueued_neverOpensLlm() {
+        // 작업을 받아만 두고 실행하지 않는 풀 - 큐에서 기다리는 상황
+        List<Runnable> queued = new CopyOnWriteArrayList<>();
+        SpeechStreamExecutor busy = mock(SpeechStreamExecutor.class);
+        given(busy.executor()).willReturn(queued::add);
+        ConversationStreamProperties properties = new ConversationStreamProperties();
+        properties.setLlmTimeoutSeconds(1);
+        SpeechStreamPipeline queuedPipeline = new SpeechStreamPipeline(voiceService, aiService, busy, properties);
+        AtomicBoolean llmOpened = new AtomicBoolean(false);
+
+        assertThatThrownBy(() -> queuedPipeline.start(() -> {
+            llmOpened.set(true);
+            return new FakeLlm().send(FIRST).end();
+        }, voiceSettings, STAGES, stages::put, savedResponses::add))
+                .isInstanceOf(AIException.class)
+                .hasMessageContaining("시간 초과");
+
+        // 요청이 끝난 뒤에야 풀이 작업을 실행
+        assertThat(queued).hasSize(1);
+        queued.get(0).run();
+
+        assertThat(llmOpened).as("이미 실패한 요청을 위해 LLM을 호출(과금)하지 않음").isFalse();
         assertThat(savedResponses).isEmpty();
     }
 

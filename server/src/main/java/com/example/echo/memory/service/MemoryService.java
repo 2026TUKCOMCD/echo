@@ -10,6 +10,8 @@ import com.example.echo.memory.support.EmbeddingCodec;
 import com.example.echo.memory.support.VectorMath;
 import com.example.echo.prompt.service.PromptService;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.JsonLocation;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -146,31 +148,41 @@ public class MemoryService {
      * 이미 대화에 붙어 있는 기억(excludeIds)은 후보에서 빼서 자리를 차지하지 않게 한다.
      * 임베딩·DB 조회가 실패하면 빈 목록을 반환한다 - 기억 없이도 대화는 이어져야 한다.
      * 대화 원문이 로그에 남지 않도록 질의 문장은 기록하지 않고 기억 번호와 점수만 남긴다.
+     * 느린 검색이 어디서 시간을 쓰는지 운영 로그로 가릴 수 있게 단계별(임베딩·DB 조회·계산) 소요 시간도 남긴다.
      */
     public List<Memory> search(Long userId, String query, Set<Long> excludeIds, int limit, double threshold) {
-        Optional<float[]> queryVector = embeddingService.embed(query);
-        if (queryVector.isEmpty()) {
+        long start = System.currentTimeMillis();
+        Optional<EmbeddingService.QueryEmbedding> queryEmbedding = embeddingService.embed(query);
+        if (queryEmbedding.isEmpty()) {
             return List.of();
         }
+        long embeddedAt = System.currentTimeMillis();
 
+        List<StoredVector> candidates;
+        long loadedAt;
         List<VectorMath.Scored<StoredVector>> top;
         try {
-            List<StoredVector> candidates = loadComparableVectors(userId, embeddingService.modelTag()).stream()
+            candidates = loadComparableVectors(userId, embeddingService.modelTag()).stream()
                     .filter(stored -> !excludeIds.contains(stored.memory().getId()))
                     .toList();
-            top = VectorMath.topK(queryVector.get(), candidates, StoredVector::vector,
+            loadedAt = System.currentTimeMillis();
+            top = VectorMath.topK(queryEmbedding.get().vector(), candidates, StoredVector::vector,
                     Math.max(limit, SEARCH_SCORE_LOG_SIZE), Double.NEGATIVE_INFINITY);
         } catch (Exception e) {
             log.warn("장기기억 검색 실패 - 기억 없이 진행 - userId: {}", userId, e);
             return List.of();
         }
+        long scoredAt = System.currentTimeMillis();
 
         List<Memory> found = top.stream()
                 .filter(hit -> hit.score() >= threshold)
                 .limit(limit)
                 .map(hit -> hit.item().memory())
                 .toList();
-        log.info("장기기억 검색 - userId: {}, 상위: [{}] → 붙임: {}", userId,
+        Integer openaiProcessingMs = queryEmbedding.get().openaiProcessingMs();
+        log.info("장기기억 검색 - userId: {}, 임베딩 {}ms(OpenAI 처리 {}ms), DB 조회 {}ms({}건), 계산 {}ms, 상위: [{}] → 붙임: {}",
+                userId, embeddedAt - start, openaiProcessingMs == null ? "-" : openaiProcessingMs,
+                loadedAt - embeddedAt, candidates.size(), scoredAt - loadedAt,
                 describeScores(top.subList(0, Math.min(top.size(), SEARCH_SCORE_LOG_SIZE))),
                 found.stream().map(memory -> "#" + memory.getId()).toList());
         return found;
@@ -353,14 +365,24 @@ public class MemoryService {
      *
      * 모델이 매일 로테이션되어 출력 형식이 흔들릴 수 있으므로,
      * 첫 [ 부터 마지막 ] 까지만 잘라내어 코드 블록 표시와 앞뒤 설명문을 함께 방어한다.
+     *
+     * 실패 예외에는 응답 원문을 싣지 않는다 - 대화에서 뽑은 기억이 담겨 있어, 호출부가 WARN으로 남기는
+     * 예외(스택 트레이스 포함)에 들어가면 안 된다. Jackson 예외도 메시지에 값 일부가 들어가므로
+     * 원인 예외로 붙이지 않고 종류와 위치만 남긴다.
      */
-    private <T> List<T> parseJsonArray(String raw, TypeReference<List<T>> type) throws Exception {
+    private <T> List<T> parseJsonArray(String raw, TypeReference<List<T>> type) {
         int start = raw.indexOf('[');
         int end = raw.lastIndexOf(']');
         if (start < 0 || end <= start) {
-            throw new IllegalArgumentException("JSON 배열을 찾을 수 없습니다: " + raw);
+            throw new IllegalArgumentException("JSON 배열을 찾을 수 없습니다 (응답 길이: " + raw.length() + ")");
         }
-        return objectMapper.readValue(raw.substring(start, end + 1), type);
+        try {
+            return objectMapper.readValue(raw.substring(start, end + 1), type);
+        } catch (JsonProcessingException e) {
+            JsonLocation location = e.getLocation();
+            throw new IllegalArgumentException("JSON 파싱 실패: " + e.getClass().getSimpleName()
+                    + (location != null ? " (line " + location.getLineNr() + ", column " + location.getColumnNr() + ")" : ""));
+        }
     }
 
     private Memory toEntity(Long userId, MemoryItem item) {

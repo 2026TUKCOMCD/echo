@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -180,11 +181,11 @@ fun UnifiedPermissionHandler(
         }
     }
 
-    // Health Connect 권한 요청 런처
+    // Health Connect 권한 요청 런처 (Health Connect 전용 계약 - Android 13 이하에서도 권한 화면이 뜨도록)
     val healthConnectLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { grantResults ->
-        val allGranted = PermissionChecker.getHealthConnectPermissions().all { grantResults[it] == true }
+        PermissionChecker.healthConnectPermissionContract()
+    ) { grantedPermissions ->
+        val allGranted = grantedPermissions.containsAll(PermissionChecker.getHealthConnectPermissions())
         permPrefs.edit().putBoolean(healthConnectGrantedKey, allGranted).apply()
         currentStep = PermissionStep.COMPLETED
         hasCompletedOnboarding = true
@@ -275,7 +276,7 @@ fun UnifiedPermissionHandler(
                     } else {
                         val wasGrantedBefore = permPrefs.getBoolean(healthConnectGrantedKey, false)
                         if (!previouslyCompleted || wasGrantedBefore) {
-                            healthConnectLauncher.launch(PermissionChecker.getHealthConnectPermissions().toTypedArray())
+                            healthConnectLauncher.launch(PermissionChecker.getHealthConnectPermissions())
                         } else {
                             currentStep = PermissionStep.COMPLETED
                             hasCompletedOnboarding = true
@@ -427,6 +428,13 @@ object PermissionChecker {
             "android.permission.health.READ_DISTANCE"
         )
     }
+
+    /**
+     * Health Connect 권한 요청 계약 (공식 문서 방식).
+     * 건강 권한은 Android 14부터 플랫폼 권한이라, 일반 RequestMultiplePermissions로 요청하면 13 이하에서는
+     * 권한 화면 없이 바로 거부된다. 이 계약은 13 이하에서 Health Connect 앱의 권한 화면을 연다.
+     */
+    fun healthConnectPermissionContract() = PermissionController.createRequestPermissionResultContract()
 
     fun openAppSettings(context: Context) {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {

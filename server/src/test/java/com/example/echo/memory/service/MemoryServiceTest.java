@@ -2,6 +2,7 @@ package com.example.echo.memory.service;
 
 import com.example.echo.ai.exception.AIException;
 import com.example.echo.ai.service.AIService;
+import com.example.echo.common.LogCapture;
 import com.example.echo.context.domain.ConversationTurn;
 import com.example.echo.context.domain.UserContext;
 import com.example.echo.memory.dto.MemoryMergeItem;
@@ -102,6 +103,11 @@ class MemoryServiceTest {
         ReflectionTestUtils.setField(memory, "id", id);
         memory.assignEmbedding(EmbeddingCodec.encode(vector), modelTag);
         return memory;
+    }
+
+    /** 검색 질의 임베딩 결과 - OpenAI 처리 시간은 로그에만 쓰이므로 값은 아무거나 */
+    private Optional<EmbeddingService.QueryEmbedding> queryEmbedding(float[] vector) {
+        return Optional.of(new EmbeddingService.QueryEmbedding(vector, 50));
     }
 
     private String facts(String... contents) {
@@ -385,6 +391,42 @@ class MemoryServiceTest {
     }
 
     @Test
+    @DisplayName("추출 응답이 JSON이 아니어도 로그에 응답 원문(대화에서 뽑은 내용)을 남기지 않는다")
+    void parseFailureLogDoesNotContainLlmResponse() {
+        // given
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn("손녀 김서연이 다음 달 결혼한다고 하셨습니다.");
+
+        try (LogCapture logs = LogCapture.of(MemoryService.class)) {
+            // when
+            memoryService.extractAndSaveMemories(contextWithUserMessage());
+
+            // then
+            assertThat(logs.count()).isPositive();
+            assertThat(logs.allText()).doesNotContain("김서연");
+        }
+    }
+
+    @Test
+    @DisplayName("병합 판단 JSON에 잘못된 값이 와도 로그에 그 값을 남기지 않는다 (Jackson 예외 메시지에 값이 들어감)")
+    void mergeParseFailureLogDoesNotContainLlmValue() {
+        // given
+        Memory existing = stored(12, "어머니가 떡장사를 하셨다", NEAR, MODEL_TAG);
+        when(aiService.generateMemoryExtraction(anyString())).thenReturn(facts("어머니가 새벽에 떡을 찌셨다"));
+        when(embeddingService.embedAll(anyList(), eq(MemoryService.EMBEDDING_TIMEOUT))).thenReturn(List.of(NEAR));
+        when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(existing));
+        when(aiService.generateMemoryMerge(anyString()))
+                .thenReturn("[{\"index\": \"손녀 김서연 결혼\", \"action\": \"ADD\"}]");
+
+        try (LogCapture logs = LogCapture.of(MemoryService.class)) {
+            // when
+            memoryService.extractAndSaveMemories(contextWithUserMessage());
+
+            // then
+            assertThat(logs.allText()).contains("병합 판단 실패").doesNotContain("김서연");
+        }
+    }
+
+    @Test
     @DisplayName("빈 배열이 오면 아무것도 저장하지 않는다")
     void savesNothingWhenEmptyArray() {
         // given
@@ -498,7 +540,7 @@ class MemoryServiceTest {
     @DisplayName("search는 임계값 이상인 기억만 유사도 높은 순으로 최대 limit건 반환한다")
     void search_returnsTopMatchesAboveThreshold() {
         // given: 질의(NEAR)와의 유사도 #1 0.6 / #2 1.0 / #3 0.8 / #4 0
-        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(embeddingService.embed("질의")).thenReturn(queryEmbedding(NEAR));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
                 stored(1, "조금 비슷함", new float[]{0.6f, 0.8f, 0f}, MODEL_TAG),
                 stored(2, "같은 이야기", NEAR, MODEL_TAG),
@@ -516,7 +558,7 @@ class MemoryServiceTest {
     @DisplayName("search는 이미 대화에 붙은 기억을 빼고 찾아, 다음으로 비슷한 기억이 그 자리를 채운다")
     void search_excludesAlreadyRecalled() {
         // given
-        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(embeddingService.embed("질의")).thenReturn(queryEmbedding(NEAR));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
                 stored(1, "조금 비슷함", new float[]{0.6f, 0.8f, 0f}, MODEL_TAG),
                 stored(2, "같은 이야기", NEAR, MODEL_TAG),
@@ -535,7 +577,7 @@ class MemoryServiceTest {
         // given
         Memory withoutEmbedding = Memory.builder().userId(TEST_USER_ID).content("백필 전 기억").build();
         ReflectionTestUtils.setField(withoutEmbedding, "id", 2L);
-        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(embeddingService.embed("질의")).thenReturn(queryEmbedding(NEAR));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenReturn(List.of(
                 stored(1, "옛 모델로 만든 기억", NEAR, "text-embedding-3-small@1536"),
                 withoutEmbedding));
@@ -565,7 +607,7 @@ class MemoryServiceTest {
     @DisplayName("search는 DB 조회에 실패해도 예외를 던지지 않고 빈 목록을 반환한다 (기억 없이 대화 진행)")
     void search_returnsEmptyWhenRepositoryFails() {
         // given
-        when(embeddingService.embed("질의")).thenReturn(Optional.of(NEAR));
+        when(embeddingService.embed("질의")).thenReturn(queryEmbedding(NEAR));
         when(memoryRepository.findByUserIdOrderByIdAsc(TEST_USER_ID)).thenThrow(new RuntimeException("DB 연결 끊김"));
 
         // when

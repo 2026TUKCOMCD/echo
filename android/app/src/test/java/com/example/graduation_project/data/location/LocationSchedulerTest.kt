@@ -192,8 +192,8 @@ class LocationSchedulerTest {
     fun `isCurrentTimeInCollectionRange_종료시간_이후면_false_반환`() {
         // Given: 현재 시간보다 이전의 범위 설정
         val (currentHour, _) = getCurrentHourMinute()
-        val endHour = (currentHour - 1).coerceAtLeast(1)
-        val startHour = (endHour - 1).coerceAtLeast(0)
+        val endHour = (currentHour - 1).mod(24)
+        val startHour = (currentHour - 2).mod(24)
         setupTimeRange("%02d:00".format(startHour), "%02d:00".format(endHour))
 
         // When
@@ -207,7 +207,7 @@ class LocationSchedulerTest {
     fun `isCurrentTimeInCollectionRange_정확히_시작시간이면_true_반환`() {
         // Given: 시작 시간 = 현재 시간, 종료 시간 = 현재 + 2시간
         val (currentHour, currentMinute) = getCurrentHourMinute()
-        val endHour = (currentHour + 2).coerceAtMost(23)
+        val endHour = (currentHour + 2).mod(24)
         setupTimeRange("%02d:%02d".format(currentHour, currentMinute), "%02d:00".format(endHour))
 
         // When
@@ -665,11 +665,12 @@ class LocationSchedulerTest {
 
     /**
      * 시간 범위 내로 설정 (현재 시간이 범위 내에 있도록)
+     * 시를 24로 감아 자정 근처에서도 성립하게 한다 (isTimeInRange는 자정을 넘는 범위를 지원)
      */
     private fun setupTimeRangeContainingNow() {
         val (currentHour, _) = getCurrentHourMinute()
-        val startHour = (currentHour - 1).coerceAtLeast(0)
-        val endHour = (currentHour + 1).coerceAtMost(23)
+        val startHour = (currentHour - 1).mod(24)
+        val endHour = (currentHour + 1).mod(24)
         setupTimeRange("%02d:00".format(startHour), "%02d:00".format(endHour))
     }
 
@@ -678,9 +679,9 @@ class LocationSchedulerTest {
      */
     private fun setupTimeRangeExcludingNow() {
         val (currentHour, _) = getCurrentHourMinute()
-        // 현재 시간보다 미래의 범위 설정
-        val startHour = (currentHour + 2).coerceAtMost(22)
-        val endHour = (currentHour + 3).coerceAtMost(23)
+        // 현재 시간보다 미래의 범위 설정 (자정 근처에서도 성립하도록 시를 24로 감음)
+        val startHour = (currentHour + 2).mod(24)
+        val endHour = (currentHour + 3).mod(24)
         setupTimeRange("%02d:00".format(startHour), "%02d:00".format(endHour))
     }
 

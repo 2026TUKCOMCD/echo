@@ -33,6 +33,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 /**
  * 다른 기기에서 로그인했을 때(로컬 알람 저장소가 비어있는 상태) 홈 화면 진입만으로도
@@ -80,13 +84,46 @@ class HomeViewModelTest {
         unmockkAll()
     }
 
-    private fun createViewModel(): HomeViewModel = HomeViewModel(
+    private fun createViewModel(clock: Clock = Clock.systemUTC()): HomeViewModel = HomeViewModel(
         application = context,
         userRepository = mockUserRepository,
         weatherRepository = mockWeatherRepository,
         locationManager = mockLocationManager,
-        locationStorageManager = mockLocationStorageManager
+        locationStorageManager = mockLocationStorageManager,
+        clock = clock
     )
+
+    private class MutableClock(var now: Instant) : Clock() {
+        override fun instant(): Instant = now
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+        override fun withZone(zone: ZoneId): Clock = this
+    }
+
+    @Test
+    fun `오늘_날짜는_기기_시간대와_무관하게_KST로_표시한다`() = runTest {
+        coEvery { mockUserRepository.getPreferences() } returns ApiResult.Success(UserPreferences())
+        // UTC로는 아직 10월 14일 15:30이지만 KST로는 10월 15일 00:30
+        val clock = Clock.fixed(Instant.parse("2026-10-14T15:30:00Z"), ZoneOffset.UTC)
+
+        val viewModel = createViewModel(clock)
+
+        assertEquals("10월 15일 목요일", viewModel.uiState.value.date)
+    }
+
+    @Test
+    fun `자정을_넘겨_홈에_다시_들어오면_오늘_날짜를_다시_계산한다`() = runTest {
+        coEvery { mockUserRepository.getPreferences() } returns ApiResult.Success(UserPreferences())
+        val clock = MutableClock(Instant.parse("2026-10-14T14:50:00Z"))   // KST 10월 14일 23:50
+        val viewModel = createViewModel(clock)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals("10월 14일 수요일", viewModel.uiState.value.date)
+
+        // When: 앱을 켜 둔 채 자정이 지나고 다시 홈 화면을 엶 (HomeScreen ON_RESUME → refresh)
+        clock.now = Instant.parse("2026-10-14T15:10:00Z")   // KST 10월 15일 00:10
+        viewModel.refresh()
+
+        assertEquals("10월 15일 목요일", viewModel.uiState.value.date)
+    }
 
     @Test
     fun `홈_진입시_서버_대화시간으로_로컬_알람을_동기화한다`() = runTest {

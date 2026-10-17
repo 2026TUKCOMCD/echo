@@ -113,6 +113,7 @@ public class ConversationController {
                     content = @Content(schema = @Schema(implementation = ConversationResponse.class))
             ),
             @ApiResponse(responseCode = "400", description = "음성 파일 형식 오류"),
+            @ApiResponse(responseCode = "413", description = "음성 파일이 업로드 한도(25MB)를 넘음"),
             @ApiResponse(responseCode = "500", description = "STT/AI/TTS 처리 실패")
     })
     @PostMapping(value = "/message", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -136,6 +137,7 @@ public class ConversationController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "스트리밍 시작 (본문은 프레임 스트림)"),
             @ApiResponse(responseCode = "400", description = "음성 파일 형식 오류"),
+            @ApiResponse(responseCode = "413", description = "음성 파일이 업로드 한도(25MB)를 넘음"),
             @ApiResponse(responseCode = "500", description = "STT/AI/TTS 첫 소리 전 처리 실패")
     })
     @PostMapping(value = "/message-stream", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

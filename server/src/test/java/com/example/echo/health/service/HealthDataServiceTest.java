@@ -1,19 +1,23 @@
 package com.example.echo.health.service;
 
+import com.example.echo.common.NonKstJvmTimeZone;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.entity.HealthLog;
 import com.example.echo.health.repository.HealthLogRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -30,10 +34,66 @@ class HealthDataServiceTest {
     @Mock
     private HealthLogRepository healthLogRepository;
 
-    @InjectMocks
     private HealthDataService healthDataService;
 
     private final Long TEST_USER_ID = 1L;
+
+    @BeforeEach
+    void setUp() {
+        healthDataService = new HealthDataService(healthLogRepository, Clock.system(ZoneId.of("Asia/Seoul")));
+    }
+
+    @Nested
+    @DisplayName("날짜 기준 - 운영 서버(JVM 기본 시간대 UTC)에서도 한국 날짜를 쓴다")
+    class KstDateBoundaryTest {
+
+        @Test
+        @DisplayName("오늘 건강 데이터는 한국 날짜로 저장한다 (전날 기록을 덮어쓰지 않음)")
+        void saveHealthData_usesKstToday() {
+            try (NonKstJvmTimeZone tz = NonKstJvmTimeZone.apply()) {
+                assertThat(LocalDate.now()).as("재현 조건: JVM 날짜가 한국 날짜와 다름").isNotEqualTo(tz.kstToday());
+                when(healthLogRepository.findByUserIdAndRecordedDate(eq(TEST_USER_ID), any(LocalDate.class)))
+                        .thenReturn(Optional.empty());
+                when(healthLogRepository.save(any(HealthLog.class))).thenAnswer(inv -> inv.getArgument(0));
+
+                healthDataService.saveHealthData(TEST_USER_ID, HealthData.builder().steps(3000).build());
+
+                verify(healthLogRepository).findByUserIdAndRecordedDate(TEST_USER_ID, tz.kstToday());
+                ArgumentCaptor<HealthLog> saved = ArgumentCaptor.forClass(HealthLog.class);
+                verify(healthLogRepository).save(saved.capture());
+                assertThat(saved.getValue().getRecordedDate()).isEqualTo(tz.kstToday());
+            }
+        }
+
+        @Test
+        @DisplayName("앱이 건강 데이터를 보내지 않았을 때 조회하는 '오늘 기록'도 한국 날짜 기준")
+        void getTodayHealthData_usesKstToday() {
+            try (NonKstJvmTimeZone tz = NonKstJvmTimeZone.apply()) {
+                when(healthLogRepository.findByUserIdAndRecordedDate(eq(TEST_USER_ID), any(LocalDate.class)))
+                        .thenReturn(Optional.empty());
+
+                healthDataService.getTodayHealthData(TEST_USER_ID);
+
+                verify(healthLogRepository).findByUserIdAndRecordedDate(TEST_USER_ID, tz.kstToday());
+            }
+        }
+
+        @Test
+        @DisplayName("최근 7일 평균은 한국 기준 어제까지의 7일로 계산한다")
+        void buildEnrichedHealthData_usesKstWeekEndingYesterday() {
+            try (NonKstJvmTimeZone tz = NonKstJvmTimeZone.apply()) {
+                when(healthLogRepository.findByUserIdAndRecordedDateBetweenOrderByRecordedDateAsc(
+                        eq(TEST_USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                        .thenReturn(Collections.emptyList());
+
+                healthDataService.buildEnrichedHealthData(HealthData.builder().steps(3000).build(), TEST_USER_ID, 7);
+
+                LocalDate kstYesterday = tz.kstToday().minusDays(1);
+                verify(healthLogRepository).findByUserIdAndRecordedDateBetweenOrderByRecordedDateAsc(
+                        TEST_USER_ID, kstYesterday.minusDays(6), kstYesterday);
+            }
+        }
+    }
 
     @Nested
     @DisplayName("getTodayHealthData 테스트")

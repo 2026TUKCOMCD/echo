@@ -20,6 +20,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 디버그 HTTP 로그에 요청·응답 본문까지 남길지 (기본 꺼짐 - 본문에 대화 전사·건강·위치·일기·개인정보가 있음)
+        // 응답 내용을 봐야 할 때만 개발자 PC에서 켠다: ./gradlew installLocalDebug -Pecho.logHttpBody=true
+        buildConfigField(
+            "boolean", "LOG_HTTP_BODY",
+            (project.findProperty("echo.logHttpBody")?.toString()?.toBoolean() ?: false).toString()
+        )
     }
 
     flavorDimensions += "server"
@@ -132,6 +139,10 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.okhttp.mockwebserver)
+    // 화면 전환(Navigation Compose) 타이밍 문제를 Robolectric에서 재현하는 Compose UI 테스트
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     // Room 마이그레이션 테스트에서 ApplicationProvider(Context) 제공
     testImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.junit)
