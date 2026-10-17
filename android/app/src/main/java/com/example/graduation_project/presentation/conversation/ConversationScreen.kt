@@ -64,6 +64,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.withResumed
 import com.example.graduation_project.R
 import kotlinx.coroutines.delay
 import com.example.graduation_project.presentation.conversation.components.AnimatedWebpImage
@@ -121,20 +122,24 @@ fun ConversationScreen(
         }
     }
 
-    // Ended 상태가 되면 웨이브 애니메이션 + 작별 메시지를 보여준 후 뒤로 이동
+    // Ended 상태가 되면 웨이브 애니메이션 + 작별 메시지를 보여준 후 뒤로 이동.
+    // 화면이 보일 때(RESUMED)만 이동: 그 사이 뒤로가기로 나가는 중이면 이동하지 않고(두 단계 pop → 빈 화면 방지),
+    // 백그라운드였다면 돌아왔을 때 이동한다 (버튼 없는 작별 화면에 남지 않도록)
     LaunchedEffect(uiState.conversationState) {
         if (uiState.conversationState is ConversationState.Ended) {
             delay(2000L)
-            onBack()
+            lifecycleOwner.lifecycle.withResumed { onBack() }
         }
     }
 
-    // 대화 시작 실패 시 에러 메시지를 잠깐 보여준 뒤 홈으로 복귀
+    // 대화 시작 실패 시 에러 메시지를 잠깐 보여준 뒤 홈으로 복귀 (위와 같이 화면이 보일 때만)
     LaunchedEffect(uiState.startFailed) {
         if (uiState.startFailed) {
             delay(2000L)
-            viewModel.consumeStartFailedEvent()
-            onBack()
+            lifecycleOwner.lifecycle.withResumed {
+                viewModel.consumeStartFailedEvent()
+                onBack()
+            }
         }
     }
 

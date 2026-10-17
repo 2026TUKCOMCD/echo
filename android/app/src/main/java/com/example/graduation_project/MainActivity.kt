@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -203,6 +204,15 @@ internal fun NavController.navigateToLoginAfterLogout() {
     }
     EchoTab.entries.filter { it != EchoTab.HOME }.forEach { clearBackStack(it.route) }
 }
+
+/**
+ * 화면 안의 뒤로가기(← 버튼, 대화 종료 후 자동 복귀)에 쓰는 popBackStack.
+ * 이 화면이 RESUMED가 아니면(나가는 전환 중 등) 호출을 버린다 - NavHost 기본 전환(700ms 페이드) 동안
+ * 나가는 화면이 남아 있어, ← 연타나 뒤늦은 호출이 아래 화면까지 한 번 더 pop하는 것(빈 화면 포함)을 막는다.
+ */
+@Composable
+internal fun popBackOnlyWhenResumed(navController: NavController): () -> Unit =
+    dropUnlessResumed { navController.popBackStack() }
 
 @Composable
 private fun AppNavHost(
@@ -516,7 +526,7 @@ private fun AppNavHost(
                     onSessionClick = { conversationId ->
                         navController.navigate(Routes.historyDetail(conversationId))
                     },
-                    onBack = { navController.popBackStack() }
+                    onBack = popBackOnlyWhenResumed(navController)
                 )
             }
 
@@ -526,7 +536,7 @@ private fun AppNavHost(
                 val conversationId = URLDecoder.decode(encoded, "UTF-8")
                 ConversationHistoryDetailScreen(
                     conversationId = conversationId,
-                    onBack = { navController.popBackStack() }
+                    onBack = popBackOnlyWhenResumed(navController)
                 )
             }
 
@@ -552,7 +562,7 @@ private fun AppNavHost(
                             navController.navigateToLoginAfterLogout()
                         }
                     },
-                    onBack = { navController.popBackStack() }
+                    onBack = popBackOnlyWhenResumed(navController)
                 )
             }
         }
