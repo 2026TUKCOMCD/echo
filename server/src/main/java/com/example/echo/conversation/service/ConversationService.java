@@ -201,6 +201,12 @@ public class ConversationService {
      * 참조하지 않는 독립적인 I/O라, 순차로 하나씩 기다리는 대신 한꺼번에 병렬로 실행하고 다같이
      * 기다린다.
      *
+     * 컨텍스트 초기화만은 공용 풀에 넣지 않고 이 요청 스레드에서 직접 한다. 그 안에서 방문 장소별 작업을
+     * 같은 공용 풀(applicationTaskExecutor)에 넣고 기다리기 때문이다(LocationService). 공용 풀은 스레드 8개에
+     * 대기열이 무제한이라 스레드가 더 늘지 않으므로, 풀 스레드에서 돌리면 대화 시작이 스레드 수만큼 몰릴 때
+     * 모두가 대기열 속 작업을 기다리며 재시작 전까지 멈춘다. 요청 스레드는 어차피 세 작업을 기다리는 동안
+     * 놀고 있으므로 병렬성은 그대로다.
+     *
      * 건강데이터 저장이 이 배치에 안전하게 낄 수 있는 이유:
      * (1) EnrichedHealthData는 방금 저장한 DB 값이 아니라 이 메서드가 받은 healthData 객체를 그대로
      *     쓰고(HealthDataService.buildEnrichedHealthData 참고 - 7일 평균도 오늘을 제외한 과거 로그만
@@ -215,17 +221,15 @@ public class ConversationService {
      * 이미 쓰고 있는 것과 같은 fire-and-forget 판단이다.
      */
     private UserContext prepareGreetingContext(Long userId, HealthData healthData, RawLocationData rawLocationData) {
-        // 0-1. 독립적인 세 작업을 한꺼번에 제출
+        // 0-1. 독립적인 두 작업은 공용 풀에 제출하고, 컨텍스트 초기화는 이 스레드에서 직접 한다 (위 설명 참고)
         CompletableFuture<Void> healthSaveFuture = healthData != null
                 ? CompletableFuture.runAsync(() -> saveHealthDataSafely(userId, healthData), taskExecutor)
                 : CompletableFuture.completedFuture(null);
-        CompletableFuture<UserContext> contextFuture = CompletableFuture.supplyAsync(
-                () -> contextService.initializeContext(userId, healthData, rawLocationData), taskExecutor);
         CompletableFuture<List<Diary>> diariesFuture = CompletableFuture.supplyAsync(
                 () -> loadRecentDiaries(userId), taskExecutor);
 
+        UserContext context = contextService.initializeContext(userId, healthData, rawLocationData);
         join(healthSaveFuture);
-        UserContext context = join(contextFuture);
         List<Diary> recentDiaries = join(diariesFuture);
 
         // 3. 시스템 프롬프트 생성 및 컨텍스트에 캐싱 (processUserMessage에서 재사용)
