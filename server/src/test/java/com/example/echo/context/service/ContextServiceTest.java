@@ -129,7 +129,7 @@ class ContextServiceTest {
             // then
             assertThat(result).isNotNull();
             assertThat(result.getUserId()).isEqualTo(userId);
-            assertThat(result.getDate()).isEqualTo(LocalDate.now());
+            assertThat(result.getDate()).isEqualTo(LocalDate.now(clock));
             assertThat(result.getPreferences()).isEqualTo(mockPreferences);
             assertThat(result.getEnrichedHealthData()).isEqualTo(mockEnrichedHealthData);
             assertThat(result.getTodayWeather()).isEqualTo(mockWeatherData);
@@ -156,7 +156,7 @@ class ContextServiceTest {
             // then
             assertThat(result).isNotNull();
             assertThat(result.getUserId()).isEqualTo(userId);
-            assertThat(result.getDate()).isEqualTo(LocalDate.now());
+            assertThat(result.getDate()).isEqualTo(LocalDate.now(clock));
             assertThat(result.getPreferences()).isEqualTo(mockPreferences);
             assertThat(result.getEnrichedHealthData()).isEqualTo(mockEnrichedHealthData);
             assertThat(result.getTodayWeather()).isEqualTo(mockWeatherData);
