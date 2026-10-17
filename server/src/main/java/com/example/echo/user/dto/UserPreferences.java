@@ -3,6 +3,7 @@ package com.example.echo.user.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,6 +23,7 @@ public class UserPreferences {
     private Integer age;
 
     @NotNull(message = "생년월일은 필수입니다.")
+    @PastOrPresent(message = "생년월일은 미래 날짜일 수 없습니다.")
     private LocalDate birthday;
 
     @NotNull(message = "거주 지역은 필수입니다.")
