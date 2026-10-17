@@ -32,6 +32,10 @@ class FeignStreamingResponseTest {
         @RequestLine("POST /stream")
         @Headers("Content-Type: application/json")
         Response stream(String body);
+
+        @RequestLine("POST /error")
+        @Headers("Content-Type: application/json")
+        Response error(String body);
     }
 
     private HttpServer server;
@@ -52,6 +56,15 @@ class FeignStreamingResponseTest {
                     Thread.currentThread().interrupt();
                 }
                 out.write("second".getBytes(StandardCharsets.UTF_8));
+            }
+        });
+        server.createContext("/error", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            byte[] body = "{\"detail\":{\"status\":\"quota_exceeded\"}}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(401, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
             }
         });
         server.start();
@@ -83,6 +96,18 @@ class FeignStreamingResponseTest {
                     .as("첫 청크가 서버의 지연(%dms)보다 먼저 도착해야 함 - 버퍼링되면 이 값이 지연 이상이 된다", SERVER_DELAY_MS)
                     .isLessThan(SERVER_DELAY_MS - 300);
             assertThat(totalMs).isGreaterThanOrEqualTo(SERVER_DELAY_MS - 100);
+        }
+    }
+
+    @Test
+    @DisplayName("반환 타입이 feign.Response면 오류 상태 코드도 ErrorDecoder를 거치지 않고 그대로 반환된다 - 호출자가 상태 코드를 직접 확인해야 함")
+    void errorStatusBypassesErrorDecoder() {
+        StreamApi api = Feign.builder()
+                .errorDecoder((methodKey, response) -> new IllegalStateException("decoder called"))
+                .target(StreamApi.class, "http://127.0.0.1:" + server.getAddress().getPort());
+
+        try (Response response = api.error("{}")) {
+            assertThat(response.status()).isEqualTo(401);
         }
     }
 }
