@@ -27,6 +27,7 @@ import java.util.List;
  * - 대화 원문은 서버에 영구 저장되지 않으므로(클라이언트 로컬에만 존재),
  *   [기존 저장된 오늘 일기 + 이번 세션 대화]를 입력으로 증분 재생성
  * - 생성 실패 시에도 FAILED 레코드를 남겨 클라이언트에서 확인 가능 (디버깅 목적)
+ *   단, 같은 날 이미 성공한 일기가 있으면 성공본을 그대로 두고 이번 갱신 실패만 알린다
  * - 날짜 경계는 Asia/Seoul 기준 (배포 환경 JVM 타임존에 의존하지 않음)
  */
 @Slf4j
@@ -45,11 +46,15 @@ public class DiaryService {
     /**
      * 대화 종료 시 오늘의 일기 생성/갱신
      *
+     * 트랜잭션을 걸지 않는다 - LLM 생성(수십 초) 동안 DB 커넥션을 점유하지 않도록, 저장만
+     * 리포지토리 호출 단위의 짧은 트랜잭션으로 처리한다. 저장 경합 복구도 별도 트랜잭션에서 하므로
+     * 앞선 실패가 rollback-only로 남아 복구까지 실패하는 일이 없다.
+     *
      * @param context 대화 종료 시점의 UserContext
-     * @return Skipped(사용자 발화 없어 의도적으로 건너뜀) 또는
-     *         Processed(생성 시도함 - diary.status가 SUCCESS/FAILED, 실패 기록 저장까지 실패하면 diary.id는 null)
+     * @return Skipped(사용자 발화 없어 의도적으로 건너뜀),
+     *         Processed(생성 시도함 - diary.status가 SUCCESS/FAILED, 실패 기록 저장까지 실패하면 diary.id는 null) 또는
+     *         UpdateFailed(같은 날 성공한 일기의 갱신만 실패 - 성공본은 그대로 유지)
      */
-    @Transactional
     public DiaryOutcome generateAndSaveDiary(UserContext context) {
         Long userId = context.getUserId();
         LocalDate today = LocalDate.now(KST);
@@ -76,6 +81,10 @@ public class DiaryService {
             return new DiaryOutcome.Processed(saved);
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}, date: {}", userId, today, e);
+            if (existing != null && existing.getStatus() == DiaryStatus.SUCCESS) {
+                // 성공본을 FAILED로 바꾸면 최근 일기 주입(getRecentSuccessfulDiaries)에서 그날이 빠지므로 그대로 둔다
+                return new DiaryOutcome.UpdateFailed(existing);
+            }
             return new DiaryOutcome.Processed(saveFailure(userId, today, existing, e));
         }
     }
@@ -145,10 +154,10 @@ public class DiaryService {
     }
 
     private Diary saveFailure(Long userId, LocalDate date, Diary existing, Exception cause) {
-        String reason = truncate(cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName());
+        String reason = failureReason(cause);
         Diary failed;
         if (existing != null) {
-            // 같은 날 이미 성공한 일기가 있으면 content는 보존하고 상태만 FAILED로 표시
+            // 이전에도 실패한 날 - 실패 사유만 갱신
             existing.markFailed(reason);
             failed = existing;
         } else {
@@ -183,6 +192,10 @@ public class DiaryService {
             return null;
         }
         return context.getTodayWeather().getDescription();
+    }
+
+    private String failureReason(Exception cause) {
+        return truncate(cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName());
     }
 
     private String truncate(String text) {

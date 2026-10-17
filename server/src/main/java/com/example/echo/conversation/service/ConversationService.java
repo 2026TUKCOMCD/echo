@@ -13,6 +13,7 @@ import com.example.echo.conversation.stream.SpeechSegment;
 import com.example.echo.conversation.stream.SpeechSegmentSource;
 import com.example.echo.conversation.exception.ConversationNotFoundException;
 import com.example.echo.diary.entity.Diary;
+import com.example.echo.diary.entity.DiaryStatus;
 import com.example.echo.diary.service.DiaryOutcome;
 import com.example.echo.diary.service.DiaryService;
 import com.example.echo.health.dto.HealthData;
@@ -187,6 +188,11 @@ public class ConversationService {
 
     /** appendRecentDiaries에서 조회하는 최근 일기 범위 (일) */
     private static final int RECENT_DIARY_DAYS = 7;
+
+    // /end 응답 diaryError - 앱이 "일기 생성에 실패했어요: {diaryError}" Toast로 그대로 보여 주므로
+    // 예외 원문 대신 정해진 짧은 문구만 싣는다 (원문은 서버 로그와 diaries.failure_reason에 남는다)
+    private static final String DIARY_ERROR_TEMPORARY = "일시적인 서버 오류";
+    private static final String DIARY_ERROR_NO_CONTEXT = "대화 기록을 찾을 수 없음";
 
     /**
      * 건강 데이터 저장 → 컨텍스트 초기화 → 시스템 프롬프트 생성 (일괄/스트리밍 공통 구간). 첫 인사 생성은 호출 방식별로 한다.
@@ -535,10 +541,12 @@ public class ConversationService {
         Long diaryId = null;
         String diaryError = null;
         LocalDate diaryDate = null;
+        boolean contextFound = false;
 
         try {
             // 1. 컨텍스트 조회
             UserContext context = contextService.getContext(userId);
+            contextFound = true;
             log.info("컨텍스트 조회 완료 - 대화 턴 수: {}", context.getConversationHistory().size());
 
             // 2. 일기 생성 (동기) - 실패해도 대화 종료는 계속되며, 결과를 응답에 명시
@@ -547,9 +555,15 @@ public class ConversationService {
                 Diary diary = processed.diary();
                 diaryStatus = diary.getStatus().name();
                 diaryId = diary.getId();
-                diaryError = diary.getFailureReason();
+                diaryError = diary.getStatus() == DiaryStatus.FAILED ? DIARY_ERROR_TEMPORARY : null;
                 // 클라이언트가 이 세션을 일기 탭에서 로컬 타임스탬프 추정 대신 신뢰할 수 있도록 전달
                 diaryDate = diary.getDiaryDate();
+            } else if (outcome instanceof DiaryOutcome.UpdateFailed updateFailed) {
+                // 이번 갱신만 실패 - 같은 날 성공한 일기는 그대로 남아 있다
+                diaryStatus = DiaryStatus.FAILED.name();
+                diaryId = updateFailed.kept().getId();
+                diaryError = DIARY_ERROR_TEMPORARY;
+                diaryDate = updateFailed.kept().getDiaryDate();
             } else {
                 diaryStatus = "SKIPPED";
             }
@@ -567,7 +581,7 @@ public class ConversationService {
         } catch (Exception e) {
             log.error("일기 생성 실패 - userId: {}", userId, e);
             diaryStatus = "FAILED";
-            diaryError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            diaryError = contextFound ? DIARY_ERROR_TEMPORARY : DIARY_ERROR_NO_CONTEXT;
         } finally {
             // 4. 컨텍스트 정리 (어떤 경우에도 보장)
             contextService.finalizeContext(userId);
