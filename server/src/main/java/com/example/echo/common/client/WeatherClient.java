@@ -8,9 +8,11 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -31,8 +33,12 @@ import java.time.ZoneId;
 @Component
 public class WeatherClient {
 
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
     private final WeatherApiClient weatherApiClient;
     private final String apiKey;
+    // 방문 날씨의 "오늘" 기준 - Asia/Seoul 고정 Clock(SchedulingConfig)
+    private final Clock clock;
 
     /**
      * 현재 날씨 캐시
@@ -48,7 +54,7 @@ public class WeatherClient {
 
     /**
      * 방문 시점 날씨 캐시
-     * - 키: 좌표(소수점 1자리, 약 10km) + 정시 timestamp
+     * - 키: 좌표(소수점 1자리, 약 10km) + 날짜 + 시(hour) - 날짜가 없으면 TTL 안에서 다음 날 같은 시간대에 전날 날씨가 나온다
      * - 값: VisitWeather
      * - TTL: 24시간 (과거 날씨는 변하지 않음)
      * - 최대 크기: 500개
@@ -70,10 +76,18 @@ public class WeatherClient {
             .expireAfterWrite(Duration.ofMinutes(30))
             .build();
 
+    @Autowired
     public WeatherClient(WeatherApiClient weatherApiClient,
-                         @Value("${weather.api.key}") String apiKey) {
+                         @Value("${weather.api.key}") String apiKey,
+                         Clock clock) {
         this.weatherApiClient = weatherApiClient;
         this.apiKey = apiKey;
+        this.clock = clock;
+    }
+
+    /** Clock 없이 만들면 한국 시간 시스템 시계를 쓴다 */
+    public WeatherClient(WeatherApiClient weatherApiClient, String apiKey) {
+        this(weatherApiClient, apiKey, Clock.system(KST));
     }
 
     /**
@@ -104,8 +118,7 @@ public class WeatherClient {
      *
      * 방문 기록의 위치와 시작 시간을 기준으로 해당 시점의 날씨 조회
      * - One Call API 3.0 Timemachine 사용
-     * - 캐시 키는 좌표 + 시간(hour)만 사용 (TTL 24시간)
-     * - API 호출 시에만 오늘 날짜와 결합하여 timestamp 생성
+     * - 캐시 키는 좌표 + 오늘 날짜(Asia/Seoul) + 시간(hour) (TTL 24시간)
      *
      * @param latitude 위도 (null이면 조회하지 않음)
      * @param longitude 경도 (null이면 조회하지 않음)
@@ -120,17 +133,16 @@ public class WeatherClient {
         }
 
         int hour = visitStartTime.getHour();
+        LocalDate today = LocalDate.now(clock);
 
-        // 캐시 키 생성 (소수점 1자리 = 약 10km 범위 + 시간)
-        String cacheKey = String.format("%.1f,%.1f:%d", latitude, longitude, hour);
+        // 캐시 키 생성 (소수점 1자리 = 약 10km 범위 + 날짜 + 시간)
+        String cacheKey = String.format("%.1f,%.1f:%s:%d", latitude, longitude, today, hour);
 
         return visitWeatherCache.get(cacheKey, key -> {
             log.debug("방문 날씨 캐시 미스 - Timemachine API 호출: {}", key);
 
-            // API 호출 시 오늘 날짜와 결합하여 timestamp 생성
-            LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
             LocalDateTime visitDateTime = LocalDateTime.of(today, LocalTime.of(hour, 0));
-            long timestamp = visitDateTime.atZone(ZoneId.of("Asia/Seoul")).toEpochSecond();
+            long timestamp = visitDateTime.atZone(clock.getZone()).toEpochSecond();
 
             return callTimemachineApi(latitude, longitude, timestamp);
         });
