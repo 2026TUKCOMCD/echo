@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import com.example.graduation_project.MainActivity
 import com.example.graduation_project.R
 import com.example.graduation_project.data.alarm.ConversationAlarmStorage
+import com.example.graduation_project.data.local.TokenStorage
 import java.util.Calendar
 
 /**
@@ -44,6 +45,13 @@ object LocationScheduler {
     // 마지막으로 배터리 부족 알림을 표시한 시간 (중복 알림 방지)
     private var lastLowBatteryNotificationTime = 0L
     private const val LOW_BATTERY_NOTIFICATION_COOLDOWN_MS = 60 * 60 * 1000L // 1시간
+
+    /**
+     * 로그인 상태인지 (토큰이 있는지). 로그아웃할 때 위치 수집을 끄므로(MainActivity.performLogout),
+     * 재부팅·아침 알람처럼 사용자 조작 없이 수집을 다시 켜는 경로는 먼저 이걸 확인한다.
+     * 테스트에서 바꿔 끼울 수 있게 함수로 둔다 (JVM 테스트에는 Keystore가 없어 토큰을 읽을 수 없음)
+     */
+    internal var isLoggedIn: (Context) -> Boolean = { TokenStorage(it.applicationContext).getAccessToken() != null }
 
     /**
      * 시작/종료 시간(분 단위) 기준으로 현재 시간이 범위 내인지 확인.
