@@ -1,5 +1,6 @@
 package com.example.echo.location.service;
 
+import com.example.echo.common.client.ExternalApiErrors;
 import com.example.echo.location.client.GeocodingClient;
 import com.example.echo.location.dto.GeocodingResult;
 import com.example.echo.location.dto.KakaoGeocodingResponse;
@@ -25,7 +26,7 @@ public class GeocodingService {
             KakaoGeocodingResponse response = geocodingClient.reverseGeocode(lon, lat, "WGS84");
             return extractAddress(response);
         } catch (Exception e) {
-            log.warn("현재 위치 역지오코딩 실패 - 이유:{}", e.getMessage());
+            log.warn("현재 위치 역지오코딩 실패 - {}", ExternalApiErrors.describe(e));
             return null;
         }
     }
@@ -38,7 +39,7 @@ public class GeocodingService {
                     .address(extractAddress(response))
                     .build();
         } catch (Exception e) {
-            log.warn("방문 장소 역지오코딩 실패 - 이유:{}", e.getMessage());
+            log.warn("방문 장소 역지오코딩 실패 - {}", ExternalApiErrors.describe(e));
             return GeocodingResult.builder().build();
         }
     }
