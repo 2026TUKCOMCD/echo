@@ -6,6 +6,8 @@ import com.example.echo.context.domain.UserContext;
 import com.example.echo.health.dto.EnrichedHealthData;
 import com.example.echo.health.dto.HealthData;
 import com.example.echo.health.service.HealthDataService;
+import com.example.echo.location.dto.LocationData;
+import com.example.echo.location.dto.RawLocationData;
 import com.example.echo.location.service.LocationService;
 import com.example.echo.routineplace.service.RoutinePlaceService;
 import com.example.echo.routineplace.service.VisitOccurrenceRecordingService;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -112,6 +115,47 @@ class ContextServiceTest {
     @Nested
     @DisplayName("initializeContext 메서드")
     class InitializeContext {
+
+        @Test
+        @DisplayName("방문 이력 기록이 실패해도 컨텍스트는 만들어진다 (루틴 감지 원재료일 뿐 오늘 대화에는 필요 없음)")
+        void visitRecordingFailure_doesNotFailContext() {
+            // given
+            RawLocationData raw = RawLocationData.builder().currentLatitude(37.5).currentLongitude(127.0).build();
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(routinePlaceService.hasConsent(userId)).willReturn(true);
+            willThrow(new DataAccessResourceFailureException("DB 쓰기 실패"))
+                    .given(visitOccurrenceRecordingService).recordOccurrences(eq(userId), eq(raw), any(), any(), any());
+            given(locationService.enrichLocationData(eq(raw), any(), any(), any())).willReturn(LocationData.builder().build());
+            given(weatherClient.getCurrentWeather(37.5, 127.0)).willReturn(mockWeatherData);
+
+            // when
+            UserContext result = contextService.initializeContext(userId, mockHealthData, raw);
+
+            // then
+            assertThat(result).isNotNull();
+            assertThat(result.getLocationData()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("확정 루틴 장소 조회가 실패해도 루틴 장소 없이 컨텍스트를 만든다")
+        void confirmedRoutinePlacesFailure_continuesWithoutThem() {
+            // given
+            given(userService.getPreferences(userId)).willReturn(mockPreferences);
+            given(healthDataService.buildEnrichedHealthData(eq(mockHealthData), eq(userId), any()))
+                    .willReturn(mockEnrichedHealthData);
+            given(routinePlaceService.getConfirmedPlaceInfos(userId))
+                    .willThrow(new DataAccessResourceFailureException("DB 조회 실패"));
+            given(weatherClient.getCurrentWeather(null, null)).willReturn(mockWeatherData);
+
+            // when
+            UserContext result = contextService.initializeContext(userId, mockHealthData);
+
+            // then
+            assertThat(result).isNotNull();
+            assertThat(result.getConfirmedRoutinePlaces()).isEmpty();
+        }
 
         @Test
         @DisplayName("성공: 새로운 UserContext를 생성하고 저장한다 (healthData 없이)")
