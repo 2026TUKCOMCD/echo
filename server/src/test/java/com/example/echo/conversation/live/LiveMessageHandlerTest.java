@@ -79,7 +79,7 @@ class LiveMessageHandlerTest {
         attributes.put(LiveMessageHandler.ATTR_USER_ID, USER_ID);
         lenient().when(session.getAttributes()).thenReturn(attributes);
         lenient().when(session.isOpen()).thenReturn(true);
-        lenient().when(speechStreamExecutor.executor()).thenReturn(Runnable::run);
+        lenient().when(speechStreamExecutor.liveTurnExecutor()).thenReturn(Runnable::run);
         lenient().when(transcriptionClient.open(any())).thenReturn(upstream);
         lenient().when(voiceService.filterLiveTranscript(any())).thenAnswer(inv -> inv.getArgument(0));
 
