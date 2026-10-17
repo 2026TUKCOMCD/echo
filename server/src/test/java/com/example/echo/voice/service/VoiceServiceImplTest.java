@@ -3,6 +3,7 @@ package com.example.echo.voice.service;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.client.STTClient;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
+import com.example.echo.voice.exception.InvalidAudioException;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import com.example.echo.voice.provider.TtsProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -125,51 +126,51 @@ class VoiceServiceImplTest {
         }
 
         @Test
-        @DisplayName("파일이 null이면 VoiceProcessingException 발생")
+        @DisplayName("파일이 null이면 InvalidAudioException(400) 발생")
         void nullFile_throwsException() {
             assertThatThrownBy(() -> voiceService.speechToText(null))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessage("오디오 파일이 비어있습니다.");
         }
 
         @Test
-        @DisplayName("빈 파일이면 VoiceProcessingException 발생")
+        @DisplayName("빈 파일이면 InvalidAudioException(400) 발생")
         void emptyFile_throwsException() {
             MockMultipartFile emptyFile = new MockMultipartFile(
                     "file", "test.mp3", "audio/mpeg", new byte[0]
             );
 
             assertThatThrownBy(() -> voiceService.speechToText(emptyFile))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessage("오디오 파일이 비어있습니다.");
         }
 
         @Test
-        @DisplayName("지원하지 않는 오디오 형식이면 VoiceProcessingException 발생")
+        @DisplayName("지원하지 않는 오디오 형식이면 InvalidAudioException(400) 발생")
         void unsupportedFormat_throwsException() {
             MockMultipartFile pdfFile = new MockMultipartFile(
                     "file", "test.pdf", "application/pdf", "data".getBytes()
             );
 
             assertThatThrownBy(() -> voiceService.speechToText(pdfFile))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessageContaining("지원하지 않는 오디오 형식입니다.");
         }
 
         @Test
-        @DisplayName("Content-Type이 null이면 VoiceProcessingException 발생")
+        @DisplayName("Content-Type이 null이면 InvalidAudioException(400) 발생")
         void nullContentType_throwsException() {
             MockMultipartFile noTypeFile = new MockMultipartFile(
                     "file", "test.mp3", null, "data".getBytes()
             );
 
             assertThatThrownBy(() -> voiceService.speechToText(noTypeFile))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessageContaining("지원하지 않는 오디오 형식입니다.");
         }
 
         @Test
-        @DisplayName("25MB 초과 파일이면 VoiceProcessingException 발생")
+        @DisplayName("25MB 초과 파일이면 InvalidAudioException(400) 발생")
         void oversizedFile_throwsException() {
             byte[] largeData = new byte[26 * 1024 * 1024];
             MockMultipartFile largeFile = new MockMultipartFile(
@@ -177,7 +178,7 @@ class VoiceServiceImplTest {
             );
 
             assertThatThrownBy(() -> voiceService.speechToText(largeFile))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessage("파일 크기가 25MB를 초과합니다.");
         }
 
