@@ -455,6 +455,35 @@ class PromptServiceTest {
     }
 
     @Test
+    @DisplayName("buildSystemPrompt - 실제 집 체류(LocationService가 만든, 장소명 없는 isHome)도 [집에서 보낸 시간]에 들어간다")
+    void buildSystemPrompt_unnamedHomeStayFromLocationService() {
+        // Given: LocationService.buildHomeVisitedPlace와 같은 모양 - 집은 지오코딩하지 않아 장소명이 없다
+        List<VisitedPlace> places = List.of(
+                VisitedPlace.builder().isHome(true)
+                        .visitStartTime(LocalTime.of(10, 0)).visitEndTime(LocalTime.of(13, 0))
+                        .stayDurationMinutes(180).build()
+        );
+        LocationData locationData = LocationData.builder().currentCity("서울").visitedPlaces(places).build();
+        UserContext ctx = UserContext.builder()
+                .userId(TEST_USER_ID).preferences(context.getPreferences()).locationData(locationData).build();
+
+        PromptTemplate template = PromptTemplate.builder()
+                .type(PromptType.SYSTEM)
+                .content("{{visitedPlacesText}} / {{todayActivityGuide}}")
+                .build();
+        when(promptTemplateRepository.findFirstByTypeAndIsActiveTrueOrderByCreatedAtDesc(PromptType.SYSTEM))
+                .thenReturn(Optional.of(template));
+
+        // When
+        String result = promptService.buildSystemPrompt(ctx);
+
+        // Then
+        assertThat(result).contains("[집에서 보낸 시간]");
+        assertThat(result).contains("집에서 어떻게 지내셨는지");
+        assertThat(result).doesNotContain("null");
+    }
+
+    @Test
     @DisplayName("buildSystemPrompt - 집 체류가 야간뿐이면 활동 대상에서 제외되어 일반 질문 가이드로 폴백")
     void buildSystemPrompt_nighttimeHomeExcluded() {
         // Given: 야간 집 체류만 (23:00~23:59) → 낮 체류 아님 → 제외
