@@ -9,9 +9,6 @@ interface IHealthRepository {
     /** Health Connect SDK 가용성 확인 (동기, 비suspend) */
     fun getAvailability(): HealthConnectAvailability
 
-    /** 모든 필수 권한이 부여되었는지 확인 */
-    suspend fun hasPermissions(): Boolean
-
     /**
      * 어제 정오(12:00) → 오늘 정오(12:00) 범위의 수면 데이터 읽기.
      * @return SleepSummary(minutes, startTime), 데이터 없으면 SleepSummary(null, null)
