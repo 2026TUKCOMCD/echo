@@ -165,6 +165,10 @@ class AudioRecordManager @VisibleForTesting internal constructor(
                 listener?.onRecordingStart()
             }
 
+            override fun onSpeechAudio(pcm: ByteArray) {
+                listener?.onRecordingAudio(pcm)
+            }
+
             override fun onSpeechEnd(wavData: ByteArray) {
                 _state.value = AudioRecordState.Processing
 

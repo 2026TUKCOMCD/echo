@@ -14,8 +14,6 @@ class HealthConnectRepositoryImpl(
 
     override fun getAvailability(): HealthConnectAvailability = manager.checkAvailability()
 
-    override suspend fun hasPermissions(): Boolean = manager.checkGrantedPermissions()
-
     override suspend fun readYesterdaySleep(): SleepSummary = manager.readYesterdaySleep()
 
     override suspend fun readTodaySteps(): Int? = manager.readTodaySteps()

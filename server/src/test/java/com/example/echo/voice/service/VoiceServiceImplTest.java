@@ -3,6 +3,7 @@ package com.example.echo.voice.service;
 import com.example.echo.user.dto.VoiceSettings;
 import com.example.echo.voice.client.STTClient;
 import com.example.echo.voice.dto.WhisperTranscriptionResponse;
+import com.example.echo.voice.exception.InvalidAudioException;
 import com.example.echo.voice.exception.VoiceProcessingException;
 import com.example.echo.voice.provider.TtsProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -125,51 +126,51 @@ class VoiceServiceImplTest {
         }
 
         @Test
-        @DisplayName("파일이 null이면 VoiceProcessingException 발생")
+        @DisplayName("파일이 null이면 InvalidAudioException(400) 발생")
         void nullFile_throwsException() {
             assertThatThrownBy(() -> voiceService.speechToText(null))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessage("오디오 파일이 비어있습니다.");
         }
 
         @Test
-        @DisplayName("빈 파일이면 VoiceProcessingException 발생")
+        @DisplayName("빈 파일이면 InvalidAudioException(400) 발생")
         void emptyFile_throwsException() {
             MockMultipartFile emptyFile = new MockMultipartFile(
                     "file", "test.mp3", "audio/mpeg", new byte[0]
             );
 
             assertThatThrownBy(() -> voiceService.speechToText(emptyFile))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessage("오디오 파일이 비어있습니다.");
         }
 
         @Test
-        @DisplayName("지원하지 않는 오디오 형식이면 VoiceProcessingException 발생")
+        @DisplayName("지원하지 않는 오디오 형식이면 InvalidAudioException(400) 발생")
         void unsupportedFormat_throwsException() {
             MockMultipartFile pdfFile = new MockMultipartFile(
                     "file", "test.pdf", "application/pdf", "data".getBytes()
             );
 
             assertThatThrownBy(() -> voiceService.speechToText(pdfFile))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessageContaining("지원하지 않는 오디오 형식입니다.");
         }
 
         @Test
-        @DisplayName("Content-Type이 null이면 VoiceProcessingException 발생")
+        @DisplayName("Content-Type이 null이면 InvalidAudioException(400) 발생")
         void nullContentType_throwsException() {
             MockMultipartFile noTypeFile = new MockMultipartFile(
                     "file", "test.mp3", null, "data".getBytes()
             );
 
             assertThatThrownBy(() -> voiceService.speechToText(noTypeFile))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessageContaining("지원하지 않는 오디오 형식입니다.");
         }
 
         @Test
-        @DisplayName("25MB 초과 파일이면 VoiceProcessingException 발생")
+        @DisplayName("25MB 초과 파일이면 InvalidAudioException(400) 발생")
         void oversizedFile_throwsException() {
             byte[] largeData = new byte[26 * 1024 * 1024];
             MockMultipartFile largeFile = new MockMultipartFile(
@@ -177,7 +178,7 @@ class VoiceServiceImplTest {
             );
 
             assertThatThrownBy(() -> voiceService.speechToText(largeFile))
-                    .isInstanceOf(VoiceProcessingException.class)
+                    .isInstanceOf(InvalidAudioException.class)
                     .hasMessage("파일 크기가 25MB를 초과합니다.");
         }
 
@@ -385,6 +386,61 @@ class VoiceServiceImplTest {
             String result = voiceService.speechToText(webmFile);
 
             assertThat(result).isEqualTo("테스트");
+        }
+    }
+
+    // ========== 실시간 전사 환각 방지 테스트 ==========
+
+    @Nested
+    @DisplayName("실시간 전사용 환각 방지 (/message-live)")
+    class LiveTranscriptGuardTest {
+
+        private byte[] pcm(int sampleRate, int durationMs, short amplitude) {
+            byte[] wav = buildWavBytes(sampleRate, durationMs, amplitude);
+            byte[] pcm = new byte[wav.length - 44];
+            System.arraycopy(wav, 44, pcm, 0, pcm.length);
+            return pcm;
+        }
+
+        @Test
+        @DisplayName("PCM이 짧고 조용하면 사실상 빈 오디오 - WAV 판정과 같은 기준")
+        void shortAndQuietPcm_isSilent() {
+            assertThat(voiceService.isEffectivelySilent(pcm(16000, 200, (short) 10), 16000)).isTrue();
+            assertThat(voiceService.isEffectivelySilent(new byte[0], 16000)).isTrue();
+        }
+
+        @Test
+        @DisplayName("짧아도 또렷하거나, 조용해도 길면 빈 오디오가 아니다 (AND 조건)")
+        void shortButLoud_orLongButQuiet_isNotSilent() {
+            assertThat(voiceService.isEffectivelySilent(pcm(16000, 200, (short) 8000), 16000)).isFalse();
+            assertThat(voiceService.isEffectivelySilent(pcm(16000, 1000, (short) 10), 16000)).isFalse();
+        }
+
+        @Test
+        @DisplayName("정상 발화는 그대로 통과한다")
+        void normalTranscript_passes() {
+            assertThat(voiceService.filterLiveTranscript("오늘 아침에 공원에 다녀왔어요")).isEqualTo("오늘 아침에 공원에 다녀왔어요");
+        }
+
+        @Test
+        @DisplayName("알려진 환각 문구는 빈 문자열")
+        void knownHallucination_filtered() {
+            assertThat(voiceService.filterLiveTranscript("시청해주셔서 감사합니다.")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("같은 말이 반복되면(compression ratio > 2.4) 빈 문자열")
+        void repetitive_filtered() {
+            String repeated = "감사합니다 ".repeat(30);
+            assertThat(VoiceServiceImpl.compressionRatio(repeated)).isGreaterThan(2.4);
+            assertThat(voiceService.filterLiveTranscript(repeated)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("빈 전사는 빈 문자열")
+        void blank_isEmpty() {
+            assertThat(voiceService.filterLiveTranscript("  ")).isEmpty();
+            assertThat(voiceService.filterLiveTranscript(null)).isEmpty();
         }
     }
 

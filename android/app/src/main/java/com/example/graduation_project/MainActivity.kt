@@ -29,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.dropUnlessResumed
+import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -174,6 +176,43 @@ private object Routes {
 
 // 탭바가 표시되는 최상위 루트 목록
 private val tabRoutes = EchoTab.entries.map { it.route }.toSet()
+
+/**
+ * 탭 전환 - 탭마다 화면 상태를 저장했다가 다시 오면 복원한다 (saveState/restoreState).
+ * 그래프의 실제 startDestination(CHECKING/LOGIN)은 로그인 확인 후 inclusive popUpTo로
+ * 이미 백스택에서 제거된 상태라 findStartDestination()을 앵커로 쓰면 아무것도 못 지워
+ * 탭 이력이 무한히 쌓인다. 항상 존재하는 HOME 탭을 앵커로 고정해야 한다.
+ */
+internal fun NavController.navigateToTab(tab: EchoTab) {
+    navigate(tab.route) {
+        popUpTo(EchoTab.HOME.route) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+/**
+ * 로그아웃 후 로그인 화면으로 이동. 백스택을 모두 비우고, 탭 전환 때 저장해 둔 탭 상태(ViewModel 포함)도 지운다
+ * - 남겨 두면 같은 화면에서 다른 계정으로 로그인한 뒤 그 탭을 열 때 이전 계정의 ViewModel(userId)이 복원된다.
+ * HOME은 탭 전환의 앵커로 항상 백스택에 남아 있어 따로 저장되지 않고, 위의 popUpTo로 함께 정리된다.
+ */
+internal fun NavController.navigateToLoginAfterLogout() {
+    navigate(Routes.LOGIN) {
+        popUpTo(0) { inclusive = true }
+    }
+    EchoTab.entries.filter { it != EchoTab.HOME }.forEach { clearBackStack(it.route) }
+}
+
+/**
+ * 화면 안의 뒤로가기(← 버튼, 대화 종료 후 자동 복귀)에 쓰는 popBackStack.
+ * 이 화면이 RESUMED가 아니면(나가는 전환 중 등) 호출을 버린다 - NavHost 기본 전환(700ms 페이드) 동안
+ * 나가는 화면이 남아 있어, ← 연타나 뒤늦은 호출이 아래 화면까지 한 번 더 pop하는 것(빈 화면 포함)을 막는다.
+ */
+@Composable
+internal fun popBackOnlyWhenResumed(navController: NavController): () -> Unit =
+    dropUnlessResumed { navController.popBackStack() }
 
 @Composable
 private fun AppNavHost(
@@ -389,19 +428,7 @@ private fun AppNavHost(
             if (showTabBar) {
                 EchoTabBar(
                     currentRoute = currentRoute,
-                    onTabSelected = { tab ->
-                        navController.navigate(tab.route) {
-                            // 탭 전환 시 그래프의 실제 startDestination(CHECKING/LOGIN)은
-                            // 로그인 확인 후 inclusive popUpTo로 이미 백스택에서 제거된 상태라
-                            // findStartDestination()을 앵커로 쓰면 아무것도 못 지워 탭 이력이
-                            // 무한히 쌓인다. 항상 존재하는 HOME 탭을 앵커로 고정해야 한다.
-                            popUpTo(EchoTab.HOME.route) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    onTabSelected = { tab -> navController.navigateToTab(tab) }
                 )
             }
         }
@@ -499,7 +526,7 @@ private fun AppNavHost(
                     onSessionClick = { conversationId ->
                         navController.navigate(Routes.historyDetail(conversationId))
                     },
-                    onBack = { navController.popBackStack() }
+                    onBack = popBackOnlyWhenResumed(navController)
                 )
             }
 
@@ -509,7 +536,7 @@ private fun AppNavHost(
                 val conversationId = URLDecoder.decode(encoded, "UTF-8")
                 ConversationHistoryDetailScreen(
                     conversationId = conversationId,
-                    onBack = { navController.popBackStack() }
+                    onBack = popBackOnlyWhenResumed(navController)
                 )
             }
 
@@ -520,9 +547,7 @@ private fun AppNavHost(
                     onLogout = {
                         coroutineScope.launch {
                             performLogout()
-                            navController.navigate(Routes.LOGIN) {
-                                popUpTo(0) { inclusive = true }
-                            }
+                            navController.navigateToLoginAfterLogout()
                         }
                     }
                 )
@@ -534,12 +559,10 @@ private fun AppNavHost(
                     onLogout = {
                         coroutineScope.launch {
                             performLogout()
-                            navController.navigate(Routes.LOGIN) {
-                                popUpTo(0) { inclusive = true }
-                            }
+                            navController.navigateToLoginAfterLogout()
                         }
                     },
-                    onBack = { navController.popBackStack() }
+                    onBack = popBackOnlyWhenResumed(navController)
                 )
             }
         }

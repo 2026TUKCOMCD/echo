@@ -16,6 +16,9 @@ interface AudioRecordListener {
     /** 음성 감지 시작 (녹음 시작) */
     fun onRecordingStart()
 
+    /** 녹음 중 PCM 조각 (실시간 전송용, 무음 꼬리 제외) - [VadListener.onSpeechAudio] 참고 */
+    fun onRecordingAudio(pcm: ByteArray) {}
+
     /** 녹음 완료, WAV 파일 저장됨 */
     fun onRecordingComplete(audioFile: File)
 

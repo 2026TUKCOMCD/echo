@@ -188,6 +188,10 @@ public class SpeechStreamPipeline {
         public void run() {
             long start = System.currentTimeMillis();
             try {
+                if (cancelled.get()) {
+                    // 풀에서 차례를 기다리는 동안 요청이 이미 실패(시간 초과 등)했으면 LLM을 호출하지 않는다
+                    throw new AIException("AI 응답 생성이 취소되었습니다");
+                }
                 ChatCompletionStream opened = openLlm.get();
                 stream.set(opened);
                 if (cancelled.get()) {

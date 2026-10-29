@@ -37,6 +37,7 @@ class MorningAlarmReceiverTest {
     private lateinit var receiver: MorningAlarmReceiver
     private lateinit var shadowNotificationManager: ShadowNotificationManager
     private lateinit var notificationManager: NotificationManager
+    private val defaultIsLoggedIn = LocationScheduler.isLoggedIn
 
     @Before
     fun setUp() {
@@ -45,11 +46,33 @@ class MorningAlarmReceiverTest {
         receiver = MorningAlarmReceiver()
         notificationManager = realContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         shadowNotificationManager = shadowOf(notificationManager)
+        // 기본은 로그인 상태 (JVM 테스트에는 Keystore가 없어 실제 토큰을 읽을 수 없음, 로그아웃은 따로 검증)
+        LocationScheduler.isLoggedIn = { true }
     }
 
     @After
     fun tearDown() {
         unmockkAll()
+        LocationScheduler.isLoggedIn = defaultIsLoggedIn
+    }
+
+    @Test
+    fun `onReceive_로그아웃_상태면_수집도_안내_알림도_다음날_알람도_없음`() {
+        // Given: 위치 권한은 남아 있지만 로그아웃함 (로그아웃할 때 위치 수집과 아침 알람을 껐음)
+        grantAllPermissions()
+        setBatteryOptimizationIgnored(true)
+        mockkObject(LocationScheduler)
+        every { LocationScheduler.startServiceIfInTimeRange(any()) } returns Unit
+        every { LocationScheduler.scheduleMorningAlarm(any()) } returns Unit
+        LocationScheduler.isLoggedIn = { false }
+
+        // When
+        receiver.onReceive(context, Intent())
+
+        // Then: 남아 있던 알람으로 수집이 다시 살아나지 않고, 다음날 알람도 잇지 않음
+        verify(exactly = 0) { LocationScheduler.startServiceIfInTimeRange(any()) }
+        verify(exactly = 0) { LocationScheduler.scheduleMorningAlarm(any()) }
+        assertEquals(0, shadowNotificationManager.allNotifications.size)
     }
 
     // ===== onReceive 조건 분기 (7개) =====

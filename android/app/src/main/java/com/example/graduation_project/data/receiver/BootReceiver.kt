@@ -43,6 +43,13 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private fun scheduleLocationCollection(context: Context) {
+        // 로그아웃 상태면 수집도 아침 알람도 다시 켜지 않음 - 로그아웃할 때 껐고 위치 권한은 남아 있어 조건만 보면 다시 켜짐
+        // (다시 로그인하면 대화 화면의 권한 확인이 수집을 켠다)
+        if (!LocationScheduler.isLoggedIn(context)) {
+            Log.d(TAG, "로그인 상태가 아니라 위치 수집을 다시 켜지 않음")
+            return
+        }
+
         // 필수 조건 체크 및 서비스 시작 (조건 미충족 시에도 알람은 스케줄링)
         val prerequisiteResult = LocationScheduler.checkPrerequisites(context)
         Log.d(TAG, "필수 조건 체크 결과: $prerequisiteResult")

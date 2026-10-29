@@ -22,25 +22,45 @@ object ApiClient {
         encodeDefaults = true
     }
 
-    private val httpLoggingInterceptor = HttpLoggingInterceptor().apply {
-        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
-        else HttpLoggingInterceptor.Level.NONE
-        redactHeader("Authorization")
-    }
-
     // BODY 레벨 로깅은 응답 본문을 끝까지 읽어 버퍼링한 뒤에 넘겨주므로 스트리밍 응답을 무력화한다
     // (디버그 빌드에서 첫 소리가 전체 합성 완료 후에야 나옴). 스트리밍 요청은 로깅을 건너뛴다.
     // 스트리밍 엔드포인트를 추가하면 반드시 이 목록에도 넣어야 한다.
     private val streamingPaths = setOf(
         ConversationApi.MESSAGE_STREAM_PATH,
-        ConversationApi.START_STREAM_PATH
+        ConversationApi.START_STREAM_PATH,
+        ConversationApi.MESSAGE_LIVE_PATH
     )
 
-    private val loggingInterceptor = Interceptor { chain ->
-        if (chain.request().url.encodedPath in streamingPaths) {
-            chain.proceed(chain.request())
-        } else {
-            httpLoggingInterceptor.intercept(chain)
+    // 인증 요청·응답 본문에는 비밀번호와 토큰이 들어 있어 본문 로깅을 켜도 헤더까지만 남긴다
+    // (Authorization 헤더를 redactHeader로 가린 것과 같은 이유)
+    private const val AUTH_PATH_PREFIX = "/api/auth/"
+
+    private val loggingInterceptor = createLoggingInterceptor()
+
+    /**
+     * 디버그 빌드의 HTTP 로그 - 스트리밍은 건너뛰고, 그 외는 기본적으로 헤더까지만 남긴다.
+     * 본문에는 대화 전사·건강·위치·일기·개인정보가 있어서, 응답 내용을 봐야 할 때만 개발자 PC에서
+     * `-Pecho.logHttpBody=true`로 빌드해 본문까지 남긴다 (인증 경로는 켜도 헤더까지만).
+     */
+    internal fun createLoggingInterceptor(
+        logger: HttpLoggingInterceptor.Logger = HttpLoggingInterceptor.Logger.DEFAULT,
+        debug: Boolean = BuildConfig.DEBUG,
+        logBody: Boolean = BuildConfig.LOG_HTTP_BODY
+    ): Interceptor {
+        fun httpLogging(debugLevel: HttpLoggingInterceptor.Level) = HttpLoggingInterceptor(logger).apply {
+            level = if (debug) debugLevel else HttpLoggingInterceptor.Level.NONE
+            redactHeader("Authorization")
+        }
+        val bodyLogging = httpLogging(HttpLoggingInterceptor.Level.BODY)
+        val headersLogging = httpLogging(HttpLoggingInterceptor.Level.HEADERS)
+
+        return Interceptor { chain ->
+            val path = chain.request().url.encodedPath
+            when {
+                path in streamingPaths -> chain.proceed(chain.request())
+                logBody && !path.startsWith(AUTH_PATH_PREFIX) -> bodyLogging.intercept(chain)
+                else -> headersLogging.intercept(chain)
+            }
         }
     }
 
@@ -82,9 +102,20 @@ object ApiClient {
     var tokenStorage: TokenStorage? = null
         private set
 
+    // 실시간 음성 메시지(WebSocket)도 같은 인증(AuthInterceptor, TokenAuthenticator)을 거치도록 공유한다
+    private lateinit var authenticatedClient: OkHttpClient
+
+    /**
+     * 실시간 음성 메시지 턴(`/message-live`)을 연다. 운영은 https 주소라 wss(TLS)로 연결된다.
+     * 연결 후에는 OkHttp가 소켓 읽기 타임아웃을 끄므로(말하는 동안 서버가 보낼 게 없음), 응답 대기 시간은
+     * [LiveMessageSession]이 따로 잰다.
+     */
+    fun newLiveMessageSession(): LiveMessageSession =
+        LiveMessageSession(authenticatedClient, BuildConfig.BASE_URL + ConversationApi.MESSAGE_LIVE_PATH)
+
     fun init(tokenStorage: TokenStorage) {
         this.tokenStorage = tokenStorage
-        val authenticatedClient = OkHttpClient.Builder()
+        authenticatedClient = OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .addInterceptor(AuthInterceptor(tokenStorage))
             .authenticator(TokenAuthenticator(tokenStorage, authApi))

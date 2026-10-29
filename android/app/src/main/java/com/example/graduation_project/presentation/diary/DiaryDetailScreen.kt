@@ -39,6 +39,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.graduation_project.data.api.ApiClient
 import com.example.graduation_project.data.local.AppDatabase
+import com.example.graduation_project.data.local.dao.ConversationDiaryLinkDao
+import com.example.graduation_project.data.local.dao.DiaryDao
+import com.example.graduation_project.data.local.dao.MessageDao
 import com.example.graduation_project.data.local.entity.DiaryEntity
 import com.example.graduation_project.presentation.model.ConversationSummary
 import com.example.graduation_project.ui.theme.LocalEchoColors
@@ -60,19 +63,18 @@ data class DiaryDetailUiState(
 /**
  * 일기 상세 ViewModel
  *
- * 캐시된 일기(diaries)와 그날의 로컬 대화 세션(messages)을 함께 로드
+ * 캐시된 일기(diaries)와 그날의 로컬 대화 세션(messages)을 함께 관찰 (캐시가 바뀌면 화면도 갱신)
  * 모두 로컬 조회이므로 오프라인에서도 동작
  */
 class DiaryDetailViewModel(
     application: Application,
-    private val date: String   // "yyyy-MM-dd"
-) : AndroidViewModel(application) {
-
-    private val database = AppDatabase.getInstance(application)
-    private val messageDao = database.messageDao()
-    private val diaryDao = database.diaryDao()
-    private val conversationDiaryLinkDao = database.conversationDiaryLinkDao()
+    private val date: String,   // "yyyy-MM-dd"
+    private val messageDao: MessageDao = AppDatabase.getInstance(application).messageDao(),
+    private val diaryDao: DiaryDao = AppDatabase.getInstance(application).diaryDao(),
+    private val conversationDiaryLinkDao: ConversationDiaryLinkDao =
+        AppDatabase.getInstance(application).conversationDiaryLinkDao(),
     private val currentUserId: Long = ApiClient.tokenStorage?.getCurrentUserId() ?: -1L
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(DiaryDetailUiState())
     val uiState: StateFlow<DiaryDetailUiState> = _uiState.asStateFlow()
@@ -83,18 +85,22 @@ class DiaryDetailViewModel(
 
     private fun load() {
         viewModelScope.launch {
+            // 일기도 Flow로 관찰 - 화면이 열려 있는 동안 서버 동기화로 캐시가 바뀌면 바로 반영
             combine(
+                diaryDao.observeByDate(date),
                 messageDao.getSessionRanges(currentUserId),
                 conversationDiaryLinkDao.observeAll()
-            ) { ranges, links -> ranges to links.associate { it.conversationId to it.diaryDate } }
-                .collect { (ranges, linkedDates) ->
+            ) { diary, ranges, links ->
+                Triple(diary, ranges, links.associate { it.conversationId to it.diaryDate })
+            }
+                .collect { (diary, ranges, linkedDates) ->
                     // DiaryViewModel의 버킷 기준과 동일하게: 서버 diaryDate가 있으면 우선 신뢰,
                     // 없으면 lastTimestamp 휴리스틱으로 폴백
                     val sessions = ranges
                         .filter { resolveDateKey(it, linkedDates[it.conversationId]) == date }
                         .mapNotNull { buildSessionSummary(messageDao, it, date, currentUserId) }
                     _uiState.value = DiaryDetailUiState(
-                        diary = diaryDao.getByDate(date),
+                        diary = diary,
                         sessions = sessions,
                         isLoading = false
                     )

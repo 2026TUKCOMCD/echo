@@ -1,6 +1,8 @@
 package com.example.echo.voice.provider;
 
+import com.example.echo.common.http.HttpStreams;
 import com.example.echo.user.dto.VoiceSettings;
+import com.example.echo.voice.client.ElevenLabsErrorDecoder;
 import com.example.echo.voice.client.ElevenLabsTtsClient;
 import com.example.echo.voice.dto.ElevenLabsSubscriptionInfo;
 import com.example.echo.voice.dto.ElevenLabsTtsRequest;
@@ -31,6 +33,9 @@ public class ElevenLabsTtsProvider implements TtsProvider {
 
     private final ElevenLabsTtsClient elevenLabsClient;
     private final RetryTemplate elevenLabsRetryTemplate;
+
+    // feign.Response를 반환하는 스트리밍 호출은 Feign이 ErrorDecoder를 거치지 않으므로 직접 적용한다
+    private final ElevenLabsErrorDecoder streamErrorDecoder = new ElevenLabsErrorDecoder();
 
     @Value("${elevenlabs.voice-id}")
     private String voiceId;
@@ -104,7 +109,7 @@ public class ElevenLabsTtsProvider implements TtsProvider {
                 if (ctx.getRetryCount() > 0) {
                     log.warn("ElevenLabs TTS 재시도 중: {}/2회", ctx.getRetryCount());
                 }
-                return elevenLabsClient.synthesizeStream(voiceId, request);
+                return requireSuccessStatus(elevenLabsClient.synthesizeStream(voiceId, request));
             });
             return openVerifiedStream(response);
 
@@ -117,6 +122,22 @@ public class ElevenLabsTtsProvider implements TtsProvider {
             logQuota();
             throw e;
         }
+    }
+
+    /**
+     * 오류 상태 코드면 연결을 닫고 비스트리밍과 같은 예외로 바꾼다 (5xx는 재시도, 4xx는 즉시 실패).
+     * 확인하지 않으면 쿼터 초과·429·5xx의 JSON 본문이 오디오로 클라이언트에 전달된다.
+     */
+    private Response requireSuccessStatus(Response response) {
+        int status = response.status();
+        if (status >= 200 && status < 300) {
+            return response;
+        }
+        closeQuietly(response);
+        Exception error = streamErrorDecoder.decode("ElevenLabsTtsClient#synthesizeStream", response);
+        throw error instanceof RuntimeException runtime
+                ? runtime
+                : new VoiceProcessingException(error.getMessage(), error);
     }
 
     /**
@@ -158,7 +179,11 @@ public class ElevenLabsTtsProvider implements TtsProvider {
         }
     }
 
-    /** 스트림을 닫을 때 Feign Response(=HTTP 연결)도 함께 닫는다. */
+    /**
+     * 스트림을 닫을 때 Feign Response(=HTTP 연결)도 함께 닫는다.
+     * 다 읽기 전에 닫으면 남은 오디오를 받지 않고 연결을 끊는다 - 응답 close()는 남은 본문을 끝까지 읽기 때문(drain).
+     * 끝까지 읽은 스트림이면 연결은 이미 풀에 반납되어 끊지 않는다.
+     */
     private static final class ResponseBoundInputStream extends FilterInputStream {
         private final Response response;
 
@@ -169,6 +194,7 @@ public class ElevenLabsTtsProvider implements TtsProvider {
 
         @Override
         public void close() throws IOException {
+            HttpStreams.abortQuietly(in);
             try {
                 super.close();
             } finally {

@@ -18,20 +18,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 
 /**
  * AudioRecorder + VAD 통합 관리자
  * 음성 감지 시작/종료 이벤트를 콜백으로 전달
- * 음성 데이터는 WAV 포맷으로 변환하여 전달
+ * 음성 데이터는 WAV 포맷으로 변환하여 전달하고, 발화 중에는 PCM 조각도 실시간으로 흘려준다(onSpeechAudio)
  */
 class VoiceRecordingManager(
     private val context: Context,
-    private val config: VadConfig = VadConfig()
+    private val config: VadConfig = VadConfig(),
+    private val audioRecorder: AudioRecorder = AudioRecorder(context, config),
+    private val vadProcessor: VadProcessor = VadProcessor(context, config)
 ) {
-    private val audioRecorder = AudioRecorder(context, config)
-    private val vadProcessor = VadProcessor(context, config)
+    // 발화 하나의 최대 길이 (16-bit 모노 PCM 바이트) - 넘으면 말이 이어져도 끊어서 보낸다
+    private val maxSpeechBytes: Long = config.maxRecordingDurationMs * config.sampleRate * 2 / 1000
 
     private val _vadState = MutableStateFlow<VadState>(VadState.Idle)
     val vadState: StateFlow<VadState> = _vadState.asStateFlow()
@@ -43,6 +44,9 @@ class VoiceRecordingManager(
     // 음성 데이터 버퍼 (PCM raw bytes)
     private val audioBuffer = ByteArrayOutputStream()
     private var isSpeechActive = false
+
+    // 발화 중 실시간 전송용 - 무음 꼬리를 걸러 onSpeechAudio로 흘려준다
+    private var speechGate: TrailingSilenceGate? = null
 
     // Pre-roll 순환 버퍼: 음성 시작 판정 전 프레임들을 담아뒀다가 발화 시작 시 앞에 이어붙인다
     private val preRollBuffer = ArrayDeque<ShortArray>()
@@ -90,23 +94,21 @@ class VoiceRecordingManager(
                 _vadState.value = VadState.Listening
                 Log.d(TAG, "VAD initialized, state: Listening")
 
-                // 타임아웃 설정
-                withTimeoutOrNull(config.maxRecordingDurationMs) {
-                    audioRecorder.startRecording()
-                        .catch { e ->
-                            val vadException = when (e) {
-                                is VadException -> e
-                                else -> VadException.UnknownError(cause = e)
-                            }
-                            _vadState.value = VadState.Error(vadException)
-                            listener?.onError(vadException)
+                // stop()까지 계속 듣는다. 최대 길이는 발화 하나에만 적용한다 (processAudioFrame)
+                audioRecorder.startRecording()
+                    .catch { e ->
+                        val vadException = when (e) {
+                            is VadException -> e
+                            else -> VadException.UnknownError(cause = e)
                         }
-                        .collect { audioFrame ->
-                            processAudioFrame(audioFrame)
-                        }
-                }
+                        _vadState.value = VadState.Error(vadException)
+                        listener?.onError(vadException)
+                    }
+                    .collect { audioFrame ->
+                        processAudioFrame(audioFrame)
+                    }
 
-                // 타임아웃으로 종료된 경우
+                // 녹음 스트림이 오류로 끝난 경우 진행 중이던 발화는 마무리
                 if (isSpeechActive) {
                     finalizeSpeech()
                 }
@@ -141,6 +143,7 @@ class VoiceRecordingManager(
         audioBuffer.reset()
         preRollBuffer.clear()
         isSpeechActive = false
+        speechGate = null
         _vadState.value = VadState.Stopped
 
         scope?.cancel()
@@ -164,14 +167,20 @@ class VoiceRecordingManager(
                 Log.d(TAG, "Speech START detected")
                 isSpeechActive = true
                 audioBuffer.reset()
+                speechGate = newSpeechGate()
+                _vadState.value = VadState.SpeechDetected
+                // 실시간 전송을 여는 쪽이 pre-roll부터 받을 수 있도록 시작을 먼저 알린다
+                listener?.onSpeechStart()
                 flushPreRollBuffer()
                 appendToBuffer(audioFrame)
-                _vadState.value = VadState.SpeechDetected
-                listener?.onSpeechStart()
             }
-            // 음성 계속 중
+            // 음성 계속 중 - 최대 길이에 닿으면 여기서 끊어 보낸다
             isSpeech && isSpeechActive -> {
                 appendToBuffer(audioFrame)
+                if (audioBuffer.size() >= maxSpeechBytes) {
+                    Log.d(TAG, "Speech reached max duration (${config.maxRecordingDurationMs}ms)")
+                    finalizeSpeech()
+                }
             }
             // 음성 종료 감지
             !isSpeech && isSpeechActive -> {
@@ -203,6 +212,9 @@ class VoiceRecordingManager(
     }
 
     private fun finalizeSpeech() {
+        // 실시간 전송분 마무리 - 남은 무음 꼬리 중 여유만 보낸다 (아래 WAV 트리밍과 같은 결과)
+        speechGate?.finish()
+        speechGate = null
         val pcmData = audioBuffer.toByteArray()
         Log.d(TAG, "finalizeSpeech() - PCM data size: ${pcmData.size} bytes")
         audioBuffer.reset()
@@ -251,7 +263,16 @@ class VoiceRecordingManager(
         // ShortArray를 ByteArray로 변환하여 버퍼에 추가
         val byteData = WavConverter.shortArrayToByteArray(audioFrame)
         audioBuffer.write(byteData)
+        speechGate?.offer(byteData)
     }
+
+    private fun newSpeechGate() = TrailingSilenceGate(
+        sampleRate = config.sampleRate,
+        frameSizeBytes = config.frameSize * 2,
+        thresholdDbfs = config.silenceTrimThresholdDbfs,
+        paddingMs = config.silenceTrimPaddingMs,
+        emit = { pcm -> listener?.onSpeechAudio(pcm) }
+    )
 
     companion object {
         private const val TAG = "VoiceRecordingManager"

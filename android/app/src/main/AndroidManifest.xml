@@ -71,7 +71,18 @@
             </intent-filter>
         </activity>
 
-        <!-- Health Connect 권한 사용 이유 화면 (Google Play 정책 필수 요구사항) -->
+        <!-- Health Connect 권한 사용 이유 화면 (Google Play 정책 필수 요구사항)
+             Android 13 이하: Health Connect 앱이 권한 화면의 개인정보처리방침 링크로 연다 -->
+        <activity-alias
+            android:name="PermissionsRationaleActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Android 14 이상 -->
         <activity-alias
             android:name="ViewPermissionUsageActivity"
             android:exported="true"

@@ -4,7 +4,9 @@ import android.util.Log
 import com.example.graduation_project.data.api.ApiException
 import com.example.graduation_project.data.api.ApiResult
 import com.example.graduation_project.data.api.ConversationApi
+import com.example.graduation_project.data.api.AudioFrameInputStream
 import com.example.graduation_project.data.api.ConversationStreamProtocol
+import com.example.graduation_project.data.api.LiveMessageSession
 import com.example.graduation_project.data.model.ConversationMessageResponse
 import com.example.graduation_project.data.model.ConversationStartResponse
 import com.example.graduation_project.data.model.HealthData
@@ -231,5 +233,69 @@ class ConversationRepositoryStreamingTest {
         assertTrue(error is ApiException.ServerError)
         coVerify(exactly = 0) { api.startConversation(any()) }
         assertEquals(false, streamSupport.startUnsupported)
+    }
+
+    // ── 실시간 음성 메시지 (/message-live) ──
+
+    private val liveSession = mockk<LiveMessageSession>(relaxed = true)
+
+    private fun liveRepository() =
+        ConversationRepository(api, streamSupport, Dispatchers.Unconfined, liveSessionFactory = { liveSession })
+
+    @Test
+    fun `실시간 턴 성공 시 WAV를 다시 보내지 않고 응답을 그대로 돌려준다`() = runTest {
+        val reply = MessageReply.Streaming("안녕", "반가워요.", AudioFrameInputStream(ByteArray(0).inputStream()))
+        coEvery { liveSession.commit() } returns LiveMessageSession.Outcome.Reply(reply)
+
+        val result = liveRepository().finishLiveMessage(liveSession, audioPart)
+
+        assertEquals(reply, (result as ApiResult.Success).data)
+        coVerify(exactly = 0) { api.sendMessageStream(any()) }
+        coVerify(exactly = 0) { api.sendMessage(any()) }
+    }
+
+    @Test
+    fun `서버가 처리하기 전 실패(Fallback)면 같은 WAV를 message-stream으로 보낸다`() = runTest {
+        coEvery { liveSession.commit() } returns LiveMessageSession.Outcome.Fallback("연결 실패")
+        coEvery { api.sendMessageStream(any()) } returns
+            Response.success(streamBody().toResponseBody("application/x-echo-stream".toMediaType()))
+
+        val result = liveRepository().finishLiveMessage(liveSession, audioPart)
+
+        assertTrue(result is ApiResult.Success)
+        coVerify(exactly = 1) { api.sendMessageStream(audioPart) }
+        assertEquals("일시적 실패는 다음 턴에 다시 시도", false, streamSupport.liveUnsupported)
+    }
+
+    @Test
+    fun `서버에 경로가 없으면 폴백하고 이후 턴은 실시간 턴을 열지 않는다`() = runTest {
+        coEvery { liveSession.commit() } returns LiveMessageSession.Outcome.Fallback("404", unsupported = true)
+        coEvery { api.sendMessageStream(any()) } returns
+            Response.success(streamBody().toResponseBody("application/x-echo-stream".toMediaType()))
+        val repository = liveRepository()
+
+        repository.finishLiveMessage(liveSession, audioPart)
+
+        assertTrue(streamSupport.liveUnsupported)
+        assertEquals(null, repository.openLiveMessage())
+    }
+
+    @Test
+    fun `서버가 받은 뒤 실패(Failed)면 WAV를 다시 보내지 않는다 - 대화 기록 중복 방지`() = runTest {
+        coEvery { liveSession.commit() } returns
+            LiveMessageSession.Outcome.Failed(ApiException.ServerError(500, "STT_FAILED"))
+
+        val result = liveRepository().finishLiveMessage(liveSession, audioPart)
+
+        assertTrue((result as ApiResult.Error).exception is ApiException.ServerError)
+        coVerify(exactly = 0) { api.sendMessageStream(any()) }
+        coVerify(exactly = 0) { api.sendMessage(any()) }
+    }
+
+    @Test
+    fun `스트리밍 엔드포인트 자체가 없다고 확인된 서버에는 실시간 턴도 열지 않는다`() {
+        streamSupport.messageUnsupported = true
+
+        assertEquals(null, liveRepository().openLiveMessage())
     }
 }
