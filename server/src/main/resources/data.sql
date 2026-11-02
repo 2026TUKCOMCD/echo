@@ -9,6 +9,18 @@
 -- INSERT가 'Data truncated'로 실패해 부팅이 막힌다(2026-07-23). 이미 VARCHAR면 실질 변경 없음
 ALTER TABLE prompt_templates MODIFY template_type VARCHAR(20) NOT NULL;
 
+-- 암호화 컬럼 VARCHAR → TEXT 전환 (엔티티 columnDefinition과 동일하게)
+-- AES-256-GCM 암호문(enc:v1: + Base64, IV·태그 포함)은 평문보다 길어 VARCHAR(100)인 운영 DB에서
+-- 한글 20자 남짓만 넘어도 'Data too long'으로 500이 난다(직업 "초등학교 교사(30년 근무 후 퇴직)", 2026-10-29).
+-- 엔티티는 TEXT로 바꿨지만 ddl-auto: update는 기존 컬럼 타입을 바꾸지 않는다. 이미 TEXT면 실질 변경 없음
+ALTER TABLE user_preferences
+    MODIFY location TEXT,
+    MODIFY family_info TEXT,
+    MODIFY guardian_email TEXT,
+    MODIFY occupation TEXT,
+    MODIFY hobbies TEXT,
+    MODIFY preferred_topics TEXT;
+
 -- 기존 데이터 삭제 (개발 환경용)
 -- 'CONVERSATION'은 타입이 삭제됐지만 기존 DB에 남은 행 정리를 위해 유지
 DELETE FROM prompt_templates WHERE template_type IN ('SYSTEM', 'CONVERSATION', 'DIARY', 'MEMORY', 'MEMORY_MERGE');
